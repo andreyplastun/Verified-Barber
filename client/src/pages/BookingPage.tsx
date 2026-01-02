@@ -42,7 +42,7 @@ export default function BookingPage() {
         setBookingSuccess(data.id);
         toast({
           title: "Booking Confirmed!",
-          description: "We've sent the details to your phone.",
+          description: "Your visit is now pending confirmation.",
         });
       },
       onError: (err) => {

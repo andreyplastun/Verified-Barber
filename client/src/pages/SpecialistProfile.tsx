@@ -123,9 +123,9 @@ export default function SpecialistProfile() {
       {/* Sticky Bottom Action */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-white/5 z-40 pb-safe">
         <Link href={`/book/${specialist.id}`}>
-          <button className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] transition-all">
+          <Button className="w-full py-6 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] transition-all">
             Book Appointment
-          </button>
+          </Button>
         </Link>
       </div>
     </div>
