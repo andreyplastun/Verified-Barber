@@ -96,7 +96,7 @@ export async function registerRoutes(
         specialistId: input.specialistId,
         rating: input.rating,
         comment: input.comment,
-        customerName: booking.customerName,
+        customerName: (booking as any).customerName ?? "Anonymous",
       });
       
       // Mark booking as reviewed

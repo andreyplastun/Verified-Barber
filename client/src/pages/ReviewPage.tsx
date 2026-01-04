@@ -7,30 +7,45 @@ import { Star, ChevronLeft, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 export default function ReviewPage() {
-  // We expect ?bookingId=123 query param or we can parse from URL if designed that way.
-  // Implementation note says "Takes a Booking ID". Let's use a simple input if not provided, or query param.
-  // Actually, easiest flow: /review/:bookingId
   const [, params] = useRoute("/review/:bookingId");
   const [, setLocation] = useLocation();
-  const bookingId = params ? parseInt(params.bookingId) : 0;
   
-  const { toast } = useToast();
-  const { mutate: createReview, isPending } = useCreateReview();
+  // Parse query params for auto mode
+  const queryParams = new URLSearchParams(window.location.search);
+  const specialistIdFromQuery = queryParams.get("specialistId");
 
-  // Fetch booking details to verify and show info
   const { data: booking, isLoading: isLoadingBooking, error: bookingError } = useQuery({
-    queryKey: [api.bookings.get.path, bookingId],
+    queryKey: [api.bookings.list.path, params?.bookingId, specialistIdFromQuery],
     queryFn: async () => {
-      if (!bookingId) return null;
+      if (params?.bookingId === "auto" && specialistIdFromQuery) {
+        // Fetch all bookings and find the first completed one for this specialist without a review
+        const res = await fetch(api.bookings.list.path);
+        if (!res.ok) throw new Error("Failed to fetch bookings");
+        const allBookings = await res.json();
+        const autoBooking = allBookings.find((b: any) => 
+          b.specialistId === parseInt(specialistIdFromQuery) && 
+          b.status === "completed" && 
+          !b.hasReview
+        );
+        if (!autoBooking) throw new Error("No completed visits found to review");
+        return autoBooking;
+      }
+
+      const bookingIdStr = params?.bookingId;
+      if (!bookingIdStr || bookingIdStr === "auto") return null;
+      const bookingId = parseInt(bookingIdStr);
+      
       const url = buildUrl(api.bookings.get.path, { id: bookingId });
       const res = await fetch(url);
       if (!res.ok) throw new Error("Booking not found");
       return await res.json();
     },
-    enabled: !!bookingId,
-    // Add staleTime to ensure we get fresh data if status was just changed
+    enabled: !!params?.bookingId,
     staleTime: 0
   });
+
+  const { toast } = useToast();
+  const { mutate: createReview, isPending } = useCreateReview();
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
@@ -72,24 +87,36 @@ export default function ReviewPage() {
     });
   };
 
-  if (!bookingId) {
+  const bookingIdParam = params?.bookingId;
+
+  if (!bookingIdParam) {
     return (
       <div className="p-6 text-center">
         <AlertCircle className="mx-auto w-12 h-12 text-destructive mb-4" />
         <h2 className="text-xl font-bold">Invalid Link</h2>
-        <p className="text-muted-foreground">Booking ID is missing.</p>
+        <p className="text-muted-foreground">Booking information is missing.</p>
       </div>
     );
   }
 
-  if (isLoadingBooking) return <div className="p-6 text-center animate-pulse">Loading booking details...</div>;
+  if (isLoadingBooking) return <div className="p-6 text-center animate-pulse">Checking for completed visits...</div>;
   
   if (bookingError || !booking) {
     return (
-      <div className="p-6 text-center">
-        <AlertCircle className="mx-auto w-12 h-12 text-destructive mb-4" />
-        <h2 className="text-xl font-bold">Booking Not Found</h2>
-        <p className="text-muted-foreground">We couldn't find a booking with ID #{bookingId}</p>
+      <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
+        <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-6">
+          <AlertCircle className="w-8 h-8 text-muted-foreground" />
+        </div>
+        <h2 className="text-2xl font-bold mb-2">No Verified Visit Found</h2>
+        <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
+          We couldn't find a completed visit for you to review at this time.
+        </p>
+        <button 
+          onClick={() => setLocation("/")}
+          className="px-6 py-3 bg-secondary rounded-xl font-medium hover-elevate"
+        >
+          Back Home
+        </button>
       </div>
     );
   }
