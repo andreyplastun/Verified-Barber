@@ -37,7 +37,7 @@ export default function AdminDashboard() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="font-bold text-lg">#{booking.id}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                   booking.status === 'completed' 
                     ? 'bg-green-500/20 text-green-500' 
                     : 'bg-yellow-500/20 text-yellow-500'
@@ -46,9 +46,12 @@ export default function AdminDashboard() {
                 </span>
               </div>
               <p className="font-medium text-foreground">{booking.customerName}</p>
-              <div className="flex items-center text-sm text-muted-foreground mt-1">
-                <CalendarDays size={14} className="mr-1" />
-                {new Date(booking.appointmentTime).toLocaleString()}
+              <p className="text-xs text-muted-foreground">{booking.customerPhone}</p>
+              <div className="flex items-center text-xs text-muted-foreground mt-1">
+                <CalendarDays size={12} className="mr-1" />
+                {new Date(booking.appointmentTime).toLocaleDateString()}
+                <Clock size={12} className="ml-2 mr-1" />
+                {new Date(booking.appointmentTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </div>
             </div>
 
