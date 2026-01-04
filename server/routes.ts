@@ -90,7 +90,10 @@ export async function registerRoutes(
       }
 
       // Create review
-      const review = await storage.createReview(input);
+      const review = await storage.createReview({
+        ...input,
+        customerName: booking.customerName,
+      });
       
       // Mark booking as reviewed
       await storage.markBookingReviewed(booking.id);

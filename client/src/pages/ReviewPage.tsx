@@ -52,7 +52,6 @@ export default function ReviewPage() {
       specialistId: booking.specialistId,
       rating,
       comment,
-      customerName: booking.customerName,
     }, {
       onSuccess: () => {
         toast({
