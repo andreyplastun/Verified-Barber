@@ -122,11 +122,30 @@ export default function SpecialistProfile() {
 
       {/* Sticky Bottom Action */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-white/5 z-40 pb-safe">
-        <Link href={`/book/${specialist.id}`}>
-          <Button className="w-full py-6 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] transition-all">
-            Book Appointment
-          </Button>
-        </Link>
+        <div className="max-w-md mx-auto space-y-3">
+          <div className="flex gap-2">
+            <input 
+              id="booking-id-input"
+              type="text" 
+              placeholder="Enter Booking ID to Review" 
+              className="flex-1 bg-secondary/50 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+            />
+            <button 
+              onClick={() => {
+                const id = (document.getElementById('booking-id-input') as HTMLInputElement).value;
+                if (id) window.location.href = `/review/${id}`;
+              }}
+              className="px-6 py-3 bg-secondary rounded-xl text-sm font-bold hover-elevate transition-all"
+            >
+              Review
+            </button>
+          </div>
+          <Link href={`/book/${specialist.id}`}>
+            <Button className="w-full py-6 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] transition-all">
+              Book Appointment
+            </Button>
+          </Link>
+        </div>
       </div>
     </div>
   );

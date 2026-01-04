@@ -57,6 +57,7 @@ export async function registerRoutes(
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
+    // For MVP, we allow viewing by ID to enable the review flow.
     res.json(booking);
   });
 
@@ -91,7 +92,10 @@ export async function registerRoutes(
 
       // Create review
       const review = await storage.createReview({
-        ...input,
+        bookingId: input.bookingId,
+        specialistId: input.specialistId,
+        rating: input.rating,
+        comment: input.comment,
         customerName: booking.customerName,
       });
       

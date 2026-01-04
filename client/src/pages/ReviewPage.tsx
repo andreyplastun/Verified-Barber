@@ -27,7 +27,9 @@ export default function ReviewPage() {
       if (!res.ok) throw new Error("Booking not found");
       return await res.json();
     },
-    enabled: !!bookingId
+    enabled: !!bookingId,
+    // Add staleTime to ensure we get fresh data if status was just changed
+    staleTime: 0
   });
 
   const [rating, setRating] = useState(0);
