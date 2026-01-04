@@ -29,7 +29,13 @@ export async function registerRoutes(
   // Bookings
   app.post(api.bookings.create.path, async (req, res) => {
     try {
-      const input = api.bookings.create.input.parse(req.body);
+      const body = req.body;
+      // Pre-process appointmentTime if it's a string from the frontend
+      if (typeof body.appointmentTime === 'string') {
+        body.appointmentTime = new Date(body.appointmentTime);
+      }
+      
+      const input = api.bookings.create.input.parse(body);
       const booking = await storage.createBooking(input);
       res.status(201).json(booking);
     } catch (err) {

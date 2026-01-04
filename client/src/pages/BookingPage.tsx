@@ -29,14 +29,14 @@ export default function BookingPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Combine date and time
-    const appointmentTime = new Date(`${formData.date}T${formData.time}`);
+    // Combine date and time and convert to ISO string
+    const appointmentTime = new Date(`${formData.date}T${formData.time}:00`).toISOString();
     
     createBooking({
       specialistId: id,
       customerName: formData.name,
       customerPhone: formData.phone,
-      appointmentTime: appointmentTime.toISOString(),
+      appointmentTime: new Date(appointmentTime),
     }, {
       onSuccess: (data) => {
         setBookingSuccess(data.id);

@@ -89,6 +89,13 @@ export const api = {
   },
 };
 
+// === TYPE HELPERS — Infer types from schemas ===
+export type CreateBookingRequest = z.infer<typeof api.bookings.create.input>;
+export type CreateReviewRequest = z.infer<typeof api.reviews.create.input>;
+export type SpecialistResponse = z.infer<typeof api.specialists.get.responses[200]>;
+export type BookingResponse = z.infer<typeof api.bookings.create.responses[201]>;
+export type ReviewResponse = z.infer<typeof api.reviews.create.responses[201]>;
+
 export function buildUrl(path: string, params?: Record<string, string | number>): string {
   let url = path;
   if (params) {
