@@ -89,8 +89,17 @@ export class DatabaseStorage implements IStorage {
     await db.update(bookings).set({ hasReview: true }).where(eq(bookings.id, id));
   }
 
-  async createReview(review: CreateReviewRequest): Promise<Review> {
-    const [newReview] = await db.insert(reviews).values(review).returning();
+  async createReview(review: any): Promise<Review> {
+    const [newReview] = await db.insert(reviews).values({
+      bookingId: review.bookingId as number,
+      specialistId: review.specialistId as number,
+      rating: review.rating as number,
+      comment: review.comment as string,
+      customerName: (review.customerName as string) || "Anonymous",
+      isFinalized: (review.isFinalized as boolean) ?? true,
+      finalizedAt: (review.finalizedAt as Date) ?? new Date(),
+      editableUntil: (review.editableUntil as Date) ?? null,
+    } as any).returning();
     return newReview;
   }
 

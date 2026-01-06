@@ -97,7 +97,9 @@ export async function registerRoutes(
         rating: input.rating,
         comment: input.comment,
         customerName: (booking as any).customerName ?? "Anonymous",
-      });
+        isFinalized: true,
+        finalizedAt: new Date(),
+      } as any);
       
       // Mark booking as reviewed
       await storage.markBookingReviewed(booking.id);
