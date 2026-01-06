@@ -136,7 +136,10 @@ export async function registerRoutes(
   }, 30000); // Check every 30 seconds
 
   app.get(api.reviews.list.path, async (req, res) => {
-    const id = Number(req.params.id);
+    const id = Number(req.query.specialistId);
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "Invalid specialistId" });
+    }
     const reviews = await storage.getReviewsForSpecialist(id);
     res.json(reviews);
   });
