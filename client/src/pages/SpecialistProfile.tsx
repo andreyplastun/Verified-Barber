@@ -95,22 +95,50 @@ export default function SpecialistProfile() {
 
           <div className="space-y-4">
             {specialist.reviews?.length ? (
-              specialist.reviews
-                .filter(r => r.isFinalized) // ONLY show finalized to public.
-                .map((review) => (
+              specialist.reviews.map((review) => (
                 <div key={review.id} className="bg-card border border-white/5 rounded-2xl p-4">
                   <div className="flex justify-between mb-2">
-                    <span className="font-semibold text-sm">{review.customerName}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(review.createdAt || "").toLocaleDateString()}
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-semibold text-sm">{review.customerName}</span>
+                      <span className="text-[10px] text-muted-foreground italic">
+                        {new Date(review.createdAt || "").toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="flex flex-col items-end gap-1">
+                      {review.isFinalized ? (
+                        <div className="flex gap-1">
+                          <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[9px] font-bold border border-green-500/20">
+                            Verified review
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 text-[9px] font-bold border border-blue-500/20">
+                            Review finalized
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-end gap-1">
+                          <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 text-[9px] font-bold border border-yellow-500/20 animate-pulse">
+                            Finalizing (5 min)
+                          </span>
+                          <Link href={`/review/${review.bookingId}`}>
+                            <button className="text-[10px] text-primary hover:underline font-bold">Edit Review</button>
+                          </Link>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <RatingStars rating={review.rating} size={12} className="mb-2" />
                   <p className="text-sm text-muted-foreground">{review.comment}</p>
-                  <div className="mt-2 flex items-center gap-1 text-[10px] text-green-500 font-medium">
-                    <ShieldCheck size={10} />
-                    Verified Visit
-                  </div>
+                  {!review.isFinalized && (
+                    <p className="mt-2 text-[10px] text-yellow-500/80 font-medium italic">
+                      You can edit this review for 5 minutes
+                    </p>
+                  )}
+                  {review.isFinalized && (
+                    <div className="mt-2 flex items-center gap-1 text-[10px] text-green-500/60 font-medium">
+                      <ShieldCheck size={10} />
+                      Verified Visit
+                    </div>
+                  )}
                 </div>
               ))
             ) : (
