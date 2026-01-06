@@ -126,52 +126,71 @@ export default function SpecialistProfile() {
 
           <div className="space-y-4">
             {specialist.reviews?.length ? (
-              specialist.reviews.map((review) => (
-                <div key={review.id} className="bg-card border border-white/5 rounded-2xl p-4">
-                  <div className="flex justify-between mb-2">
-                    <div className="flex flex-col">
-                      <span className="font-semibold text-sm">{review.customerName}</span>
-                      <span className="text-[10px] text-muted-foreground italic">
-                        {new Date(review.createdAt || "").toLocaleDateString()}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      {review.isFinalized ? (
-                        <div className="flex gap-1">
-                          <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[9px] font-bold border border-green-500/20">
-                            Verified review
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 text-[9px] font-bold border border-blue-500/20">
-                            Review finalized
+              (() => {
+                // Sort reviews by date to correctly identify visit number
+                const sortedReviews = [...specialist.reviews].sort((a, b) => 
+                  new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+                );
+                
+                return specialist.reviews.map((review) => {
+                  const visitNumber = sortedReviews.findIndex(r => r.id === review.id) + 1;
+                  const getOrdinal = (n: number) => {
+                    const s = ["th", "st", "nd", "rd"];
+                    const v = n % 100;
+                    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+                  };
+
+                  return (
+                    <div key={review.id} className="bg-card border border-white/5 rounded-2xl p-4">
+                      <div className="flex justify-between mb-2">
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-sm">{review.customerName}</span>
+                          <span className="text-[10px] text-muted-foreground italic">
+                            {new Date(review.createdAt || "").toLocaleDateString()}
                           </span>
                         </div>
-                      ) : (
                         <div className="flex flex-col items-end gap-1">
-                          <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 text-[9px] font-bold border border-yellow-500/20 animate-pulse">
-                            Finalizing (5 min)
-                          </span>
-                          <Link href={`/review/${review.bookingId}`}>
-                            <button className="text-[10px] text-primary hover:underline font-bold">Edit Review</button>
-                          </Link>
+                          {review.isFinalized ? (
+                            <div className="flex gap-1">
+                              <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[9px] font-bold border border-green-500/20">
+                                Verified review
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500 text-[9px] font-bold border border-blue-500/20">
+                                Review finalized
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-end gap-1">
+                              <span className="px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-500 text-[9px] font-bold border border-yellow-500/20 animate-pulse">
+                                Finalizing (5 min)
+                              </span>
+                              <Link href={`/review/${review.bookingId}`}>
+                                <button className="text-[10px] text-primary hover:underline font-bold">Edit Review</button>
+                              </Link>
+                            </div>
+                          )}
                         </div>
+                      </div>
+                      <RatingStars rating={review.rating} size={12} className="mb-2" />
+                      <p className="text-sm text-muted-foreground">{review.comment}</p>
+                      <div className="mt-2 flex items-center justify-between">
+                        <div className="flex items-center gap-1 text-[10px] text-green-500 font-medium">
+                          <ShieldCheck size={10} />
+                          Verified Visit
+                        </div>
+                        <span className="text-[10px] text-muted-foreground italic">
+                          {getOrdinal(visitNumber)} verified visit for this specialist
+                        </span>
+                      </div>
+                      {!review.isFinalized && (
+                        <p className="mt-2 text-[10px] text-yellow-500/80 font-medium italic">
+                          You can edit this review for 5 minutes
+                        </p>
                       )}
                     </div>
-                  </div>
-                  <RatingStars rating={review.rating} size={12} className="mb-2" />
-                  <p className="text-sm text-muted-foreground">{review.comment}</p>
-                  {!review.isFinalized && (
-                    <p className="mt-2 text-[10px] text-yellow-500/80 font-medium italic">
-                      You can edit this review for 5 minutes
-                    </p>
-                  )}
-                  {review.isFinalized && (
-                    <div className="mt-2 flex items-center gap-1 text-[10px] text-green-500/60 font-medium">
-                      <ShieldCheck size={10} />
-                      Verified Visit
-                    </div>
-                  )}
-                </div>
-              ))
+                  );
+                });
+              })()
             ) : (
               <div className="text-center py-8 text-muted-foreground text-sm bg-muted/20 rounded-2xl">
                 No reviews yet. Be the first!
