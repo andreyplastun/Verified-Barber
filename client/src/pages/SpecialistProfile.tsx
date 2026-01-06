@@ -95,7 +95,9 @@ export default function SpecialistProfile() {
 
           <div className="space-y-4">
             {specialist.reviews?.length ? (
-              specialist.reviews.map((review) => (
+              specialist.reviews
+                .filter(r => r.isFinalized) // ONLY show finalized to public.
+                .map((review) => (
                 <div key={review.id} className="bg-card border border-white/5 rounded-2xl p-4">
                   <div className="flex justify-between mb-2">
                     <span className="font-semibold text-sm">{review.customerName}</span>
@@ -105,23 +107,10 @@ export default function SpecialistProfile() {
                   </div>
                   <RatingStars rating={review.rating} size={12} className="mb-2" />
                   <p className="text-sm text-muted-foreground">{review.comment}</p>
-                  {(!review.isFinalized) && (
-                    <div className="mt-2 flex items-center justify-between">
-                      <div className="flex items-center gap-1 text-[10px] text-yellow-500 font-medium">
-                        <AlertCircle size={10} />
-                        Draft (Hidden)
-                      </div>
-                      <Link href={`/review/${review.bookingId}`}>
-                        <button className="text-[10px] text-primary hover:underline font-bold">Edit Draft</button>
-                      </Link>
-                    </div>
-                  )}
-                  {review.isFinalized && (
-                    <div className="mt-2 flex items-center gap-1 text-[10px] text-green-500 font-medium">
-                      <ShieldCheck size={10} />
-                      Verified Visit
-                    </div>
-                  )}
+                  <div className="mt-2 flex items-center gap-1 text-[10px] text-green-500 font-medium">
+                    <ShieldCheck size={10} />
+                    Verified Visit
+                  </div>
                 </div>
               ))
             ) : (
@@ -138,7 +127,7 @@ export default function SpecialistProfile() {
         <div className="max-w-md mx-auto space-y-3">
           <Link href={`/review/auto?specialistId=${specialist.id}`}>
             <button className="w-full py-3 bg-secondary rounded-xl text-sm font-bold hover-elevate transition-all">
-              Leave a Review
+              Write or Edit Review
             </button>
           </Link>
           <Link href={`/book/${specialist.id}`}>

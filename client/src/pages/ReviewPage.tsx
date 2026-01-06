@@ -49,10 +49,19 @@ export default function ReviewPage() {
         const allBookings = await res.json();
         const autoBooking = allBookings.find((b: any) => 
           b.specialistId === parseInt(specialistIdFromQuery) && 
-          b.status === "completed" && 
-          !b.hasReview
+          b.status === "completed"
         );
         if (!autoBooking) throw new Error("No completed visits found to review");
+        
+        // Check if this booking already has an editable review
+        if (autoBooking.hasReview) {
+          const rRes = await fetch(`${api.reviews.list.path}?specialistId=${autoBooking.specialistId}`);
+          if (rRes.ok) {
+            const reviews = await rRes.json();
+            const review = reviews.find((r: any) => r.bookingId === autoBooking.id);
+            if (review) return { ...autoBooking, review };
+          }
+        }
         return autoBooking;
       }
 
@@ -117,8 +126,8 @@ export default function ReviewPage() {
       }, {
         onSuccess: () => {
           toast({
-            title: "Draft Saved",
-            description: "Your review is saved. You can edit it for 2 hours before it becomes public.",
+            title: "Review Published",
+            description: "Your review is public. You can edit it for the next 5 minutes.",
           });
           setLocation(`/specialist/${booking.specialistId}`);
         },
@@ -183,17 +192,13 @@ export default function ReviewPage() {
     );
   }
 
-  if (booking.hasReview && !booking.review) {
-    return <div className="p-6 text-center">Loading your existing review...</div>;
-  }
-
   const isEditable = !booking.review || (!booking.review.isFinalized && new Date() < new Date(booking.review.editableUntil));
 
   if (booking.review && !isEditable) {
     return (
       <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
          <h1 className="text-2xl font-bold mb-2">Review Finalized</h1>
-         <p className="text-muted-foreground mb-8">This review can no longer be edited as it has been finalized or the editing window has expired.</p>
+         <p className="text-muted-foreground mb-8">The 5-minute editing window has expired. This review can no longer be modified.</p>
          <button 
           onClick={() => setLocation(`/specialist/${booking.specialistId}`)}
           className="px-6 py-3 bg-secondary rounded-xl font-medium"
@@ -221,7 +226,7 @@ export default function ReviewPage() {
         <p className="text-sm text-muted-foreground">
           Booking #{booking.id} • {new Date(booking.appointmentTime).toLocaleDateString()}
         </p>
-        {!booking.review?.isFinalized && booking.review?.editableUntil && (
+        {isEditable && booking.review?.editableUntil && (
           <p className="text-xs text-primary mt-2">
             Editable until: {new Date(booking.review.editableUntil).toLocaleTimeString()}
           </p>
@@ -269,24 +274,8 @@ export default function ReviewPage() {
             disabled={isPending}
             className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           >
-            {isPending ? "Saving..." : booking.review ? "Update Review" : "Save Draft Review"}
+            {isPending ? "Saving..." : booking.review ? "Update Review" : "Publish Review"}
           </button>
-          
-          {booking.review && !booking.review.isFinalized && (
-            <button
-              type="button"
-              onClick={async () => {
-                const res = await fetch(`/api/reviews/${booking.review.id}/finalize`, { method: "POST" });
-                if (res.ok) {
-                  toast({ title: "Review Finalized", description: "Your review is now public and rating updated." });
-                  setLocation(`/specialist/${booking.specialistId}`);
-                }
-              }}
-              className="w-full py-3 rounded-xl bg-green-500 text-white font-bold text-sm hover:bg-green-600 transition-all"
-            >
-              Finalize & Publish Now
-            </button>
-          )}
         </div>
       </form>
     </div>

@@ -126,12 +126,14 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/reviews/:id/finalize", async (req, res) => {
-    const id = Number(req.params.id);
-    const finalized = await storage.finalizeReview(id);
-    if (!finalized) return res.status(404).json({ message: "Review not found" });
-    res.json(finalized);
-  });
+  // Background task to finalize reviews
+  setInterval(async () => {
+    try {
+      await storage.checkAndFinalizeReviews();
+    } catch (err) {
+      console.error("Error finalizing reviews:", err);
+    }
+  }, 30000); // Check every 30 seconds
 
   app.get(api.reviews.list.path, async (req, res) => {
     const id = Number(req.params.id);
