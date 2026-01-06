@@ -1,6 +1,6 @@
 import { specialists, bookings, reviews, type Specialist, type Booking, type Review, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 
 export interface IStorage {
   // Specialists
@@ -13,11 +13,13 @@ export interface IStorage {
   createBooking(booking: CreateBookingRequest): Promise<Booking>;
   getBooking(id: number): Promise<Booking | undefined>;
   getBookings(): Promise<Booking[]>; // Admin/Debug
-  updateBookingStatus(id: number, status: string): Promise<Booking | undefined>;
+  updateBookingStatus(id: number, status: any): Promise<Booking | undefined>;
   markBookingReviewed(id: number): Promise<void>;
 
   // Reviews
-  createReview(review: CreateReviewRequest): Promise<Review>;
+  createReview(review: any): Promise<Review>;
+  updateReview(id: number, rating: number, comment: string): Promise<Review | undefined>;
+  finalizeReview(id: number): Promise<Review | undefined>;
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
 }
 
@@ -40,20 +42,10 @@ export class DatabaseStorage implements IStorage {
     const specialist = await this.getSpecialist(id);
     if (!specialist) return;
 
-    // Incremental average calculation
-    const count = specialist.reviewCount;
-    const currentAvg = specialist.averageRating; // stored as * 10
+    const reviewsList = await db.select()
+      .from(reviews)
+      .where(and(eq(reviews.specialistId, id), eq(reviews.isFinalized, true)));
     
-    // Convert currentAvg back to real, add new, then store back
-    // Or simpler: just re-query all reviews and calculate. 
-    // For scalability, incremental is better, but for MVP, re-calc is safer.
-    const allReviews = await this.getReviewsForSpecialist(id);
-    const total = allReviews.reduce((acc, r) => acc + r.rating, 0) + newRating; // include new one if not in DB yet? 
-    // Wait, createReview calls this *after* inserting review usually? 
-    // Let's assume createReview logic handles the order.
-    
-    // Actually, let's just do a simple re-calc from DB for consistency
-    const reviewsList = await db.select().from(reviews).where(eq(reviews.specialistId, id));
     const newCount = reviewsList.length;
     const newTotal = reviewsList.reduce((acc, r) => acc + r.rating, 0);
     const newAvg = newCount > 0 ? Math.round((newTotal / newCount) * 10) : 0;
@@ -77,7 +69,7 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(bookings).orderBy(desc(bookings.createdAt));
   }
 
-  async updateBookingStatus(id: number, status: string): Promise<Booking | undefined> {
+  async updateBookingStatus(id: number, status: any): Promise<Booking | undefined> {
     const [updated] = await db.update(bookings)
       .set({ status })
       .where(eq(bookings.id, id))
@@ -90,17 +82,52 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReview(review: any): Promise<Review> {
+    const editableWindowHours = 2; // Allow editing for 2 hours
+    const editableUntil = new Date();
+    editableUntil.setHours(editableUntil.getHours() + editableWindowHours);
+
     const [newReview] = await db.insert(reviews).values({
-      bookingId: review.bookingId as number,
-      specialistId: review.specialistId as number,
-      rating: review.rating as number,
-      comment: review.comment as string,
-      customerName: (review.customerName as string) || "Anonymous",
-      isFinalized: (review.isFinalized as boolean) ?? true,
-      finalizedAt: (review.finalizedAt as Date) ?? new Date(),
-      editableUntil: (review.editableUntil as Date) ?? null,
+      bookingId: review.bookingId,
+      specialistId: review.specialistId,
+      rating: review.rating,
+      comment: review.comment,
+      customerName: review.customerName || "Anonymous",
+      isFinalized: false,
+      finalizedAt: null,
+      editableUntil: editableUntil,
     } as any).returning();
     return newReview;
+  }
+
+  async updateReview(id: number, rating: number, comment: string): Promise<Review | undefined> {
+    const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
+    if (!review) return undefined;
+
+    const now = new Date();
+    if (review.isFinalized || (review.editableUntil && now > review.editableUntil)) {
+      throw new Error("Review is finalized or editing window has expired");
+    }
+
+    const [updated] = await db.update(reviews)
+      .set({ rating, comment })
+      .where(eq(reviews.id, id))
+      .returning();
+    return updated;
+  }
+
+  async finalizeReview(id: number): Promise<Review | undefined> {
+    const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
+    if (!review) return undefined;
+
+    const [finalized] = await db.update(reviews)
+      .set({ isFinalized: true, finalizedAt: new Date() })
+      .where(eq(reviews.id, id))
+      .returning();
+
+    if (finalized) {
+      await this.updateSpecialistRating(finalized.specialistId, finalized.rating);
+    }
+    return finalized;
   }
 
   async getReviewsForSpecialist(specialistId: number): Promise<Review[]> {

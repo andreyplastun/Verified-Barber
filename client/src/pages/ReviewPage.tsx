@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useCreateReview } from "@/hooks/use-specialists";
 import { useQuery } from "@tanstack/react-query";
@@ -17,6 +17,31 @@ export default function ReviewPage() {
   const { data: booking, isLoading: isLoadingBooking, error: bookingError } = useQuery({
     queryKey: [api.bookings.list.path, params?.bookingId, specialistIdFromQuery],
     queryFn: async () => {
+      // If we have a specific bookingId (not "auto"), first check if it's already reviewed
+      // and if that review is editable.
+      const bookingIdStr = params?.bookingId;
+      
+      if (bookingIdStr && bookingIdStr !== "auto") {
+        const bId = parseInt(bookingIdStr);
+        const url = buildUrl(api.bookings.get.path, { id: bId });
+        const res = await fetch(url);
+        if (res.ok) {
+          const b = await res.json();
+          // If it has a review, we need the review data to see if it's editable
+          if (b.hasReview) {
+            const rRes = await fetch(`${api.reviews.list.path}?specialistId=${b.specialistId}`);
+            if (rRes.ok) {
+              const reviews = await rRes.json();
+              const review = reviews.find((r: any) => r.bookingId === bId);
+              if (review) {
+                return { ...b, review };
+              }
+            }
+          }
+          return b;
+        }
+      }
+
       if (params?.bookingId === "auto" && specialistIdFromQuery) {
         // Fetch all bookings and find the first completed one for this specialist without a review
         const res = await fetch(api.bookings.list.path);
@@ -31,14 +56,7 @@ export default function ReviewPage() {
         return autoBooking;
       }
 
-      const bookingIdStr = params?.bookingId;
-      if (!bookingIdStr || bookingIdStr === "auto") return null;
-      const bookingId = parseInt(bookingIdStr);
-      
-      const url = buildUrl(api.bookings.get.path, { id: bookingId });
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Booking not found");
-      return await res.json();
+      return null;
     },
     enabled: !!params?.bookingId,
     staleTime: 0
@@ -50,6 +68,16 @@ export default function ReviewPage() {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [hoveredStar, setHoveredStar] = useState(0);
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Initialize form if editing existing review
+  useEffect(() => {
+    if (booking?.review && !isEditing) {
+      setRating(booking.review.rating);
+      setComment(booking.review.comment);
+      setIsEditing(true);
+    }
+  }, [booking]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,27 +92,41 @@ export default function ReviewPage() {
       return;
     }
 
-    createReview({
-      bookingId: booking.id,
-      specialistId: booking.specialistId,
-      rating,
-      comment,
-    }, {
-      onSuccess: () => {
-        toast({
-          title: "Review Submitted",
-          description: "Thank you for your feedback!",
-        });
-        setLocation(`/specialist/${booking.specialistId}`);
-      },
-      onError: (err) => {
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: err.message,
-        });
-      }
-    });
+    if (booking.review) {
+      // Update existing review
+      fetch(`/api/reviews/${booking.review.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, comment }),
+      }).then(async (res) => {
+        if (res.ok) {
+          toast({ title: "Review Updated", description: "Your changes have been saved." });
+          setLocation(`/specialist/${booking.specialistId}`);
+        } else {
+          const err = await res.json();
+          toast({ variant: "destructive", title: "Error", description: err.message });
+        }
+      });
+    } else {
+      // Create new review
+      createReview({
+        bookingId: booking.id,
+        specialistId: booking.specialistId,
+        rating,
+        comment,
+      }, {
+        onSuccess: () => {
+          toast({
+            title: "Draft Saved",
+            description: "Your review is saved. You can edit it for 2 hours before it becomes public.",
+          });
+          setLocation(`/specialist/${booking.specialistId}`);
+        },
+        onError: (err) => {
+          toast({ variant: "destructive", title: "Error", description: err.message });
+        }
+      });
+    }
   };
 
   const bookingIdParam = params?.bookingId;
@@ -141,11 +183,17 @@ export default function ReviewPage() {
     );
   }
 
-  if (booking.hasReview) {
+  if (booking.hasReview && !booking.review) {
+    return <div className="p-6 text-center">Loading your existing review...</div>;
+  }
+
+  const isEditable = !booking.review || (!booking.review.isFinalized && new Date() < new Date(booking.review.editableUntil));
+
+  if (booking.review && !isEditable) {
     return (
       <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
-         <h1 className="text-2xl font-bold mb-2">Already Reviewed</h1>
-         <p className="text-muted-foreground mb-8">You have already submitted a review for this visit.</p>
+         <h1 className="text-2xl font-bold mb-2">Review Finalized</h1>
+         <p className="text-muted-foreground mb-8">This review can no longer be edited as it has been finalized or the editing window has expired.</p>
          <button 
           onClick={() => setLocation(`/specialist/${booking.specialistId}`)}
           className="px-6 py-3 bg-secondary rounded-xl font-medium"
@@ -153,7 +201,7 @@ export default function ReviewPage() {
           View Profile
         </button>
       </div>
-    )
+    );
   }
 
   return (
@@ -165,14 +213,19 @@ export default function ReviewPage() {
         >
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-xl font-bold">Write a Review</h1>
+        <h1 className="text-xl font-bold">{booking.review ? "Edit Review" : "Write a Review"}</h1>
       </header>
 
       <div className="mb-8">
-        <h2 className="text-lg font-medium">How was your visit?</h2>
+        <h2 className="text-lg font-medium">{booking.review ? "Update your feedback" : "How was your visit?"}</h2>
         <p className="text-sm text-muted-foreground">
           Booking #{booking.id} • {new Date(booking.appointmentTime).toLocaleDateString()}
         </p>
+        {!booking.review?.isFinalized && booking.review?.editableUntil && (
+          <p className="text-xs text-primary mt-2">
+            Editable until: {new Date(booking.review.editableUntil).toLocaleTimeString()}
+          </p>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8 max-w-md mx-auto">
@@ -210,13 +263,31 @@ export default function ReviewPage() {
           />
         </div>
 
-        <button
-          type="submit"
-          disabled={isPending}
-          className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-        >
-          {isPending ? "Submitting..." : "Submit Verified Review"}
-        </button>
+        <div className="space-y-3">
+          <button
+            type="submit"
+            disabled={isPending}
+            className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          >
+            {isPending ? "Saving..." : booking.review ? "Update Review" : "Save Draft Review"}
+          </button>
+          
+          {booking.review && !booking.review.isFinalized && (
+            <button
+              type="button"
+              onClick={async () => {
+                const res = await fetch(`/api/reviews/${booking.review.id}/finalize`, { method: "POST" });
+                if (res.ok) {
+                  toast({ title: "Review Finalized", description: "Your review is now public and rating updated." });
+                  setLocation(`/specialist/${booking.specialistId}`);
+                }
+              }}
+              className="w-full py-3 rounded-xl bg-green-500 text-white font-bold text-sm hover:bg-green-600 transition-all"
+            >
+              Finalize & Publish Now
+            </button>
+          )}
+        </div>
       </form>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useRoute, Link } from "wouter";
 import { useSpecialist } from "@/hooks/use-specialists";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, Share2, ShieldCheck, MapPin, Calendar } from "lucide-react";
+import { ChevronLeft, Share2, ShieldCheck, MapPin, Calendar, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 
@@ -105,10 +105,23 @@ export default function SpecialistProfile() {
                   </div>
                   <RatingStars rating={review.rating} size={12} className="mb-2" />
                   <p className="text-sm text-muted-foreground">{review.comment}</p>
-                  <div className="mt-2 flex items-center gap-1 text-[10px] text-green-500 font-medium">
-                    <ShieldCheck size={10} />
-                    Verified Visit
-                  </div>
+                  {(!review.isFinalized) && (
+                    <div className="mt-2 flex items-center justify-between">
+                      <div className="flex items-center gap-1 text-[10px] text-yellow-500 font-medium">
+                        <AlertCircle size={10} />
+                        Draft (Hidden)
+                      </div>
+                      <Link href={`/review/${review.bookingId}`}>
+                        <button className="text-[10px] text-primary hover:underline font-bold">Edit Draft</button>
+                      </Link>
+                    </div>
+                  )}
+                  {review.isFinalized && (
+                    <div className="mt-2 flex items-center gap-1 text-[10px] text-green-500 font-medium">
+                      <ShieldCheck size={10} />
+                      Verified Visit
+                    </div>
+                  )}
                 </div>
               ))
             ) : (

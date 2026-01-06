@@ -90,22 +90,20 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Booking does not match specialist" });
       }
 
-      // Create review
+      // Create review as non-finalized
       const review = await storage.createReview({
         bookingId: input.bookingId,
         specialistId: input.specialistId,
         rating: input.rating,
         comment: input.comment,
         customerName: (booking as any).customerName ?? "Anonymous",
-        isFinalized: true,
-        finalizedAt: new Date(),
-      } as any);
+      });
       
       // Mark booking as reviewed
       await storage.markBookingReviewed(booking.id);
       
-      // Update specialist rating
-      await storage.updateSpecialistRating(input.specialistId, input.rating);
+      // Specialist rating is NOT updated here anymore, 
+      // it happens during storage.finalizeReview() or we don't call it yet
 
       res.status(201).json(review);
     } catch (err) {
@@ -114,6 +112,25 @@ export async function registerRoutes(
       }
       throw err;
     }
+  });
+
+  app.patch("/api/reviews/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const { rating, comment } = req.body;
+      const updated = await storage.updateReview(id, rating, comment);
+      if (!updated) return res.status(404).json({ message: "Review not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(403).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/reviews/:id/finalize", async (req, res) => {
+    const id = Number(req.params.id);
+    const finalized = await storage.finalizeReview(id);
+    if (!finalized) return res.status(404).json({ message: "Review not found" });
+    res.json(finalized);
   });
 
   app.get(api.reviews.list.path, async (req, res) => {
