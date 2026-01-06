@@ -15,6 +15,15 @@ export default function SpecialistProfile() {
   }
 
   const rating = specialist.averageRating / 10;
+  const reviewCount = specialist.reviewCount;
+
+  const getTrustConfidence = (count: number) => {
+    if (count >= 10) return { label: "High", color: "text-green-500 bg-green-500/10 border-green-500/20" };
+    if (count >= 3) return { label: "Medium", color: "text-blue-500 bg-blue-500/10 border-blue-500/20" };
+    return { label: "Low", color: "text-yellow-500 bg-yellow-500/10 border-yellow-500/20" };
+  };
+
+  const confidence = getTrustConfidence(reviewCount);
 
   return (
     <div className="min-h-screen bg-background pb-32">
@@ -54,14 +63,21 @@ export default function SpecialistProfile() {
               <p className="text-primary font-medium">{specialist.specialty}</p>
             </div>
             <div className="flex flex-col items-end">
-              <div className="flex items-center bg-yellow-500/10 px-2 py-1 rounded-lg border border-yellow-500/20">
-                <span className="font-bold text-yellow-500 mr-1">{rating.toFixed(1)}</span>
-                <RatingStars rating={rating} size={12} className="hidden sm:flex" />
+              <div className="flex items-center bg-primary/10 px-2 py-1 rounded-lg border border-primary/20">
+                <ShieldCheck size={14} className="text-primary mr-1" />
+                <span className="font-bold text-primary text-lg">{rating.toFixed(1)}</span>
               </div>
-              <span className="text-xs text-muted-foreground mt-1 text-right">
-                {specialist.reviewCount} reviews
-              </span>
+              <div className={`mt-1 px-2 py-0.5 rounded text-[10px] font-bold border ${confidence.color}`}>
+                {confidence.label} Confidence
+              </div>
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-col gap-1">
+            <p className="text-sm font-semibold">Based on {reviewCount} verified visits</p>
+            <p className="text-xs text-muted-foreground italic">
+              Ratings are based only on completed appointments.
+            </p>
           </div>
 
           <p className="mt-4 text-muted-foreground leading-relaxed text-sm">
