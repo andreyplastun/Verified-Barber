@@ -81,8 +81,8 @@ export class DatabaseStorage implements IStorage {
 
   async createReview(review: any): Promise<Review> {
     const editableWindowMinutes = 5; // Exactly 5 minutes
-    const editableUntil = new Date();
-    editableUntil.setMinutes(editableUntil.getMinutes() + editableWindowMinutes);
+    const now = new Date();
+    const editableUntil = new Date(now.getTime() + editableWindowMinutes * 60000);
 
     const [newReview] = await db.insert(reviews).values({
       bookingId: review.bookingId,
