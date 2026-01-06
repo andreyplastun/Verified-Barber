@@ -18,9 +18,21 @@ export default function SpecialistProfile() {
   const reviewCount = specialist.reviewCount;
 
   const getTrustConfidence = (count: number) => {
-    if (count >= 10) return { label: "High", color: "text-green-500 bg-green-500/10 border-green-500/20" };
-    if (count >= 3) return { label: "Medium", color: "text-blue-500 bg-blue-500/10 border-blue-500/20" };
-    return { label: "Low", color: "text-yellow-500 bg-yellow-500/10 border-yellow-500/20" };
+    if (count >= 10) return { 
+      label: "High", 
+      color: "text-green-500 bg-green-500/10 border-green-500/20",
+      description: "Rating is highly reliable"
+    };
+    if (count >= 3) return { 
+      label: "Medium", 
+      color: "text-blue-500 bg-blue-500/10 border-blue-500/20",
+      description: "Rating is stabilizing as more visits are completed"
+    };
+    return { 
+      label: "Low", 
+      color: "text-yellow-500 bg-yellow-500/10 border-yellow-500/20",
+      description: "Based on a small number of verified visits"
+    };
   };
 
   const confidence = getTrustConfidence(reviewCount);
@@ -75,7 +87,10 @@ export default function SpecialistProfile() {
 
           <div className="mt-4 flex flex-col gap-1">
             <p className="text-sm font-semibold">Based on {reviewCount} verified visits</p>
-            <p className="text-xs text-muted-foreground italic">
+            <p className="text-[11px] text-muted-foreground italic leading-tight">
+              {confidence.description}
+            </p>
+            <p className="text-xs text-muted-foreground italic mt-1">
               Ratings are based only on completed appointments.
             </p>
           </div>
