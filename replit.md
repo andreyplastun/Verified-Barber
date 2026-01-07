@@ -35,13 +35,24 @@ Preferred communication style: Simple, everyday language.
 - **Storage Abstraction**: `server/storage.ts` implements an `IStorage` interface, allowing database operations to be easily swapped or mocked
 - **API Contract**: Routes are defined declaratively in `shared/routes.ts` with path patterns, HTTP methods, input schemas, and response types
 
+### Authentication System
+- **Auth Provider**: Supabase Auth for email/password authentication
+- **User Roles**: `client` (default) and `specialist`
+- **Flow**: 
+  1. Users sign up/login via modal in bottom navigation
+  2. User records stored in `users` table with Supabase user ID
+  3. After login, role fetched from backend and redirect based on role
+  4. Specialists see `/specialist-dashboard`, clients see specialist list
+- **Security**: Users always created as `client` role; role changes require admin key (SESSION_SECRET)
+- **Files**: `client/src/lib/auth.ts`, `client/src/lib/users.ts`, `client/src/contexts/AuthContext.tsx`
+
 ### Application Flow
-1. Users browse specialists on the home page
+1. Users browse specialists on the home page (or login via bottom nav)
 2. Clicking a specialist shows their profile with reviews and ratings
 3. Users can book appointments via a form
 4. Admin dashboard allows marking bookings as "completed"
 5. Completed bookings unlock the ability to submit a verified review
-6. Reviews update the specialist's average rating
+6. Reviews update the specialist's average rating (only after 5-min finalization)
 
 ## External Dependencies
 
