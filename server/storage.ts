@@ -1,8 +1,14 @@
-import { specialists, bookings, reviews, type Specialist, type Booking, type Review, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, type Specialist, type Booking, type Review, type User, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, lt } from "drizzle-orm";
 
 export interface IStorage {
+  // Users
+  createUser(user: { id: string; email: string; role?: string; specialistId?: number }): Promise<User>;
+  getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
+  updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined>;
+
   // Specialists
   getSpecialists(): Promise<Specialist[]>;
   getSpecialist(id: number): Promise<Specialist | undefined>;
@@ -25,6 +31,38 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Users
+  async createUser(user: { id: string; email: string; role?: string; specialistId?: number }): Promise<User> {
+    const [newUser] = await db.insert(users).values({
+      id: user.id,
+      email: user.email,
+      role: (user.role as "client" | "specialist") || "client",
+      specialistId: user.specialistId || null,
+    }).returning();
+    return newUser;
+  }
+
+  async getUser(id: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
+    return user;
+  }
+
+  async updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined> {
+    const [updated] = await db.update(users)
+      .set({ 
+        role: role as "client" | "specialist", 
+        specialistId: specialistId || null 
+      })
+      .where(eq(users.id, id))
+      .returning();
+    return updated;
+  }
+
   async getSpecialists(): Promise<Specialist[]> {
     return await db.select().from(specialists);
   }

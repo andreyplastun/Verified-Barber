@@ -9,16 +9,24 @@ export async function signUp(email: string, password: string) {
   if (error) throw error
 
   if (data.user) {
-    const { error: insertError } = await supabase
-      .from('users')
-      .insert({
-        id: data.user.id,
-        email: data.user.email,
-        role: 'client',
+    // Create user record via backend API
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: data.user.id,
+          email: data.user.email,
+          role: 'client',
+        }),
       })
-
-    if (insertError) {
-      console.error('Failed to create user record:', insertError)
+      
+      if (!res.ok) {
+        const err = await res.json()
+        console.error('Failed to create user record:', err)
+      }
+    } catch (err) {
+      console.error('Failed to create user record:', err)
     }
   }
 

@@ -10,6 +10,84 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // Users API - Input validation schemas
+  const createUserSchema = z.object({
+    id: z.string().uuid(),
+    email: z.string().email(),
+  });
+
+  const updateRoleSchema = z.object({
+    role: z.enum(["client", "specialist"]),
+    specialistId: z.number().int().positive().optional(),
+  });
+
+  // Create user - ALWAYS creates as 'client' role (no privilege escalation)
+  app.post("/api/users", async (req, res) => {
+    try {
+      const parsed = createUserSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+      
+      const { id, email } = parsed.data;
+      
+      // Check if user already exists
+      const existing = await storage.getUser(id);
+      if (existing) {
+        return res.json(existing);
+      }
+      
+      // Force role to 'client' on creation - cannot self-assign specialist role
+      const user = await storage.createUser({ id, email, role: "client" });
+      res.status(201).json(user);
+    } catch (err: any) {
+      console.error("Error creating user:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/users/:id", async (req, res) => {
+    const user = await storage.getUser(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res.json(user);
+  });
+
+  // Admin-only endpoint for role changes (protected by admin key for MVP)
+  app.patch("/api/users/:id/role", async (req, res) => {
+    try {
+      // Simple admin key check for MVP - in production use proper auth
+      const adminKey = req.headers["x-admin-key"];
+      if (adminKey !== process.env.SESSION_SECRET) {
+        return res.status(403).json({ message: "Forbidden: Admin access required" });
+      }
+
+      const parsed = updateRoleSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+
+      const { role, specialistId } = parsed.data;
+
+      // Validate specialist assignment
+      if (role === "specialist" && specialistId) {
+        const specialist = await storage.getSpecialist(specialistId);
+        if (!specialist) {
+          return res.status(400).json({ message: "Invalid specialist ID" });
+        }
+      }
+
+      const updated = await storage.updateUserRole(req.params.id, role, specialistId);
+      if (!updated) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Specialists
   app.get(api.specialists.list.path, async (req, res) => {
     const specialists = await storage.getSpecialists();

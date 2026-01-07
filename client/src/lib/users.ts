@@ -1,5 +1,3 @@
-import { supabase } from './supabase'
-
 export type UserRole = 'client' | 'specialist'
 
 export interface AppUser {
@@ -11,18 +9,16 @@ export interface AppUser {
 }
 
 export async function getUserRole(userId: string): Promise<UserRole> {
-  const { data, error } = await supabase
-    .from('users')
-    .select('role')
-    .eq('id', userId)
-    .single()
-
-  if (error || !data) {
-    console.error('Failed to get user role:', error)
+  try {
+    const res = await fetch(`/api/users/${userId}`)
+    if (!res.ok) return 'client'
+    
+    const data = await res.json()
+    return data.role as UserRole
+  } catch (err) {
+    console.error('Failed to get user role:', err)
     return 'client'
   }
-
-  return data.role as UserRole
 }
 
 export async function isSpecialist(userId: string): Promise<boolean> {
@@ -31,39 +27,35 @@ export async function isSpecialist(userId: string): Promise<boolean> {
 }
 
 export async function getAppUser(userId: string): Promise<AppUser | null> {
-  const { data, error } = await supabase
-    .from('users')
-    .select('*')
-    .eq('id', userId)
-    .single()
-
-  if (error || !data) {
-    console.error('Failed to get user:', error)
+  try {
+    const res = await fetch(`/api/users/${userId}`)
+    if (!res.ok) return null
+    
+    const data = await res.json()
+    return {
+      id: data.id,
+      email: data.email,
+      role: data.role as UserRole,
+      specialistId: data.specialistId,
+      createdAt: data.createdAt,
+    }
+  } catch (err) {
+    console.error('Failed to get user:', err)
     return null
-  }
-
-  return {
-    id: data.id,
-    email: data.email,
-    role: data.role as UserRole,
-    specialistId: data.specialist_id,
-    createdAt: data.created_at,
   }
 }
 
 export async function updateUserRole(userId: string, role: UserRole, specialistId?: number): Promise<boolean> {
-  const { error } = await supabase
-    .from('users')
-    .update({ 
-      role, 
-      specialist_id: specialistId || null 
+  try {
+    const res = await fetch(`/api/users/${userId}/role`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, specialistId }),
     })
-    .eq('id', userId)
-
-  if (error) {
-    console.error('Failed to update user role:', error)
+    
+    return res.ok
+  } catch (err) {
+    console.error('Failed to update user role:', err)
     return false
   }
-
-  return true
 }
