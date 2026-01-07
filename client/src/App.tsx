@@ -13,6 +13,21 @@ import BookingPage from "@/pages/BookingPage";
 import ReviewPage from "@/pages/ReviewPage";
 import AdminDashboard from "@/pages/AdminDashboard";
 import SpecialistDashboard from "@/pages/SpecialistDashboard";
+import LoginPage from "@/pages/LoginPage";
+
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-background animate-pulse" />;
+  }
+
+  if (!user) {
+    return <Redirect to="/login" />;
+  }
+
+  return <>{children}</>;
+}
 
 function ProtectedSpecialistRoute() {
   const { isSpecialist, isLoading, user } = useAuth();
@@ -21,7 +36,11 @@ function ProtectedSpecialistRoute() {
     return <div className="min-h-screen bg-background animate-pulse" />;
   }
 
-  if (!user || !isSpecialist) {
+  if (!user) {
+    return <Redirect to="/login" />;
+  }
+
+  if (!isSpecialist) {
     return <Redirect to="/" />;
   }
 
@@ -42,6 +61,23 @@ function HomeRoute() {
   return <SpecialistList />;
 }
 
+function LoginRoute() {
+  const { user, isSpecialist, isLoading } = useAuth();
+
+  if (isLoading) {
+    return <div className="min-h-screen bg-background animate-pulse" />;
+  }
+
+  if (user) {
+    if (isSpecialist) {
+      return <Redirect to="/specialist-dashboard" />;
+    }
+    return <Redirect to="/" />;
+  }
+
+  return <LoginPage />;
+}
+
 function Router() {
   const { isLoading } = useAuth();
 
@@ -51,12 +87,14 @@ function Router() {
 
   return (
     <Switch>
+      <Route path="/login" component={LoginRoute} />
+      <Route path="/signup" component={LoginRoute} />
       <Route path="/" component={HomeRoute} />
       <Route path="/specialist-dashboard" component={ProtectedSpecialistRoute} />
-      <Route path="/specialist/:id" component={SpecialistProfile} />
-      <Route path="/book/:id" component={BookingPage} />
-      <Route path="/review/:bookingId" component={ReviewPage} />
-      <Route path="/admin" component={AdminDashboard} />
+      <Route path="/specialist/:id">{() => <RequireAuth><SpecialistProfile /></RequireAuth>}</Route>
+      <Route path="/book/:id">{() => <RequireAuth><BookingPage /></RequireAuth>}</Route>
+      <Route path="/review/:bookingId">{() => <RequireAuth><ReviewPage /></RequireAuth>}</Route>
+      <Route path="/admin">{() => <RequireAuth><AdminDashboard /></RequireAuth>}</Route>
       <Route component={NotFound} />
     </Switch>
   );
