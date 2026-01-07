@@ -144,11 +144,9 @@ export default function SpecialistProfile() {
                     <div key={review.id} className="bg-card border border-white/5 rounded-2xl p-4">
                       <div className="flex justify-between mb-2">
                         <div className="flex flex-col">
-                          <span className="font-semibold text-sm">
-                            {review.isPrivate ? "Verified client" : review.customerName}
-                          </span>
+                          <span className="font-semibold text-sm">Verified client</span>
                           <span className="text-[10px] text-muted-foreground italic">
-                            {review.isPrivate ? "Verified client · chose to stay private" : "Verified client"}
+                            Verified client
                           </span>
                           <span className="text-[10px] text-muted-foreground italic">
                             {new Date(review.createdAt || "").toLocaleDateString()}
