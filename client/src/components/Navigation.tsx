@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { signOut, getCurrentUserWithRole } from "@/lib/auth";
 import { AuthModal } from "./auth/AuthModal";
+import { queryClient } from "@/lib/queryClient";
 
 export function Navigation() {
   const [location, setLocation] = useLocation();
@@ -13,6 +14,7 @@ export function Navigation() {
 
   const handleLogout = async () => {
     await signOut();
+    queryClient.clear();
     setLocation("/");
   };
 

@@ -80,8 +80,9 @@ export async function signIn(email: string, password: string) {
 }
 
 export async function signOut() {
-  const { error } = await supabase.auth.signOut()
-  if (error) throw error
+  await supabase.auth.signOut()
+  localStorage.clear()
+  sessionStorage.clear()
 }
 
 export async function getCurrentUser() {
