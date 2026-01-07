@@ -40,6 +40,28 @@ export async function signIn(email: string, password: string) {
   })
 
   if (error) throw error
+
+  if (data.user) {
+    // Ensure user record exists in backend (may have been created via signup)
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: data.user.id,
+          email: data.user.email,
+        }),
+      })
+      
+      if (!res.ok) {
+        const err = await res.json()
+        console.error('Failed to ensure user record:', err)
+      }
+    } catch (err) {
+      console.error('Failed to ensure user record:', err)
+    }
+  }
+
   return data
 }
 

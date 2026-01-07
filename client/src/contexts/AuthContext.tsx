@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { getCurrentUser, onAuthStateChange } from '@/lib/auth';
 import { getAppUser, type AppUser, type UserRole } from '@/lib/users';
 
@@ -8,7 +8,7 @@ interface AuthContextType {
   isLoading: boolean;
   isSpecialist: boolean;
   role: UserRole;
-  refetchUser: () => Promise<void>;
+  refetchUser: () => Promise<AppUser | null>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -17,7 +17,7 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   isSpecialist: false,
   role: 'client',
-  refetchUser: async () => {},
+  refetchUser: async () => null,
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -29,28 +29,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (authUsr) {
       const appUser = await getAppUser(authUsr.id);
       setUser(appUser);
+      return appUser;
     } else {
       setUser(null);
+      return null;
     }
-    setIsLoading(false);
   };
 
-  const refetchUser = async () => {
+  const refetchUser = useCallback(async () => {
     if (authUser) {
       const appUser = await getAppUser(authUser.id);
       setUser(appUser);
+      return appUser;
     }
-  };
+    return null;
+  }, [authUser]);
 
   useEffect(() => {
     getCurrentUser().then((u) => {
       setAuthUser(u);
-      fetchUser(u);
+      fetchUser(u).then(() => setIsLoading(false));
     });
 
     const { data: { subscription } } = onAuthStateChange((u) => {
       setAuthUser(u);
-      fetchUser(u);
+      fetchUser(u).then(() => setIsLoading(false));
     });
 
     return () => subscription.unsubscribe();
