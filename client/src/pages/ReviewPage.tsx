@@ -76,6 +76,7 @@ export default function ReviewPage() {
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
+  const [isPrivate, setIsPrivate] = useState(true);
   const [hoveredStar, setHoveredStar] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -84,6 +85,7 @@ export default function ReviewPage() {
     if (booking?.review && !isEditing) {
       setRating(booking.review.rating);
       setComment(booking.review.comment);
+      setIsPrivate(booking.review.isPrivate ?? true);
       setIsEditing(true);
     }
   }, [booking]);
@@ -106,7 +108,7 @@ export default function ReviewPage() {
       fetch(`/api/reviews/${booking.review.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating, comment }),
+        body: JSON.stringify({ rating, comment, isPrivate }),
       }).then(async (res) => {
         if (res.ok) {
           toast({ title: "Review Updated", description: "Your changes have been saved." });
@@ -123,6 +125,7 @@ export default function ReviewPage() {
         specialistId: booking.specialistId,
         rating,
         comment,
+        isPrivate,
       }, {
         onSuccess: () => {
           toast({
@@ -234,6 +237,31 @@ export default function ReviewPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8 max-w-md mx-auto">
+        {/* Privacy Toggle */}
+        <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+          <div 
+            onClick={() => setIsPrivate(true)}
+            className={`p-3 rounded-lg cursor-pointer transition-all border-2 ${isPrivate ? 'border-primary bg-primary/5' : 'border-transparent'}`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold text-sm">Private (default)</span>
+              {isPrivate && <div className="w-2 h-2 rounded-full bg-primary" />}
+            </div>
+            <p className="text-xs text-muted-foreground italic">Your name will not be shown to the specialist</p>
+          </div>
+
+          <div 
+            onClick={() => setIsPrivate(false)}
+            className={`p-3 rounded-lg cursor-pointer transition-all border-2 ${!isPrivate ? 'border-primary bg-primary/5' : 'border-transparent'}`}
+          >
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-bold text-sm">Public</span>
+              {!isPrivate && <div className="w-2 h-2 rounded-full bg-primary" />}
+            </div>
+            <p className="text-xs text-muted-foreground italic">Your name may be visible to others</p>
+          </div>
+        </div>
+
         {/* Star Rating */}
         <div className="flex justify-center gap-2">
           {[1, 2, 3, 4, 5].map((star) => (

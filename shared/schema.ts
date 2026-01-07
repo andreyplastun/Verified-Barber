@@ -36,6 +36,7 @@ export const reviews = pgTable("reviews", {
   comment: text("comment").notNull(),
   customerName: text("customer_name").notNull(), // Snapshot from booking
   isFinalized: boolean("is_finalized").default(false).notNull(),
+  isPrivate: boolean("is_private").default(true).notNull(),
   finalizedAt: timestamp("finalized_at"),
   editableUntil: timestamp("editable_until"),
   createdAt: timestamp("created_at").defaultNow(),

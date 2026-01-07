@@ -91,6 +91,7 @@ export class DatabaseStorage implements IStorage {
       comment: review.comment,
       customerName: review.customerName || "Anonymous",
       isFinalized: false,
+      isPrivate: review.isPrivate ?? true,
       finalizedAt: null,
       editableUntil: editableUntil,
     } as any).returning();
