@@ -7,7 +7,7 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import NotFound from "@/pages/not-found";
 
 // Pages
-import SpecialistList from "@/pages/SpecialistList";
+import SpecialistList from "@/pages/index";
 import SpecialistProfile from "@/pages/SpecialistProfile";
 import BookingPage from "@/pages/BookingPage";
 import ReviewPage from "@/pages/ReviewPage";
