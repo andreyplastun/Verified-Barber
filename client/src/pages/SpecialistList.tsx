@@ -1,20 +1,24 @@
 import { useSpecialists } from "@/hooks/use-specialists";
 import { RatingStars } from "@/components/RatingStars";
-import { Link, Redirect } from "wouter";
+import { Link, useLocation } from "wouter";
 import { MapPin, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
+import { useEffect } from "react";
 
 export default function SpecialistList() {
   const { data: specialists, isLoading } = useSpecialists();
-  const { currentUser, loading } = useAuth();
+  const { user, role, loading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!loading && role === 'specialist') {
+      setLocation('/specialist-dashboard');
+    }
+  }, [loading, role, setLocation]);
 
   if (loading) {
-    return <div className="min-h-screen bg-background animate-pulse" />;
-  }
-
-  if (currentUser?.role === 'specialist') {
-    return <Redirect to="/specialist-dashboard" />;
+    return <div style={{ color: 'white', padding: 20 }}>Loading...</div>;
   }
 
   if (isLoading) {
