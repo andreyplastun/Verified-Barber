@@ -7,13 +7,13 @@ import { useAuth } from "@/contexts/AuthContext";
 
 export default function SpecialistList() {
   const { data: specialists, isLoading } = useSpecialists();
-  const { user, isLoading: authLoading } = useAuth();
+  const { currentUser, loading } = useAuth();
 
-  if (authLoading) {
+  if (loading) {
     return <div className="min-h-screen bg-background animate-pulse" />;
   }
 
-  if (user?.role === 'specialist') {
+  if (currentUser?.role === 'specialist') {
     return <Redirect to="/specialist-dashboard" />;
   }
 
