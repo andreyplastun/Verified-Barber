@@ -89,6 +89,27 @@ export async function getCurrentUser() {
   return user
 }
 
+export async function getCurrentUserWithRole(): Promise<{ id: string; email: string; role: 'client' | 'specialist' } | null> {
+  const { data: { user } } = await supabase.auth.getUser()
+  
+  if (!user) return null
+
+  try {
+    const res = await fetch(`/api/users/${user.id}`)
+    if (!res.ok) return null
+    
+    const data = await res.json()
+    return {
+      id: data.id,
+      email: data.email,
+      role: data.role as 'client' | 'specialist',
+    }
+  } catch (err) {
+    console.error('Failed to get user with role:', err)
+    return null
+  }
+}
+
 export function onAuthStateChange(callback: (user: any) => void) {
   return supabase.auth.onAuthStateChange((event, session) => {
     callback(session?.user || null)

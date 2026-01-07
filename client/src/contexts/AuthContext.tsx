@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { getCurrentUser, onAuthStateChange } from '@/lib/auth';
-import { getAppUser, type AppUser, type UserRole } from '@/lib/users';
+import { getCurrentUser, getCurrentUserWithRole, onAuthStateChange } from '@/lib/auth';
+import { type AppUser, type UserRole } from '@/lib/users';
 
 interface AuthContextType {
   user: AppUser | null;
@@ -25,11 +25,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchUser = async (authUsr: any) => {
-    if (authUsr) {
-      const appUser = await getAppUser(authUsr.id);
-      setUser(appUser);
-      return appUser;
+  const fetchUserWithRole = async () => {
+    const userWithRole = await getCurrentUserWithRole();
+    if (userWithRole) {
+      setUser({
+        id: userWithRole.id,
+        email: userWithRole.email,
+        role: userWithRole.role,
+        specialistId: null,
+        createdAt: '',
+      });
+      return userWithRole;
     } else {
       setUser(null);
       return null;
@@ -37,23 +43,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const refetchUser = useCallback(async () => {
-    if (authUser) {
-      const appUser = await getAppUser(authUser.id);
-      setUser(appUser);
-      return appUser;
+    const userWithRole = await getCurrentUserWithRole();
+    if (userWithRole) {
+      setUser({
+        id: userWithRole.id,
+        email: userWithRole.email,
+        role: userWithRole.role,
+        specialistId: null,
+        createdAt: '',
+      });
+      return {
+        id: userWithRole.id,
+        email: userWithRole.email,
+        role: userWithRole.role,
+        specialistId: null,
+        createdAt: '',
+      };
     }
     return null;
-  }, [authUser]);
+  }, []);
 
   useEffect(() => {
     getCurrentUser().then((u) => {
       setAuthUser(u);
-      fetchUser(u).then(() => setIsLoading(false));
+      fetchUserWithRole().then(() => setIsLoading(false));
     });
 
     const { data: { subscription } } = onAuthStateChange((u) => {
       setAuthUser(u);
-      fetchUser(u).then(() => setIsLoading(false));
+      if (u) {
+        fetchUserWithRole().then(() => setIsLoading(false));
+      } else {
+        setUser(null);
+        setIsLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();

@@ -3,12 +3,12 @@ import { Link, useLocation } from "wouter";
 import { Home, ShieldCheck, LogIn, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
-import { signOut } from "@/lib/auth";
+import { signOut, getCurrentUserWithRole } from "@/lib/auth";
 import { AuthModal } from "./auth/AuthModal";
 
 export function Navigation() {
   const [location, setLocation] = useLocation();
-  const { user, authUser, refetchUser } = useAuth();
+  const { authUser, refetchUser } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -17,8 +17,9 @@ export function Navigation() {
   };
 
   const handleLoginSuccess = async () => {
-    const appUser = await refetchUser();
-    if (appUser?.role === 'specialist') {
+    await refetchUser();
+    const userWithRole = await getCurrentUserWithRole();
+    if (userWithRole?.role === 'specialist') {
       setLocation('/specialist-dashboard');
     } else {
       setLocation('/');
