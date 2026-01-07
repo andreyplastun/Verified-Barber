@@ -15,14 +15,22 @@ import AdminDashboard from "@/pages/AdminDashboard";
 import SpecialistDashboard from "@/pages/SpecialistDashboard";
 import LoginPage from "@/pages/LoginPage";
 
-function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, isLoading } = useAuth();
+function Spinner() {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+    </div>
+  );
+}
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-background animate-pulse" />;
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const { currentUser, loading } = useAuth();
+
+  if (loading) {
+    return <Spinner />;
   }
 
-  if (!user) {
+  if (!currentUser) {
     return <Redirect to="/login" />;
   }
 
@@ -30,17 +38,17 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function ProtectedSpecialistRoute() {
-  const { isSpecialist, isLoading, user } = useAuth();
+  const { currentUser, loading } = useAuth();
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-background animate-pulse" />;
+  if (loading) {
+    return <Spinner />;
   }
 
-  if (!user) {
+  if (!currentUser) {
     return <Redirect to="/login" />;
   }
 
-  if (!isSpecialist) {
+  if (currentUser.role !== 'specialist') {
     return <Redirect to="/" />;
   }
 
@@ -48,13 +56,13 @@ function ProtectedSpecialistRoute() {
 }
 
 function HomeRoute() {
-  const { isSpecialist, isLoading, user } = useAuth();
+  const { currentUser, loading } = useAuth();
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-background animate-pulse" />;
+  if (loading) {
+    return <Spinner />;
   }
 
-  if (user && isSpecialist) {
+  if (currentUser?.role === 'specialist') {
     return <Redirect to="/specialist-dashboard" />;
   }
 
@@ -62,14 +70,14 @@ function HomeRoute() {
 }
 
 function LoginRoute() {
-  const { user, isSpecialist, isLoading } = useAuth();
+  const { currentUser, loading } = useAuth();
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-background animate-pulse" />;
+  if (loading) {
+    return <Spinner />;
   }
 
-  if (user) {
-    if (isSpecialist) {
+  if (currentUser) {
+    if (currentUser.role === 'specialist') {
       return <Redirect to="/specialist-dashboard" />;
     }
     return <Redirect to="/" />;
@@ -79,10 +87,10 @@ function LoginRoute() {
 }
 
 function Router() {
-  const { isLoading } = useAuth();
+  const { loading } = useAuth();
 
-  if (isLoading) {
-    return <div className="min-h-screen bg-background animate-pulse" />;
+  if (loading) {
+    return <Spinner />;
   }
 
   return (
