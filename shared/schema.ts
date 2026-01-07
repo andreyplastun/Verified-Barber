@@ -1,9 +1,18 @@
-import { pgTable, text, serial, integer, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 
 // === TABLE DEFINITIONS ===
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  role: text("role", { enum: ["client", "specialist"] }).default("client").notNull(),
+  specialistId: integer("specialist_id"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
 
 export const specialists = pgTable("specialists", {
   id: serial("id").primaryKey(),
@@ -43,9 +52,17 @@ export const reviews = pgTable("reviews", {
 });
 
 // === RELATIONS ===
-export const specialistsRelations = relations(specialists, ({ many }) => ({
+export const usersRelations = relations(users, ({ one }) => ({
+  specialist: one(specialists, {
+    fields: [users.specialistId],
+    references: [specialists.id],
+  }),
+}));
+
+export const specialistsRelations = relations(specialists, ({ many, one }) => ({
   bookings: many(bookings),
   reviews: many(reviews),
+  user: one(users),
 }));
 
 export const bookingsRelations = relations(bookings, ({ one }) => ({
@@ -87,8 +104,14 @@ export const insertReviewSchema = createInsertSchema(reviews).omit({
   customerName: true // We'll take this from the booking
 });
 
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+});
+
 // === EXPLICIT API TYPES ===
 
+export type User = typeof users.$inferSelect;
 export type Specialist = typeof specialists.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
 export type Review = typeof reviews.$inferSelect;
