@@ -1,11 +1,21 @@
 import { useSpecialists } from "@/hooks/use-specialists";
 import { RatingStars } from "@/components/RatingStars";
-import { Link } from "wouter";
+import { Link, Redirect } from "wouter";
 import { MapPin, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function SpecialistList() {
   const { data: specialists, isLoading } = useSpecialists();
+  const { user, isLoading: authLoading } = useAuth();
+
+  if (authLoading) {
+    return <div className="min-h-screen bg-background animate-pulse" />;
+  }
+
+  if (user?.role === 'specialist') {
+    return <Redirect to="/specialist-dashboard" />;
+  }
 
   if (isLoading) {
     return (
