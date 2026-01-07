@@ -4,6 +4,9 @@ export async function signUp(email: string, password: string) {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
+    options: {
+      emailRedirectTo: undefined,
+    },
   })
 
   if (error) throw error
@@ -27,6 +30,17 @@ export async function signUp(email: string, password: string) {
       }
     } catch (err) {
       console.error('Failed to create user record:', err)
+    }
+
+    // Auto sign-in after signup (bypass email confirmation)
+    if (!data.session) {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+      if (signInError) {
+        console.warn('Auto sign-in after signup failed:', signInError.message)
+      }
     }
   }
 
