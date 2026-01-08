@@ -1,6 +1,6 @@
 import { specialists, bookings, reviews, users, type Specialist, type Booking, type Review, type User, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, lt } from "drizzle-orm";
+import { eq, desc, and, lt, asc } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -12,6 +12,7 @@ export interface IStorage {
   // Specialists
   getSpecialists(): Promise<Specialist[]>;
   getSpecialist(id: number): Promise<Specialist | undefined>;
+  getFirstSpecialist(): Promise<Specialist | undefined>;
   createSpecialist(specialist: Omit<Specialist, "id" | "reviewCount" | "averageRating">): Promise<Specialist>;
   updateSpecialistRating(id: number): Promise<void>;
 
@@ -69,6 +70,11 @@ export class DatabaseStorage implements IStorage {
 
   async getSpecialist(id: number): Promise<Specialist | undefined> {
     const [specialist] = await db.select().from(specialists).where(eq(specialists.id, id));
+    return specialist;
+  }
+
+  async getFirstSpecialist(): Promise<Specialist | undefined> {
+    const [specialist] = await db.select().from(specialists).orderBy(asc(specialists.id)).limit(1);
     return specialist;
   }
 

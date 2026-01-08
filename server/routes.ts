@@ -53,19 +53,17 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
 
-      if (user.role === "specialist" && !user.specialistId) {
-        const emailPrefix = user.email.split("@")[0] || "Specialist";
-        const displayName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
-        
-        const newSpecialist = await storage.createSpecialist({
-          name: displayName,
-          specialty: "Barber",
-          bio: "New specialist - bio coming soon!",
-          imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80",
-          rating: "0",
-        });
+      const beforeUser = { ...user };
 
-        user = await storage.updateUserRole(user.id, "specialist", newSpecialist.id) as typeof user;
+      if (user.role === "specialist" && !user.specialistId) {
+        const firstSpecialist = await storage.getFirstSpecialist();
+        
+        if (firstSpecialist) {
+          user = await storage.updateUserRole(user.id, "specialist", firstSpecialist.id) as typeof user;
+          console.log("AUTO-BIND:", beforeUser, user);
+        } else {
+          console.log("AUTO-BIND: No specialists found to bind");
+        }
       }
 
       res.json(user);
