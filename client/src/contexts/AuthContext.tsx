@@ -10,6 +10,7 @@ import {
   getCurrentUser,
   getCurrentUserWithRole,
   onAuthStateChange,
+  forceLogout,
 } from "@/lib/auth";
 import { type AppUser, type UserRole } from "@/lib/users";
 
@@ -82,6 +83,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const shouldForceLogout = sessionStorage.getItem('force_logout_done') !== 'true';
+    if (shouldForceLogout) {
+      sessionStorage.setItem('force_logout_done', 'true');
+      forceLogout();
+      return;
+    }
+    
     getCurrentUser().then((u) => {
       setAuthUser(u);
       fetchUserWithRole().then(() => setIsLoading(false));

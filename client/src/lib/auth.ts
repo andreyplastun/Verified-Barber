@@ -83,6 +83,14 @@ export async function signOut() {
   await supabase.auth.signOut()
   localStorage.clear()
   sessionStorage.clear()
+  document.cookie.split(";").forEach((c) => {
+    document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+  });
+}
+
+export async function forceLogout() {
+  await signOut()
+  window.location.reload()
 }
 
 export async function getCurrentUser() {
