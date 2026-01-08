@@ -1,11 +1,22 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
-import { getCurrentUser, getCurrentUserWithRole, onAuthStateChange } from '@/lib/auth';
-import { type AppUser, type UserRole } from '@/lib/users';
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  type ReactNode,
+} from "react";
+import {
+  getCurrentUser,
+  getCurrentUserWithRole,
+  onAuthStateChange,
+} from "@/lib/auth";
+import { type AppUser, type UserRole } from "@/lib/users";
 
 interface CurrentUser {
   id: string;
   email: string;
-  role: 'client' | 'specialist';
+  role: "client" | "specialist";
 }
 
 interface AuthContextType {
@@ -27,7 +38,7 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   isLoading: true,
   isSpecialist: false,
-  role: 'client',
+  role: "client",
   refreshUser: async () => null,
   refetchUser: async () => null,
 });
@@ -44,8 +55,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: userWithRole.id,
         email: userWithRole.email,
         role: userWithRole.role,
-        specialistId: null,
-        createdAt: '',
+        specialistId: userWithRole.specialistId ?? null,
+        createdAt: userWithRole.createdAt ?? "",
       });
       return userWithRole;
     } else {
@@ -57,20 +68,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refetchUser = useCallback(async () => {
     const userWithRole = await getCurrentUserWithRole();
     if (userWithRole) {
-      setUser({
+      const userData = {
         id: userWithRole.id,
         email: userWithRole.email,
         role: userWithRole.role,
-        specialistId: null,
-        createdAt: '',
-      });
-      return {
-        id: userWithRole.id,
-        email: userWithRole.email,
-        role: userWithRole.role,
-        specialistId: null,
-        createdAt: '',
+        specialistId: userWithRole.specialistId ?? null,
+        createdAt: userWithRole.createdAt ?? "",
       };
+      setUser(userData);
+      return userData;
     }
     return null;
   }, []);
@@ -81,7 +87,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       fetchUserWithRole().then(() => setIsLoading(false));
     });
 
-    const { data: { subscription } } = onAuthStateChange((u) => {
+    const {
+      data: { subscription },
+    } = onAuthStateChange((u) => {
       setAuthUser(u);
       if (u) {
         fetchUserWithRole().then(() => setIsLoading(false));
@@ -94,29 +102,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const isSpecialist = user?.role === 'specialist';
-  const role = user?.role || 'client';
+  const isSpecialist = user?.role === "specialist";
+  const role = user?.role || "client";
   const isLoading = isLoadingState;
   const loading = isLoadingState;
-  
-  const currentUser: CurrentUser | null = user ? {
-    id: user.id,
-    email: user.email,
-    role: user.role,
-  } : null;
+
+  const currentUser: CurrentUser | null = user
+    ? {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+      }
+    : null;
+  console.log("AUTH DEBUG:", { user, role, loading });
 
   return (
-    <AuthContext.Provider value={{ 
-      currentUser,
-      user, 
-      authUser, 
-      loading,
-      isLoading, 
-      isSpecialist, 
-      role, 
-      refreshUser: refetchUser,
-      refetchUser 
-    }}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        user,
+        authUser,
+        loading,
+        isLoading,
+        isSpecialist,
+        role,
+        refreshUser: refetchUser,
+        refetchUser,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

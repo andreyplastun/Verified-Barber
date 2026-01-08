@@ -47,11 +47,32 @@ export async function registerRoutes(
   });
 
   app.get("/api/users/:id", async (req, res) => {
-    const user = await storage.getUser(req.params.id);
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    try {
+      let user = await storage.getUser(req.params.id);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      if (user.role === "specialist" && !user.specialistId) {
+        const emailPrefix = user.email.split("@")[0] || "Specialist";
+        const displayName = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
+        
+        const newSpecialist = await storage.createSpecialist({
+          name: displayName,
+          specialty: "Barber",
+          bio: "New specialist - bio coming soon!",
+          imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&q=80",
+          rating: "0",
+        });
+
+        user = await storage.updateUserRole(user.id, "specialist", newSpecialist.id) as typeof user;
+      }
+
+      res.json(user);
+    } catch (err: any) {
+      console.error("Error fetching user:", err);
+      res.status(500).json({ message: err.message });
     }
-    res.json(user);
   });
 
   // Admin-only endpoint for role changes (protected by admin key for MVP)

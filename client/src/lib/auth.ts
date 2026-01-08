@@ -90,7 +90,13 @@ export async function getCurrentUser() {
   return user
 }
 
-export async function getCurrentUserWithRole(): Promise<{ id: string; email: string; role: 'client' | 'specialist' } | null> {
+export async function getCurrentUserWithRole(): Promise<{ 
+  id: string; 
+  email: string; 
+  role: 'client' | 'specialist';
+  specialistId: number | null;
+  createdAt: string | null;
+} | null> {
   const { data: { user } } = await supabase.auth.getUser()
   
   if (!user) return null
@@ -104,6 +110,8 @@ export async function getCurrentUserWithRole(): Promise<{ id: string; email: str
       id: data.id,
       email: data.email,
       role: data.role as 'client' | 'specialist',
+      specialistId: data.specialistId ?? null,
+      createdAt: data.createdAt ?? null,
     }
   } catch (err) {
     console.error('Failed to get user with role:', err)
