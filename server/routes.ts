@@ -148,6 +148,15 @@ export async function registerRoutes(
     res.json(bookings);
   });
 
+  app.get("/api/specialists/:id/bookings", async (req, res) => {
+    const id = Number(req.params.id);
+    if (isNaN(id)) {
+      return res.status(400).json({ message: "Invalid specialist ID" });
+    }
+    const bookings = await storage.getBookingsForSpecialist(id);
+    res.json(bookings);
+  });
+
   app.get(api.bookings.get.path, async (req, res) => {
     const id = Number(req.params.id);
     const booking = await storage.getBooking(id);

@@ -18,6 +18,7 @@ interface CurrentUser {
   id: string;
   email: string;
   role: "client" | "specialist";
+  specialistId: number | null;
 }
 
 interface AuthContextType {
@@ -113,6 +114,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         id: user.id,
         email: user.email,
         role: user.role,
+        specialistId: user.specialistId ?? null,
       }
     : null;
   console.log("AUTH DEBUG:", { user, role, loading });
