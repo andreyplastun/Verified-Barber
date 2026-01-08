@@ -115,6 +115,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     : null;
   console.log("AUTH DEBUG:", { user, role, loading });
+  
+  if (user) {
+    console.log("AUTO-BIND CHECK", { id: user.id, role: user.role, specialistId: user.specialistId });
+  }
 
   return (
     <AuthContext.Provider
