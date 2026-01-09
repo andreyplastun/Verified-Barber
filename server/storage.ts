@@ -135,6 +135,10 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     const editableUntil = new Date(now.getTime() + editableWindowMinutes * 60000);
 
+    const isPrivate = review.isPrivate ?? true;
+    // Name is only public for 5-star reviews that are also public
+    const isPublicName = review.rating === 5 && !isPrivate;
+
     const [newReview] = await db.insert(reviews).values({
       bookingId: review.bookingId,
       specialistId: review.specialistId,
@@ -142,7 +146,8 @@ export class DatabaseStorage implements IStorage {
       comment: review.comment,
       customerName: review.customerName || "Anonymous",
       isFinalized: false,
-      isPrivate: review.isPrivate ?? true,
+      isPrivate: isPrivate,
+      isPublicName: isPublicName,
       finalizedAt: null,
       editableUntil: editableUntil,
     } as any).returning();
@@ -158,8 +163,11 @@ export class DatabaseStorage implements IStorage {
       throw new Error("Review is finalized or editing window has expired");
     }
 
+    // Recalculate isPublicName based on new rating and current privacy setting
+    const isPublicName = rating === 5 && !review.isPrivate;
+
     const [updated] = await db.update(reviews)
-      .set({ rating, comment })
+      .set({ rating, comment, isPublicName })
       .where(eq(reviews.id, id))
       .returning();
     return updated;

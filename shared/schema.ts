@@ -46,6 +46,7 @@ export const reviews = pgTable("reviews", {
   customerName: text("customer_name").notNull(), // Snapshot from booking
   isFinalized: boolean("is_finalized").default(false).notNull(),
   isPrivate: boolean("is_private").default(true).notNull(),
+  isPublicName: boolean("is_public_name").default(false).notNull(), // Only true for 5-star public reviews
   finalizedAt: timestamp("finalized_at"),
   editableUntil: timestamp("editable_until"),
   createdAt: timestamp("created_at").defaultNow(),

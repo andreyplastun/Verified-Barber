@@ -133,28 +133,38 @@ export default function SpecialistDashboard() {
               <p className="text-muted-foreground text-sm">No reviews yet</p>
             ) : (
               <div className="space-y-3">
-                {reviews.slice(0, 5).map((review) => (
-                  <div 
-                    key={review.id} 
-                    className="p-3 rounded-md bg-muted/50"
-                    data-testid={`review-item-${review.id}`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-sm" data-testid={`text-reviewer-${review.id}`}>
-                        {review.customerName}
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
-                        <span className="text-sm" data-testid={`text-review-rating-${review.id}`}>
-                          {review.rating}
+                {reviews.slice(0, 5).map((review) => {
+                  // Show name only for 5-star public reviews
+                  const showName = review.isPublicName && !review.isPrivate;
+                  const displayName = showName 
+                    ? (review.customerName.includes('@') 
+                        ? review.customerName.split('@')[0] 
+                        : review.customerName)
+                    : 'Anonymous client';
+                  
+                  return (
+                    <div 
+                      key={review.id} 
+                      className="p-3 rounded-md bg-muted/50"
+                      data-testid={`review-item-${review.id}`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-medium text-sm" data-testid={`text-reviewer-${review.id}`}>
+                          {displayName}
                         </span>
+                        <div className="flex items-center gap-1">
+                          <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
+                          <span className="text-sm" data-testid={`text-review-rating-${review.id}`}>
+                            {review.rating}
+                          </span>
+                        </div>
                       </div>
+                      <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>
+                        {review.comment}
+                      </p>
                     </div>
-                    <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>
-                      {review.comment}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>
