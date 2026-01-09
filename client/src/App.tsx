@@ -67,11 +67,7 @@ function Router() {
       <Route path="/login" component={LoginRoute} />
       <Route path="/signup" component={LoginRoute} />
       <Route path="/" component={HomeRoute} />
-      <Route path="/specialist/:id">
-        <ProtectedRoute>
-          <SpecialistProfile />
-        </ProtectedRoute>
-      </Route>
+      <Route path="/specialist/:id" component={SpecialistProfile} />
       <Route path="/book/:id">
         <ProtectedRoute>
           <BookingPage />
