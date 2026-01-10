@@ -50,8 +50,8 @@ export const reviews = pgTable("reviews", {
   // New visibility system
   publishReview: boolean("publish_review").default(true).notNull(), // If false, only specialist sees it
   showName: boolean("show_name").default(false).notNull(), // User preference for name visibility
-  // Legacy fields (kept for migration)
-  isPrivate: boolean("is_private").default(true).notNull(),
+  // Legacy fields (kept for migration, defaults now align with new system)
+  isPrivate: boolean("is_private").default(false).notNull(), // Should mirror !publishReview
   isPublicName: boolean("is_public_name").default(false).notNull(),
   finalizedAt: timestamp("finalized_at"),
   editableUntil: timestamp("editable_until"),
