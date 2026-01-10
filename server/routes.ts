@@ -157,6 +157,16 @@ export async function registerRoutes(
     res.json(bookings);
   });
 
+  // Get bookings for the current user (by client_id)
+  app.get("/api/my-bookings", async (req, res) => {
+    const userId = req.headers["x-user-id"] as string;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const bookings = await storage.getBookingsForClient(userId);
+    res.json(bookings);
+  });
+
   app.get(api.bookings.get.path, async (req, res) => {
     const id = Number(req.params.id);
     const booking = await storage.getBooking(id);

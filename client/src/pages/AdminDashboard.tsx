@@ -33,6 +33,7 @@ export default function AdminDashboard() {
     specialistId: "",
     customerName: "",
     customerPhone: "",
+    customerEmail: "",
     appointmentTime: "",
   });
 
@@ -75,6 +76,7 @@ export default function AdminDashboard() {
         specialistId: "",
         customerName: "",
         customerPhone: "",
+        customerEmail: "",
         appointmentTime: "",
       });
     },
@@ -177,6 +179,21 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div className="space-y-2">
+                  <Label htmlFor="customerEmail">Client Email</Label>
+                  <Input
+                    id="customerEmail"
+                    type="email"
+                    placeholder="client@example.com"
+                    value={formData.customerEmail}
+                    onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
+                    required
+                    data-testid="input-customer-email"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
                   <Label htmlFor="customerPhone">Phone Number</Label>
                   <Input
                     id="customerPhone"
@@ -187,9 +204,6 @@ export default function AdminDashboard() {
                     data-testid="input-customer-phone"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="specialist">Specialist</Label>
                   <Select
@@ -208,17 +222,18 @@ export default function AdminDashboard() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="appointmentTime">Date & Time</Label>
-                  <Input
-                    id="appointmentTime"
-                    type="datetime-local"
-                    value={formData.appointmentTime}
-                    onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
-                    required
-                    data-testid="input-appointment-time"
-                  />
-                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="appointmentTime">Date & Time</Label>
+                <Input
+                  id="appointmentTime"
+                  type="datetime-local"
+                  value={formData.appointmentTime}
+                  onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
+                  required
+                  data-testid="input-appointment-time"
+                />
               </div>
 
               <Button 

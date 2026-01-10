@@ -1,14 +1,37 @@
 import { useRoute, Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
+import { useAuth } from "@/contexts/AuthContext";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, Share2, ShieldCheck, MapPin, Calendar, User } from "lucide-react";
+import { ChevronLeft, Share2, ShieldCheck, MapPin, Calendar, User, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+import type { Booking } from "@shared/schema";
 
 export default function SpecialistProfile() {
   const [, params] = useRoute("/specialist/:id");
   const id = params ? parseInt(params.id) : 0;
   const { data: specialist, isLoading } = useSpecialist(id);
+  const { currentUser } = useAuth();
+
+  // Fetch user's bookings to check if they can leave a review
+  const { data: myBookings = [] } = useQuery<Booking[]>({
+    queryKey: ["/api/my-bookings", currentUser?.id],
+    queryFn: async () => {
+      if (!currentUser?.id) return [];
+      const res = await fetch("/api/my-bookings", {
+        headers: { "x-user-id": currentUser.id },
+      });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!currentUser?.id,
+  });
+
+  // Find a completed booking for this specialist that hasn't been reviewed yet
+  const eligibleBooking = myBookings.find(
+    (b) => b.specialistId === id && b.status === "completed" && !b.hasReview
+  );
 
   if (isLoading || !specialist) {
     return <div className="min-h-screen bg-background animate-pulse" />;
@@ -197,14 +220,22 @@ export default function SpecialistProfile() {
         </div>
       </div>
 
-      {/* Back to Home button at bottom */}
+      {/* Bottom Action Bar */}
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-white/5 z-40 pb-safe">
-        <div className="max-w-md mx-auto">
-          <Link href="/">
+        <div className="max-w-md mx-auto flex gap-3">
+          <Link href="/" className="flex-1">
             <Button variant="outline" className="w-full py-6 rounded-xl font-bold text-lg" data-testid="button-back-home">
               Back to Home
             </Button>
           </Link>
+          {eligibleBooking && (
+            <Link href={`/review/${eligibleBooking.id}`} className="flex-1">
+              <Button className="w-full py-6 rounded-xl font-bold text-lg" data-testid="button-leave-review">
+                <Star className="mr-2 h-5 w-5" />
+                Leave Review
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
     </div>
