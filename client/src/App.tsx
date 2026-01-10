@@ -100,6 +100,11 @@ function Router() {
           <ReviewPage />
         </ProtectedRoute>
       </Route>
+      <Route path="/admin">
+        <AdminProtectedRoute>
+          <AdminDashboard />
+        </AdminProtectedRoute>
+      </Route>
       <Route path="/admin-dashboard">
         <AdminProtectedRoute>
           <AdminDashboard />
