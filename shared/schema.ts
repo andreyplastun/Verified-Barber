@@ -29,8 +29,10 @@ export const specialists = pgTable("specialists", {
 export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
   specialistId: integer("specialist_id").notNull(),
+  clientId: uuid("client_id"), // References users.id - nullable for backwards compatibility
   customerName: text("customer_name").notNull(),
   customerPhone: text("customer_phone").notNull(),
+  customerEmail: text("customer_email"), // Deprecated - kept for display/backfill
   appointmentTime: timestamp("appointment_time").notNull(),
   status: text("status", { enum: ["pending", "confirmed", "completed", "cancelled"] }).default("pending").notNull(),
   hasReview: boolean("has_review").default(false).notNull(),
@@ -71,6 +73,10 @@ export const bookingsRelations = relations(bookings, ({ one }) => ({
     fields: [bookings.specialistId],
     references: [specialists.id],
   }),
+  client: one(users, {
+    fields: [bookings.clientId],
+    references: [users.id],
+  }),
 }));
 
 export const reviewsRelations = relations(reviews, ({ one }) => ({
@@ -97,6 +103,15 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
   status: true, 
   hasReview: true, 
   createdAt: true 
+});
+
+// Extended schema for admin booking creation with email lookup
+export const adminCreateBookingSchema = z.object({
+  specialistId: z.number(),
+  customerName: z.string(),
+  customerPhone: z.string(),
+  customerEmail: z.string().email(),
+  appointmentTime: z.string().or(z.date()),
 });
 
 export const insertReviewSchema = createInsertSchema(reviews).omit({ 

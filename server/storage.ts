@@ -7,6 +7,7 @@ export interface IStorage {
   createUser(user: { id: string; email: string; role?: string; specialistId?: number }): Promise<User>;
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
+  getOrCreateUserByEmail(email: string): Promise<User>;
   updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined>;
   getClients(): Promise<User[]>;
   getBookingsWithDetails(): Promise<any[]>;
@@ -20,9 +21,11 @@ export interface IStorage {
 
   // Bookings
   createBooking(booking: CreateBookingRequest): Promise<Booking>;
+  createBookingWithClient(booking: { specialistId: number; clientId: string; customerName: string; customerPhone: string; customerEmail: string; appointmentTime: Date }): Promise<Booking>;
   getBooking(id: number): Promise<Booking | undefined>;
   getBookings(): Promise<Booking[]>; // Admin/Debug
   getBookingsForSpecialist(specialistId: number): Promise<Booking[]>;
+  getBookingsForClient(clientId: string): Promise<Booking[]>;
   updateBookingStatus(id: number, status: any): Promise<Booking | undefined>;
   markBookingReviewed(id: number): Promise<void>;
 
@@ -54,6 +57,19 @@ export class DatabaseStorage implements IStorage {
   async getUserByEmail(email: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
+  }
+
+  async getOrCreateUserByEmail(email: string): Promise<User> {
+    const existing = await this.getUserByEmail(email);
+    if (existing) return existing;
+    
+    // Create a new pending client user (no Supabase auth yet)
+    const [newUser] = await db.insert(users).values({
+      email: email.toLowerCase(),
+      role: "client",
+      specialistId: null,
+    }).returning();
+    return newUser;
   }
 
   async updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined> {
@@ -122,6 +138,18 @@ export class DatabaseStorage implements IStorage {
     return newBooking;
   }
 
+  async createBookingWithClient(booking: { specialistId: number; clientId: string; customerName: string; customerPhone: string; customerEmail: string; appointmentTime: Date }): Promise<Booking> {
+    const [newBooking] = await db.insert(bookings).values({
+      specialistId: booking.specialistId,
+      clientId: booking.clientId,
+      customerName: booking.customerName,
+      customerPhone: booking.customerPhone,
+      customerEmail: booking.customerEmail,
+      appointmentTime: booking.appointmentTime,
+    }).returning();
+    return newBooking;
+  }
+
   async getBooking(id: number): Promise<Booking | undefined> {
     const [booking] = await db.select().from(bookings).where(eq(bookings.id, id));
     return booking;
@@ -134,6 +162,12 @@ export class DatabaseStorage implements IStorage {
   async getBookingsForSpecialist(specialistId: number): Promise<Booking[]> {
     return await db.select().from(bookings)
       .where(eq(bookings.specialistId, specialistId))
+      .orderBy(desc(bookings.appointmentTime));
+  }
+
+  async getBookingsForClient(clientId: string): Promise<Booking[]> {
+    return await db.select().from(bookings)
+      .where(eq(bookings.clientId, clientId))
       .orderBy(desc(bookings.appointmentTime));
   }
 

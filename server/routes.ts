@@ -298,16 +298,21 @@ export async function registerRoutes(
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
       
-      const { specialistId, customerName, customerPhone, appointmentTime } = req.body;
+      const { specialistId, customerName, customerPhone, customerEmail, appointmentTime } = req.body;
       
-      if (!specialistId || !customerName || !customerPhone || !appointmentTime) {
-        return res.status(400).json({ message: "Missing required fields" });
+      if (!specialistId || !customerName || !customerPhone || !customerEmail || !appointmentTime) {
+        return res.status(400).json({ message: "Missing required fields (including email)" });
       }
       
-      const booking = await storage.createBooking({
+      // Look up or create user by email
+      const client = await storage.getOrCreateUserByEmail(customerEmail.toLowerCase());
+      
+      const booking = await storage.createBookingWithClient({
         specialistId: Number(specialistId),
+        clientId: client.id,
         customerName,
         customerPhone,
+        customerEmail: customerEmail.toLowerCase(),
         appointmentTime: new Date(appointmentTime),
       });
       
