@@ -9,7 +9,7 @@ import { sql } from "drizzle-orm";
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
-  role: text("role", { enum: ["client", "specialist"] }).default("client").notNull(),
+  role: text("role", { enum: ["client", "specialist", "admin"] }).default("client").notNull(),
   specialistId: integer("specialist_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });

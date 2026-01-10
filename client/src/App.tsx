@@ -43,6 +43,24 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, currentUser, loading } = useAuth();
+
+  if (loading) {
+    return <div className="min-h-screen bg-background flex items-center justify-center text-foreground">Loading...</div>;
+  }
+
+  if (!user) {
+    return <Redirect to="/login" />;
+  }
+
+  if (currentUser?.role !== 'admin') {
+    return <Redirect to="/" />;
+  }
+
+  return <>{children}</>;
+}
+
 function HomeRoute() {
   const { currentUser, loading } = useAuth();
 
@@ -52,6 +70,10 @@ function HomeRoute() {
 
   if (!currentUser) {
     return <Redirect to="/login" />;
+  }
+
+  if (currentUser?.role === 'admin') {
+    return <Redirect to="/admin-dashboard" />;
   }
 
   if (currentUser?.role === 'specialist') {
@@ -78,10 +100,10 @@ function Router() {
           <ReviewPage />
         </ProtectedRoute>
       </Route>
-      <Route path="/admin">
-        <ProtectedRoute>
+      <Route path="/admin-dashboard">
+        <AdminProtectedRoute>
           <AdminDashboard />
-        </ProtectedRoute>
+        </AdminProtectedRoute>
       </Route>
       <Route path="/specialist-dashboard">
         <ProtectedRoute>

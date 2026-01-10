@@ -8,6 +8,8 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined>;
+  getClients(): Promise<User[]>;
+  getBookingsWithDetails(): Promise<any[]>;
 
   // Specialists
   getSpecialists(): Promise<Specialist[]>;
@@ -57,12 +59,29 @@ export class DatabaseStorage implements IStorage {
   async updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined> {
     const [updated] = await db.update(users)
       .set({ 
-        role: role as "client" | "specialist", 
+        role: role as "client" | "specialist" | "admin", 
         specialistId: specialistId || null 
       })
       .where(eq(users.id, id))
       .returning();
     return updated;
+  }
+
+  async getClients(): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.role, "client"));
+  }
+
+  async getBookingsWithDetails(): Promise<any[]> {
+    const allBookings = await db.select().from(bookings).orderBy(desc(bookings.createdAt));
+    const allSpecialists = await db.select().from(specialists);
+    
+    return allBookings.map(booking => {
+      const specialist = allSpecialists.find(s => s.id === booking.specialistId);
+      return {
+        ...booking,
+        specialistName: specialist?.name || 'Unknown',
+      };
+    });
   }
 
   async getSpecialists(): Promise<Specialist[]> {

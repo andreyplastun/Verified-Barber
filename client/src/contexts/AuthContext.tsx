@@ -17,7 +17,7 @@ import { type AppUser, type UserRole } from "@/lib/users";
 interface CurrentUser {
   id: string;
   email: string;
-  role: "client" | "specialist";
+  role: "client" | "specialist" | "admin";
   specialistId: number | null;
 }
 

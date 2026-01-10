@@ -17,7 +17,7 @@ export async function registerRoutes(
   });
 
   const updateRoleSchema = z.object({
-    role: z.enum(["client", "specialist"]),
+    role: z.enum(["client", "specialist", "admin"]),
     specialistId: z.number().int().positive().optional(),
   });
 
@@ -248,6 +248,94 @@ export async function registerRoutes(
     }
     const reviews = await storage.getReviewsForSpecialist(id);
     res.json(reviews);
+  });
+
+  // =====================
+  // ADMIN ENDPOINTS
+  // =====================
+
+  // Middleware to check admin role
+  const checkAdminRole = async (req: any, res: any, userId: string) => {
+    const user = await storage.getUser(userId);
+    if (!user || user.role !== 'admin') {
+      res.status(403).json({ message: "Forbidden: Admin access required" });
+      return false;
+    }
+    return true;
+  };
+
+  // Get all clients (for dropdown)
+  app.get("/api/admin/clients", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      
+      const clients = await storage.getClients();
+      res.json(clients);
+    } catch (err: any) {
+      console.error("Error fetching clients:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Get all bookings with details
+  app.get("/api/admin/bookings", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      
+      const bookingsWithDetails = await storage.getBookingsWithDetails();
+      res.json(bookingsWithDetails);
+    } catch (err: any) {
+      console.error("Error fetching bookings:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin create booking
+  app.post("/api/admin/bookings", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      
+      const { specialistId, customerName, customerPhone, appointmentTime } = req.body;
+      
+      if (!specialistId || !customerName || !customerPhone || !appointmentTime) {
+        return res.status(400).json({ message: "Missing required fields" });
+      }
+      
+      const booking = await storage.createBooking({
+        specialistId: Number(specialistId),
+        customerName,
+        customerPhone,
+        appointmentTime: new Date(appointmentTime),
+      });
+      
+      res.status(201).json(booking);
+    } catch (err: any) {
+      console.error("Error creating booking:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin mark booking as completed
+  app.patch("/api/admin/bookings/:id/complete", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      
+      const id = Number(req.params.id);
+      const booking = await storage.updateBookingStatus(id, "completed");
+      
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      
+      res.json(booking);
+    } catch (err: any) {
+      console.error("Error completing booking:", err);
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // Seed Data

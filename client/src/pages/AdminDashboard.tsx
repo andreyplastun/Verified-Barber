@@ -1,92 +1,322 @@
-import { useBookings, useCompleteBooking } from "@/hooks/use-specialists";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { queryClient } from "@/lib/queryClient";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
-import { Link } from "wouter";
-import { CheckCircle, Clock, CalendarDays, ExternalLink, ShieldCheck } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck } from "lucide-react";
+import type { Specialist, User } from "@shared/schema";
+
+type BookingWithDetails = {
+  id: number;
+  specialistId: number;
+  customerName: string;
+  customerPhone: string;
+  appointmentTime: string;
+  status: string;
+  hasReview: boolean;
+  specialistName: string;
+  createdAt: string;
+};
 
 export default function AdminDashboard() {
-  const { data: bookings, isLoading } = useBookings();
-  const { mutate: completeBooking, isPending } = useCompleteBooking();
+  const { currentUser } = useAuth();
   const { toast } = useToast();
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  
+  const [formData, setFormData] = useState({
+    specialistId: "",
+    customerName: "",
+    customerPhone: "",
+    appointmentTime: "",
+  });
 
-  const handleComplete = (id: number) => {
-    completeBooking(id, {
-      onSuccess: () => {
-        toast({
-          title: "Booking Completed",
-          description: "This visit is now verified. Review can be submitted.",
-        });
+  const { data: specialists = [] } = useQuery<Specialist[]>({
+    queryKey: ["/api/specialists"],
+  });
+
+  const { data: bookings = [], isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
+    queryKey: ["/api/admin/bookings"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/bookings", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) throw new Error("Failed to fetch bookings");
+      return res.json();
+    },
+    enabled: !!currentUser,
+  });
+
+  const createBookingMutation = useMutation({
+    mutationFn: async (data: typeof formData) => {
+      const res = await fetch("/api/admin/bookings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUser?.id || "",
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
       }
-    });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Booking created successfully" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings"] });
+      setFormData({
+        specialistId: "",
+        customerName: "",
+        customerPhone: "",
+        appointmentTime: "",
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const completeBookingMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      const res = await fetch(`/api/admin/bookings/${bookingId}/complete`, {
+        method: "PATCH",
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Booking marked as completed" });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    createBookingMutation.mutate(formData);
   };
 
-  if (isLoading) return <div className="p-6 animate-pulse">Loading dashboard...</div>;
+  const filteredBookings = bookings.filter((booking) => {
+    if (statusFilter === "all") return true;
+    return booking.status === statusFilter;
+  });
+
+  const pendingCount = bookings.filter((b) => b.status === "pending").length;
+  const completedCount = bookings.filter((b) => b.status === "completed").length;
 
   return (
-    <div className="min-h-screen bg-background p-6 pb-24">
-      <header className="mb-8">
-        <h1 className="text-2xl font-display font-bold">Admin Dashboard</h1>
-        <p className="text-muted-foreground">Manage bookings and verify visits.</p>
-      </header>
+    <div className="min-h-screen bg-background p-4 pb-24">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center gap-3">
+          <ShieldCheck className="h-8 w-8 text-primary" />
+          <h1 className="text-2xl font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
+        </div>
 
-      <div className="space-y-4">
-        {bookings?.map((booking) => (
-          <div 
-            key={booking.id} 
-            className="bg-card border border-white/5 rounded-2xl p-5 shadow-lg flex flex-col sm:flex-row justify-between sm:items-center gap-4"
-          >
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="font-bold text-lg">#{booking.id}</span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
-                  booking.status === 'completed' 
-                    ? 'bg-green-500/20 text-green-500' 
-                    : 'bg-yellow-500/20 text-yellow-500'
-                }`}>
-                  {booking.status.toUpperCase()}
-                </span>
+        <div className="grid grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <Calendar className="h-8 w-8 text-muted-foreground" />
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-total-bookings">{bookings.length}</p>
+                <p className="text-xs text-muted-foreground">Total Bookings</p>
               </div>
-              <p className="font-medium text-foreground">{booking.customerName}</p>
-              <p className="text-xs text-muted-foreground">{booking.customerPhone}</p>
-              <div className="flex items-center text-xs text-muted-foreground mt-1">
-                <CalendarDays size={12} className="mr-1" />
-                {new Date(booking.appointmentTime).toLocaleDateString()}
-                <Clock size={12} className="ml-2 mr-1" />
-                {new Date(booking.appointmentTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <Clock className="h-8 w-8 text-yellow-500" />
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-pending-count">{pendingCount}</p>
+                <p className="text-xs text-muted-foreground">Pending</p>
               </div>
-            </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4 flex items-center gap-3">
+              <CheckCircle className="h-8 w-8 text-green-500" />
+              <div>
+                <p className="text-2xl font-bold" data-testid="text-completed-count">{completedCount}</p>
+                <p className="text-xs text-muted-foreground">Completed</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              {booking.status !== "completed" ? (
-                <button
-                  onClick={() => handleComplete(booking.id)}
-                  disabled={isPending}
-                  className="px-4 py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2"
-                >
-                  <ShieldCheck size={16} />
-                  Verify Visit
-                </button>
-              ) : (
-                <div className="flex items-center text-green-500 font-medium text-sm gap-1">
-                  <CheckCircle size={16} />
-                  Verified
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Plus size={20} />
+              Create Booking
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="customerName">Client Name</Label>
+                  <Input
+                    id="customerName"
+                    placeholder="Enter client name"
+                    value={formData.customerName}
+                    onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
+                    required
+                    data-testid="input-customer-name"
+                  />
                 </div>
-              )}
-              
-              <Link href={`/review/${booking.id}`}>
-                <button className="px-4 py-2 bg-secondary hover:bg-secondary/80 rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2">
-                  <ExternalLink size={16} />
-                  Review Link
-                </button>
-              </Link>
-            </div>
-          </div>
-        ))}
+                <div className="space-y-2">
+                  <Label htmlFor="customerPhone">Phone Number</Label>
+                  <Input
+                    id="customerPhone"
+                    placeholder="Enter phone number"
+                    value={formData.customerPhone}
+                    onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
+                    required
+                    data-testid="input-customer-phone"
+                  />
+                </div>
+              </div>
 
-        {bookings?.length === 0 && (
-          <div className="text-center py-20 text-muted-foreground border border-dashed border-white/10 rounded-3xl">
-            No bookings found.
-          </div>
-        )}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="specialist">Specialist</Label>
+                  <Select
+                    value={formData.specialistId}
+                    onValueChange={(value) => setFormData({ ...formData, specialistId: value })}
+                  >
+                    <SelectTrigger data-testid="select-specialist">
+                      <SelectValue placeholder="Select specialist" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {specialists.map((s) => (
+                        <SelectItem key={s.id} value={String(s.id)} data-testid={`select-specialist-${s.id}`}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="appointmentTime">Date & Time</Label>
+                  <Input
+                    id="appointmentTime"
+                    type="datetime-local"
+                    value={formData.appointmentTime}
+                    onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
+                    required
+                    data-testid="input-appointment-time"
+                  />
+                </div>
+              </div>
+
+              <Button 
+                type="submit" 
+                className="w-full" 
+                disabled={createBookingMutation.isPending}
+                data-testid="button-create-booking"
+              >
+                {createBookingMutation.isPending ? "Creating..." : "Create Booking"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Users size={20} />
+              All Bookings
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Tabs value={statusFilter} onValueChange={setStatusFilter}>
+              <TabsList className="grid w-full grid-cols-3 mb-4">
+                <TabsTrigger value="all" data-testid="tab-all">
+                  All ({bookings.length})
+                </TabsTrigger>
+                <TabsTrigger value="pending" data-testid="tab-pending">
+                  Pending ({pendingCount})
+                </TabsTrigger>
+                <TabsTrigger value="completed" data-testid="tab-completed">
+                  Completed ({completedCount})
+                </TabsTrigger>
+              </TabsList>
+
+              <div className="space-y-3">
+                {bookingsLoading ? (
+                  <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                ) : filteredBookings.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No bookings found
+                  </div>
+                ) : (
+                  filteredBookings.map((booking) => (
+                    <div
+                      key={booking.id}
+                      className="flex items-center justify-between p-4 bg-muted/30 rounded-lg border"
+                      data-testid={`booking-row-${booking.id}`}
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium" data-testid={`text-booking-customer-${booking.id}`}>
+                            {booking.customerName}
+                          </span>
+                          <span className={`px-2 py-0.5 text-[10px] rounded-full font-bold ${
+                            booking.status === "completed" 
+                              ? "bg-green-500/10 text-green-500" 
+                              : "bg-yellow-500/10 text-yellow-500"
+                          }`}>
+                            {booking.status}
+                          </span>
+                          {booking.hasReview && (
+                            <span className="px-2 py-0.5 text-[10px] rounded-full font-bold bg-blue-500/10 text-blue-500">
+                              Has Review
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-muted-foreground mt-1">
+                          <span data-testid={`text-booking-specialist-${booking.id}`}>
+                            {booking.specialistName}
+                          </span>
+                          <span className="mx-2">•</span>
+                          <span data-testid={`text-booking-time-${booking.id}`}>
+                            {new Date(booking.appointmentTime).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          ID: {booking.id} • Phone: {booking.customerPhone}
+                        </div>
+                      </div>
+                      {booking.status === "pending" && (
+                        <Button
+                          size="sm"
+                          onClick={() => completeBookingMutation.mutate(booking.id)}
+                          disabled={completeBookingMutation.isPending}
+                          data-testid={`button-complete-${booking.id}`}
+                        >
+                          <CheckCircle className="h-4 w-4 mr-1" />
+                          Mark Completed
+                        </Button>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </Tabs>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
