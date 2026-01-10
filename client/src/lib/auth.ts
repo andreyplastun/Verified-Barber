@@ -101,7 +101,7 @@ export async function getCurrentUser() {
 export async function getCurrentUserWithRole(): Promise<{ 
   id: string; 
   email: string; 
-  role: 'client' | 'specialist';
+  role: 'client' | 'specialist' | 'admin';
   specialistId: number | null;
   createdAt: string | null;
 } | null> {
@@ -117,7 +117,7 @@ export async function getCurrentUserWithRole(): Promise<{
     return {
       id: data.id,
       email: data.email,
-      role: data.role as 'client' | 'specialist',
+      role: data.role as 'client' | 'specialist' | 'admin',
       specialistId: data.specialistId ?? null,
       createdAt: data.createdAt ?? null,
     }
