@@ -149,8 +149,8 @@ export default function SpecialistProfile() {
 
           <div className="space-y-4">
             {(() => {
-              // Only show finalized public reviews to public visitors
-              const publicReviews = specialist.reviews?.filter(r => r.isFinalized && !r.isPrivate) || [];
+              // Only show finalized reviews where publishReview is true
+              const publicReviews = specialist.reviews?.filter(r => r.isFinalized && r.publishReview) || [];
               
               if (publicReviews.length === 0) {
                 return (
@@ -173,13 +173,13 @@ export default function SpecialistProfile() {
                   return n + (s[(v - 20) % 10] || s[v] || s[0]);
                 };
 
-                // Apply privacy logic: show name only for 5-star public reviews
-                const showName = review.isPublicName && !review.isPrivate;
-                const displayName = showName 
+                // Apply privacy logic: show name only for 5-star public reviews with showName enabled
+                const canShowName = review.rating === 5 && review.publishReview && review.showName;
+                const displayName = canShowName 
                   ? (review.customerName.includes('@') 
                       ? review.customerName.split('@')[0] 
                       : review.customerName)
-                  : 'Anonymous user';
+                  : 'Verified Client';
 
                 return (
                   <div key={review.id} className="bg-card border border-white/5 rounded-2xl p-4" data-testid={`public-review-${review.id}`}>

@@ -134,24 +134,34 @@ export default function SpecialistDashboard() {
             ) : (
               <div className="space-y-3">
                 {reviews.slice(0, 5).map((review) => {
-                  // Show name only for 5-star public reviews
-                  const showName = review.isPublicName && !review.isPrivate;
-                  const displayName = showName 
+                  // Specialist sees all reviews with visibility indicators
+                  // Name display follows the same rules: 5★ + published + showName enabled
+                  const canShowName = review.rating === 5 && review.publishReview && review.showName;
+                  const displayName = canShowName 
                     ? (review.customerName.includes('@') 
                         ? review.customerName.split('@')[0] 
                         : review.customerName)
-                    : 'Anonymous client';
+                    : 'Verified Client';
+                  
+                  const isPrivate = !review.publishReview;
                   
                   return (
                     <div 
                       key={review.id} 
-                      className="p-3 rounded-md bg-muted/50"
+                      className={`p-3 rounded-md ${isPrivate ? 'bg-amber-500/10 border border-amber-500/20' : 'bg-muted/50'}`}
                       data-testid={`review-item-${review.id}`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-sm" data-testid={`text-reviewer-${review.id}`}>
-                          {displayName}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm" data-testid={`text-reviewer-${review.id}`}>
+                            {displayName}
+                          </span>
+                          {isPrivate && (
+                            <Badge variant="outline" className="text-amber-600 border-amber-500/30 text-[10px]">
+                              Private
+                            </Badge>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1">
                           <Star className="w-3 h-3 text-yellow-500 fill-yellow-500" />
                           <span className="text-sm" data-testid={`text-review-rating-${review.id}`}>
@@ -162,6 +172,11 @@ export default function SpecialistDashboard() {
                       <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>
                         {review.comment}
                       </p>
+                      {isPrivate && (
+                        <p className="text-[10px] text-amber-600 mt-1 italic">
+                          Only you can see this review
+                        </p>
+                      )}
                     </div>
                   );
                 })}

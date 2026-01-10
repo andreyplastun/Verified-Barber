@@ -5,20 +5,18 @@ import { useQuery } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { Star, ChevronLeft, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
 
 export default function ReviewPage() {
   const [, params] = useRoute("/review/:bookingId");
   const [, setLocation] = useLocation();
   
-  // Parse query params for auto mode
   const queryParams = new URLSearchParams(window.location.search);
   const specialistIdFromQuery = queryParams.get("specialistId");
 
   const { data: booking, isLoading: isLoadingBooking, error: bookingError } = useQuery({
     queryKey: [api.bookings.list.path, params?.bookingId, specialistIdFromQuery],
     queryFn: async () => {
-      // If we have a specific bookingId (not "auto"), first check if it's already reviewed
-      // and if that review is editable.
       const bookingIdStr = params?.bookingId;
       
       if (bookingIdStr && bookingIdStr !== "auto") {
@@ -27,7 +25,6 @@ export default function ReviewPage() {
         const res = await fetch(url);
         if (res.ok) {
           const b = await res.json();
-          // If it has a review, we need the review data to see if it's editable
           if (b.hasReview) {
             const rRes = await fetch(`${api.reviews.list.path}?specialistId=${b.specialistId}`);
             if (rRes.ok) {
@@ -43,7 +40,6 @@ export default function ReviewPage() {
       }
 
       if (params?.bookingId === "auto" && specialistIdFromQuery) {
-        // Fetch all bookings and find the first completed one for this specialist without a review
         const res = await fetch(api.bookings.list.path);
         if (!res.ok) throw new Error("Failed to fetch bookings");
         const allBookings = await res.json();
@@ -53,7 +49,6 @@ export default function ReviewPage() {
         );
         if (!autoBooking) throw new Error("No completed visits found to review");
         
-        // Check if this booking already has an editable review
         if (autoBooking.hasReview) {
           const rRes = await fetch(`${api.reviews.list.path}?specialistId=${autoBooking.specialistId}`);
           if (rRes.ok) {
@@ -76,16 +71,17 @@ export default function ReviewPage() {
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
-  const [isPrivate, setIsPrivate] = useState(true);
+  const [publishReview, setPublishReview] = useState(true);
+  const [showName, setShowName] = useState(false);
   const [hoveredStar, setHoveredStar] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
 
-  // Initialize form if editing existing review
   useEffect(() => {
     if (booking?.review && !isEditing) {
       setRating(booking.review.rating);
       setComment(booking.review.comment);
-      setIsPrivate(booking.review.isPrivate ?? true);
+      setPublishReview(booking.review.publishReview ?? true);
+      setShowName(booking.review.showName ?? false);
       setIsEditing(true);
     }
   }, [booking]);
@@ -104,11 +100,10 @@ export default function ReviewPage() {
     }
 
     if (booking.review) {
-      // Update existing review
       fetch(`/api/reviews/${booking.review.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating, comment, isPrivate }),
+        body: JSON.stringify({ rating, comment, publishReview, showName }),
       }).then(async (res) => {
         if (res.ok) {
           toast({ title: "Review Updated", description: "Your changes have been saved." });
@@ -119,13 +114,13 @@ export default function ReviewPage() {
         }
       });
     } else {
-      // Create new review
       createReview({
         bookingId: booking.id,
         specialistId: booking.specialistId,
         rating,
         comment,
-        isPrivate,
+        publishReview,
+        showName,
       }, {
         onSuccess: () => {
           toast({
@@ -168,6 +163,7 @@ export default function ReviewPage() {
         <button 
           onClick={() => setLocation("/")}
           className="px-6 py-3 bg-secondary rounded-xl font-medium hover-elevate"
+          data-testid="button-back-home"
         >
           Back Home
         </button>
@@ -188,6 +184,7 @@ export default function ReviewPage() {
         <button 
           onClick={() => setLocation("/")}
           className="px-6 py-3 bg-secondary rounded-xl font-medium"
+          data-testid="button-back-home"
         >
           Back Home
         </button>
@@ -205,6 +202,7 @@ export default function ReviewPage() {
          <button 
           onClick={() => setLocation(`/specialist/${booking.specialistId}`)}
           className="px-6 py-3 bg-secondary rounded-xl font-medium"
+          data-testid="button-view-profile"
         >
           View Profile
         </button>
@@ -218,6 +216,7 @@ export default function ReviewPage() {
         <button 
           onClick={() => history.back()}
           className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80"
+          data-testid="button-back"
         >
           <ChevronLeft size={24} />
         </button>
@@ -237,31 +236,6 @@ export default function ReviewPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8 max-w-md mx-auto">
-        {/* Privacy Toggle */}
-        <div className="bg-card border border-border rounded-xl p-4 space-y-4">
-          <div 
-            onClick={() => setIsPrivate(true)}
-            className={`p-3 rounded-lg cursor-pointer transition-all border-2 ${isPrivate ? 'border-primary bg-primary/5' : 'border-transparent'}`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-bold text-sm">Private (default)</span>
-              {isPrivate && <div className="w-2 h-2 rounded-full bg-primary" />}
-            </div>
-            <p className="text-xs text-muted-foreground italic">Your name will not be shown to the specialist</p>
-          </div>
-
-          <div 
-            onClick={() => setIsPrivate(false)}
-            className={`p-3 rounded-lg cursor-pointer transition-all border-2 ${!isPrivate ? 'border-primary bg-primary/5' : 'border-transparent'}`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-bold text-sm">Public</span>
-              {!isPrivate && <div className="w-2 h-2 rounded-full bg-primary" />}
-            </div>
-            <p className="text-xs text-muted-foreground italic">Your name may be visible to others</p>
-          </div>
-        </div>
-
         {/* Star Rating */}
         <div className="flex justify-center gap-2">
           {[1, 2, 3, 4, 5].map((star) => (
@@ -272,6 +246,7 @@ export default function ReviewPage() {
               onMouseLeave={() => setHoveredStar(0)}
               onClick={() => setRating(star)}
               className="p-1 transition-transform hover:scale-110 focus:outline-none"
+              data-testid={`button-star-${star}`}
             >
               <Star 
                 size={40} 
@@ -293,7 +268,49 @@ export default function ReviewPage() {
             placeholder="Tell us about your experience..."
             value={comment}
             onChange={e => setComment(e.target.value)}
+            data-testid="textarea-comment"
           />
+        </div>
+
+        {/* Visibility Toggles */}
+        <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+          {/* Publish Review Toggle */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="publish-toggle" className="font-medium text-sm cursor-pointer">
+                Показать отзыв другим?
+              </label>
+              <Switch
+                id="publish-toggle"
+                checked={publishReview}
+                onCheckedChange={setPublishReview}
+                data-testid="switch-publish-review"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Если выключено — отзыв будет виден только мастеру
+            </p>
+          </div>
+
+          {/* Show Name Toggle - only visible if publishReview is true */}
+          {publishReview && (
+            <div className="space-y-2 pt-2 border-t border-border">
+              <div className="flex items-center justify-between">
+                <label htmlFor="name-toggle" className="font-medium text-sm cursor-pointer">
+                  Показать моё имя?
+                </label>
+                <Switch
+                  id="name-toggle"
+                  checked={showName}
+                  onCheckedChange={setShowName}
+                  data-testid="switch-show-name"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Ваше имя увидят только при оценке 5★ и если отзыв публичный
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="space-y-3">
@@ -301,6 +318,7 @@ export default function ReviewPage() {
             type="submit"
             disabled={isPending}
             className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+            data-testid="button-submit-review"
           >
             {isPending ? "Saving..." : booking.review ? "Update Review" : "Publish Review"}
           </button>

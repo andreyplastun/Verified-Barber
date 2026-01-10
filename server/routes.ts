@@ -233,8 +233,8 @@ export async function registerRoutes(
   app.patch("/api/reviews/:id", async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const { rating, comment } = req.body;
-      const updated = await storage.updateReview(id, rating, comment);
+      const { rating, comment, publishReview, showName } = req.body;
+      const updated = await storage.updateReview(id, { rating, comment, publishReview, showName });
       if (!updated) return res.status(404).json({ message: "Review not found" });
       res.json(updated);
     } catch (err: any) {
