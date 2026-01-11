@@ -31,7 +31,7 @@ export interface IStorage {
 
   // Reviews
   createReview(review: any): Promise<Review>;
-  updateReview(id: number, data: { rating?: number; comment?: string; publishReview?: boolean; showName?: boolean }): Promise<Review | undefined>;
+  updateReview(id: number, data: { rating?: number; comment?: string; hiddenName?: boolean }): Promise<Review | undefined>;
   finalizeReview(id: number): Promise<Review | undefined>;
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
   checkAndFinalizeReviews(): Promise<void>;
@@ -188,14 +188,8 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     const editableUntil = new Date(now.getTime() + editableWindowMinutes * 60000);
 
-    // New visibility system
-    const publishReview = review.publishReview ?? true;
-    const showName = review.showName ?? false;
-    
-    // Legacy field compatibility
-    const isPrivate = !publishReview;
-    // Name is only public for 5-star reviews that are also published with showName enabled
-    const isPublicName = review.rating === 5 && publishReview && showName;
+    // Simple privacy: hiddenName controls name visibility
+    const hiddenName = review.hiddenName ?? false;
 
     const [newReview] = await db.insert(reviews).values({
       bookingId: review.bookingId,
@@ -204,17 +198,18 @@ export class DatabaseStorage implements IStorage {
       comment: review.comment,
       customerName: review.customerName || "Anonymous",
       isFinalized: false,
-      publishReview: publishReview,
-      showName: showName,
-      isPrivate: isPrivate,
-      isPublicName: isPublicName,
+      hiddenName: hiddenName,
+      publishReview: true,
+      showName: !hiddenName,
+      isPrivate: false,
+      isPublicName: !hiddenName,
       finalizedAt: null,
       editableUntil: editableUntil,
     } as any).returning();
     return newReview;
   }
 
-  async updateReview(id: number, data: { rating?: number; comment?: string; publishReview?: boolean; showName?: boolean }): Promise<Review | undefined> {
+  async updateReview(id: number, data: { rating?: number; comment?: string; hiddenName?: boolean }): Promise<Review | undefined> {
     const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
     if (!review) return undefined;
 
@@ -224,22 +219,15 @@ export class DatabaseStorage implements IStorage {
     }
 
     const newRating = data.rating ?? review.rating;
-    const newPublishReview = data.publishReview ?? review.publishReview;
-    const newShowName = data.showName ?? review.showName;
-    
-    // Legacy field compatibility
-    const isPrivate = !newPublishReview;
-    // Recalculate isPublicName based on new rating and visibility settings
-    const isPublicName = newRating === 5 && newPublishReview && newShowName;
+    const newHiddenName = data.hiddenName ?? review.hiddenName;
 
     const [updated] = await db.update(reviews)
       .set({ 
         rating: newRating, 
         comment: data.comment ?? review.comment, 
-        publishReview: newPublishReview,
-        showName: newShowName,
-        isPrivate,
-        isPublicName 
+        hiddenName: newHiddenName,
+        showName: !newHiddenName,
+        isPublicName: !newHiddenName
       })
       .where(eq(reviews.id, id))
       .returning();

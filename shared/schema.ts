@@ -47,11 +47,12 @@ export const reviews = pgTable("reviews", {
   comment: text("comment").notNull(),
   customerName: text("customer_name").notNull(), // Snapshot from booking
   isFinalized: boolean("is_finalized").default(false).notNull(),
-  // New visibility system
-  publishReview: boolean("publish_review").default(true).notNull(), // If false, only specialist sees it
-  showName: boolean("show_name").default(false).notNull(), // User preference for name visibility
-  // Legacy fields (kept for migration, defaults now align with new system)
-  isPrivate: boolean("is_private").default(false).notNull(), // Should mirror !publishReview
+  // Simple privacy: if true, name is hidden from everyone (master + clients)
+  hiddenName: boolean("hidden_name").default(false).notNull(),
+  // Legacy fields (kept for backwards compatibility)
+  publishReview: boolean("publish_review").default(true).notNull(),
+  showName: boolean("show_name").default(false).notNull(),
+  isPrivate: boolean("is_private").default(false).notNull(),
   isPublicName: boolean("is_public_name").default(false).notNull(),
   finalizedAt: timestamp("finalized_at"),
   editableUntil: timestamp("editable_until"),

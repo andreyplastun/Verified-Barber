@@ -3,9 +3,10 @@ import { useLocation, useRoute } from "wouter";
 import { useCreateReview } from "@/hooks/use-specialists";
 import { useQuery } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
-import { Star, ChevronLeft, AlertCircle } from "lucide-react";
+import { Star, ChevronLeft, AlertCircle, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export default function ReviewPage() {
   const [, params] = useRoute("/review/:bookingId");
@@ -71,8 +72,7 @@ export default function ReviewPage() {
 
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
-  const [publishReview, setPublishReview] = useState(true);
-  const [showName, setShowName] = useState(false);
+  const [hiddenName, setHiddenName] = useState(false);
   const [hoveredStar, setHoveredStar] = useState(0);
   const [isEditing, setIsEditing] = useState(false);
 
@@ -80,8 +80,7 @@ export default function ReviewPage() {
     if (booking?.review && !isEditing) {
       setRating(booking.review.rating);
       setComment(booking.review.comment);
-      setPublishReview(booking.review.publishReview ?? true);
-      setShowName(booking.review.showName ?? false);
+      setHiddenName(booking.review.hiddenName ?? false);
       setIsEditing(true);
     }
   }, [booking]);
@@ -103,14 +102,14 @@ export default function ReviewPage() {
       fetch(`/api/reviews/${booking.review.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating, comment, publishReview, showName }),
+        body: JSON.stringify({ rating, comment, hiddenName }),
       }).then(async (res) => {
         if (res.ok) {
-          toast({ title: "Review Updated", description: "Your changes have been saved." });
+          toast({ title: "Отзыв обновлён", description: "Ваши изменения сохранены." });
           setLocation(`/specialist/${booking.specialistId}`);
         } else {
           const err = await res.json();
-          toast({ variant: "destructive", title: "Error", description: err.message });
+          toast({ variant: "destructive", title: "Ошибка", description: err.message });
         }
       });
     } else {
@@ -119,18 +118,17 @@ export default function ReviewPage() {
         specialistId: booking.specialistId,
         rating,
         comment,
-        publishReview,
-        showName,
+        hiddenName,
       }, {
         onSuccess: () => {
           toast({
-            title: "Review Published",
-            description: "Your review is public. You can edit it for the next 5 minutes.",
+            title: "Отзыв опубликован",
+            description: "Вы можете редактировать его в течение 5 минут.",
           });
           setLocation(`/specialist/${booking.specialistId}`);
         },
         onError: (err) => {
-          toast({ variant: "destructive", title: "Error", description: err.message });
+          toast({ variant: "destructive", title: "Ошибка", description: err.message });
         }
       });
     }
@@ -259,8 +257,33 @@ export default function ReviewPage() {
           ))}
         </div>
 
+        {/* Privacy Switch - placed right below stars */}
+        <div className="flex items-center justify-center gap-3 py-2">
+          <div className="flex items-center gap-2">
+            <label htmlFor="hidden-name-toggle" className="text-sm font-medium cursor-pointer">
+              Скрыть моё имя
+            </label>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button type="button" className="text-muted-foreground hover:text-foreground transition-colors">
+                  <Info size={14} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-xs text-center">
+                <p>Если включено — отзыв будет анонимным. Мастер и другие клиенты не увидят ваше имя.</p>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+          <Switch
+            id="hidden-name-toggle"
+            checked={hiddenName}
+            onCheckedChange={setHiddenName}
+            data-testid="switch-hidden-name"
+          />
+        </div>
+
         <div className="space-y-2">
-          <label className="text-sm font-medium ml-1">Your Feedback</label>
+          <label className="text-sm font-medium ml-1">Ваш отзыв</label>
           <textarea
             required
             rows={4}
@@ -272,47 +295,6 @@ export default function ReviewPage() {
           />
         </div>
 
-        {/* Visibility Toggles */}
-        <div className="bg-card border border-border rounded-xl p-4 space-y-4">
-          {/* Publish Review Toggle */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label htmlFor="publish-toggle" className="font-medium text-sm cursor-pointer">
-                Показать отзыв другим?
-              </label>
-              <Switch
-                id="publish-toggle"
-                checked={publishReview}
-                onCheckedChange={setPublishReview}
-                data-testid="switch-publish-review"
-              />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Если выключено — отзыв будет виден только мастеру
-            </p>
-          </div>
-
-          {/* Show Name Toggle - only visible if publishReview is true */}
-          {publishReview && (
-            <div className="space-y-2 pt-2 border-t border-border">
-              <div className="flex items-center justify-between">
-                <label htmlFor="name-toggle" className="font-medium text-sm cursor-pointer">
-                  Показать моё имя?
-                </label>
-                <Switch
-                  id="name-toggle"
-                  checked={showName}
-                  onCheckedChange={setShowName}
-                  data-testid="switch-show-name"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Ваше имя увидят только при оценке 5★ и если отзыв публичный
-              </p>
-            </div>
-          )}
-        </div>
-
         <div className="space-y-3">
           <button
             type="submit"
@@ -320,7 +302,7 @@ export default function ReviewPage() {
             className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             data-testid="button-submit-review"
           >
-            {isPending ? "Saving..." : booking.review ? "Update Review" : "Publish Review"}
+            {isPending ? "Сохранение..." : booking.review ? "Обновить отзыв" : "Опубликовать"}
           </button>
         </div>
       </form>

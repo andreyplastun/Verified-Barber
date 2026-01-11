@@ -173,13 +173,12 @@ export default function SpecialistProfile() {
                   return n + (s[(v - 20) % 10] || s[v] || s[0]);
                 };
 
-                // Apply privacy logic: show name only for 5-star public reviews with showName enabled
-                const canShowName = review.rating === 5 && review.publishReview && review.showName;
-                const displayName = canShowName 
-                  ? (review.customerName.includes('@') 
+                // Simple privacy: if hiddenName is true, show "Анонимно"
+                const displayName = review.hiddenName 
+                  ? 'Анонимно'
+                  : (review.customerName.includes('@') 
                       ? review.customerName.split('@')[0] 
-                      : review.customerName)
-                  : 'Verified Client';
+                      : review.customerName);
 
                 return (
                   <div key={review.id} className="bg-card border border-white/5 rounded-2xl p-4" data-testid={`public-review-${review.id}`}>
