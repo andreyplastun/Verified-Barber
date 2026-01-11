@@ -173,8 +173,9 @@ export default function SpecialistProfile() {
                   return n + (s[(v - 20) % 10] || s[v] || s[0]);
                 };
 
-                // Simple privacy: if hiddenName is true, show "Анонимно"
-                const displayName = review.hiddenName 
+                // Privacy: show real name only to the review author themselves
+                const isOwnReview = currentUser?.id && review.clientId === currentUser.id;
+                const displayName = (review.hiddenName && !isOwnReview)
                   ? 'Анонимно'
                   : (review.customerName.includes('@') 
                       ? review.customerName.split('@')[0] 

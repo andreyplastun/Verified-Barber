@@ -194,6 +194,7 @@ export class DatabaseStorage implements IStorage {
     const [newReview] = await db.insert(reviews).values({
       bookingId: review.bookingId,
       specialistId: review.specialistId,
+      clientId: review.clientId || null, // Copy from booking for privacy display
       rating: review.rating,
       comment: review.comment,
       customerName: review.customerName || "Anonymous",

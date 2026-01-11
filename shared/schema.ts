@@ -43,6 +43,7 @@ export const reviews = pgTable("reviews", {
   id: serial("id").primaryKey(),
   bookingId: integer("booking_id").notNull(), // Verified visit link
   specialistId: integer("specialist_id").notNull(),
+  clientId: uuid("client_id"), // References users.id - copied from booking
   rating: integer("rating").notNull(), // 1-5
   comment: text("comment").notNull(),
   customerName: text("customer_name").notNull(), // Snapshot from booking
@@ -92,6 +93,10 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
   booking: one(bookings, {
     fields: [reviews.bookingId],
     references: [bookings.id],
+  }),
+  client: one(users, {
+    fields: [reviews.clientId],
+    references: [users.id],
   }),
 }));
 

@@ -134,7 +134,7 @@ export default function SpecialistDashboard() {
             ) : (
               <div className="space-y-3">
                 {reviews.slice(0, 5).map((review) => {
-                  // Simple privacy: if hiddenName is true, show "Анонимно"
+                  // Privacy: specialists always see "Анонимно" when hiddenName is true
                   const displayName = review.hiddenName 
                     ? 'Анонимно'
                     : (review.customerName.includes('@') 
