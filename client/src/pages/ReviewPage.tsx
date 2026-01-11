@@ -6,7 +6,7 @@ import { api, buildUrl } from "@shared/routes";
 import { Star, ChevronLeft, AlertCircle, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export default function ReviewPage() {
   const [, params] = useRoute("/review/:bookingId");
@@ -263,16 +263,20 @@ export default function ReviewPage() {
             <label htmlFor="hidden-name-toggle" className="text-sm font-medium cursor-pointer">
               Скрыть моё имя
             </label>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button type="button" className="text-muted-foreground hover:text-foreground transition-colors">
+            <Popover>
+              <PopoverTrigger asChild>
+                <button 
+                  type="button" 
+                  className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-full hover:bg-muted"
+                  data-testid="button-privacy-info"
+                >
                   <Info size={14} />
                 </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-xs text-center">
+              </PopoverTrigger>
+              <PopoverContent side="top" className="max-w-xs text-sm p-3">
                 <p>Если включено — отзыв будет анонимным. Мастер и другие клиенты не увидят ваше имя.</p>
-              </TooltipContent>
-            </Tooltip>
+              </PopoverContent>
+            </Popover>
           </div>
           <Switch
             id="hidden-name-toggle"
