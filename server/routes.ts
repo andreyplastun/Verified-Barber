@@ -7,9 +7,8 @@ import { bookings } from "@shared/schema";
 
 export async function registerRoutes(
   httpServer: Server,
-  app: Express
+  app: Express,
 ): Promise<Server> {
-
   // Users API - Input validation schemas
   const createUserSchema = z.object({
     id: z.string().uuid(),
@@ -26,17 +25,19 @@ export async function registerRoutes(
     try {
       const parsed = createUserSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.errors[0].message });
+        return res
+          .status(400)
+          .json({ message: parsed.error.errors[0].message });
       }
-      
+
       const { id, email } = parsed.data;
-      
+
       // Check if user already exists
       const existing = await storage.getUser(id);
       if (existing) {
         return res.json(existing);
       }
-      
+
       // Force role to 'client' on creation - cannot self-assign specialist role
       const user = await storage.createUser({ id, email, role: "client" });
       res.status(201).json(user);
@@ -57,9 +58,13 @@ export async function registerRoutes(
 
       if (user.role === "specialist" && !user.specialistId) {
         const firstSpecialist = await storage.getFirstSpecialist();
-        
+
         if (firstSpecialist) {
-          user = await storage.updateUserRole(user.id, "specialist", firstSpecialist.id) as typeof user;
+          user = (await storage.updateUserRole(
+            user.id,
+            "specialist",
+            firstSpecialist.id,
+          )) as typeof user;
           console.log("AUTO-BIND:", beforeUser, user);
         } else {
           console.log("AUTO-BIND: No specialists found to bind");
@@ -79,12 +84,16 @@ export async function registerRoutes(
       // Simple admin key check for MVP - in production use proper auth
       const adminKey = req.headers["x-admin-key"];
       if (adminKey !== process.env.SESSION_SECRET) {
-        return res.status(403).json({ message: "Forbidden: Admin access required" });
+        return res
+          .status(403)
+          .json({ message: "Forbidden: Admin access required" });
       }
 
       const parsed = updateRoleSchema.safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.errors[0].message });
+        return res
+          .status(400)
+          .json({ message: parsed.error.errors[0].message });
       }
 
       const { role, specialistId } = parsed.data;
@@ -97,7 +106,11 @@ export async function registerRoutes(
         }
       }
 
-      const updated = await storage.updateUserRole(req.params.id, role, specialistId);
+      const updated = await storage.updateUserRole(
+        req.params.id,
+        role,
+        specialistId,
+      );
       if (!updated) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -128,10 +141,10 @@ export async function registerRoutes(
     try {
       const body = req.body;
       // Pre-process appointmentTime if it's a string from the frontend
-      if (typeof body.appointmentTime === 'string') {
+      if (typeof body.appointmentTime === "string") {
         body.appointmentTime = new Date(body.appointmentTime);
       }
-      
+
       const input = api.bookings.create.input.parse(body);
       const booking = await storage.createBooking(input);
       res.status(201).json(booking);
@@ -190,20 +203,26 @@ export async function registerRoutes(
   app.post(api.reviews.create.path, async (req, res) => {
     try {
       const input = api.reviews.create.input.parse(req.body);
-      
+
       // Verify booking eligibility
       const booking = await storage.getBooking(input.bookingId);
       if (!booking) {
         return res.status(404).json({ message: "Booking not found" });
       }
       if (booking.status !== "completed") {
-        return res.status(409).json({ message: "Visit not yet verified/completed" });
+        return res
+          .status(409)
+          .json({ message: "Visit not yet verified/completed" });
       }
       if (booking.hasReview) {
-        return res.status(409).json({ message: "Review already submitted for this visit" });
+        return res
+          .status(409)
+          .json({ message: "Review already submitted for this visit" });
       }
       if (booking.specialistId !== input.specialistId) {
-        return res.status(400).json({ message: "Booking does not match specialist" });
+        return res
+          .status(400)
+          .json({ message: "Booking does not match specialist" });
       }
 
       // Create review as non-finalized
@@ -215,11 +234,11 @@ export async function registerRoutes(
         comment: input.comment,
         customerName: (booking as any).customerName ?? "Anonymous",
       });
-      
+
       // Mark booking as reviewed
       await storage.markBookingReviewed(booking.id);
-      
-      // Specialist rating is NOT updated here anymore, 
+
+      // Specialist rating is NOT updated here anymore,
       // it happens during storage.finalizeReview() or we don't call it yet
 
       res.status(201).json(review);
@@ -235,8 +254,13 @@ export async function registerRoutes(
     try {
       const id = Number(req.params.id);
       const { rating, comment, hiddenName } = req.body;
-      const updated = await storage.updateReview(id, { rating, comment, hiddenName });
-      if (!updated) return res.status(404).json({ message: "Review not found" });
+      const updated = await storage.updateReview(id, {
+        rating,
+        comment,
+        hiddenName,
+      });
+      if (!updated)
+        return res.status(404).json({ message: "Review not found" });
       res.json(updated);
     } catch (err: any) {
       res.status(403).json({ message: err.message });
@@ -268,7 +292,7 @@ export async function registerRoutes(
   // Middleware to check admin role
   const checkAdminRole = async (req: any, res: any, userId: string) => {
     const user = await storage.getUser(userId);
-    if (!user || user.role !== 'admin') {
+    if (!user || user.role !== "admin") {
       res.status(403).json({ message: "Forbidden: Admin access required" });
       return false;
     }
@@ -280,7 +304,7 @@ export async function registerRoutes(
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
-      
+
       const clients = await storage.getClients();
       res.json(clients);
     } catch (err: any) {
@@ -294,7 +318,7 @@ export async function registerRoutes(
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
-      
+
       const bookingsWithDetails = await storage.getBookingsWithDetails();
       res.json(bookingsWithDetails);
     } catch (err: any) {
@@ -308,16 +332,32 @@ export async function registerRoutes(
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
-      
-      const { specialistId, customerName, customerPhone, customerEmail, appointmentTime } = req.body;
-      
-      if (!specialistId || !customerName || !customerPhone || !customerEmail || !appointmentTime) {
-        return res.status(400).json({ message: "Missing required fields (including email)" });
+
+      const {
+        specialistId,
+        customerName,
+        customerPhone,
+        customerEmail,
+        appointmentTime,
+      } = req.body;
+
+      if (
+        !specialistId ||
+        !customerName ||
+        !customerPhone ||
+        !customerEmail ||
+        !appointmentTime
+      ) {
+        return res
+          .status(400)
+          .json({ message: "Missing required fields (including email)" });
       }
-      
+
       // Look up or create user by email
-      const client = await storage.getOrCreateUserByEmail(customerEmail.toLowerCase());
-      
+      const client = await storage.getOrCreateUserByEmail(
+        customerEmail.toLowerCase(),
+      );
+
       const booking = await storage.createBookingWithClient({
         specialistId: Number(specialistId),
         clientId: client.id,
@@ -326,7 +366,7 @@ export async function registerRoutes(
         customerEmail: customerEmail.toLowerCase(),
         appointmentTime: new Date(appointmentTime),
       });
-      
+
       res.status(201).json(booking);
     } catch (err: any) {
       console.error("Error creating booking:", err);
@@ -339,14 +379,14 @@ export async function registerRoutes(
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
-      
+
       const id = Number(req.params.id);
       const booking = await storage.updateBookingStatus(id, "completed");
-      
+
       if (!booking) {
         return res.status(404).json({ message: "Booking not found" });
       }
-      
+
       res.json(booking);
     } catch (err: any) {
       console.error("Error completing booking:", err);
@@ -355,40 +395,6 @@ export async function registerRoutes(
   });
 
   // Seed Data
-  if (process.env.NODE_ENV !== "production") {
-    const existing = await storage.getSpecialists();
-    if (existing.length === 0) {
-      console.log("Seeding specialists...");
-      await storage.createSpecialist({
-        name: "James 'The Blade' Wilson",
-        specialty: "Master Barber",
-        bio: "Specializing in classic cuts and hot towel shaves with over 15 years of experience.",
-        imageUrl: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
-        rating: "0",
-      });
-      await storage.createSpecialist({
-        name: "Sarah Jenkins",
-        specialty: "Stylist & Colorist",
-        bio: "Creative stylist known for modern fades and beard sculpting.",
-        imageUrl: "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=800&q=80",
-        rating: "0",
-      });
-      await storage.createSpecialist({
-        name: "Marcus Thorne",
-        specialty: "Beard Specialist",
-        bio: "The go-to expert for beard grooming and maintenance.",
-        imageUrl: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&q=80",
-        rating: "0",
-      });
-      await storage.createSpecialist({
-        name: "Elena Rodriguez",
-        specialty: "Hair Artist",
-        bio: "Fusion of traditional techniques with modern styling trends.",
-        imageUrl: "https://images.unsplash.com/photo-1605497788044-5a32c7078486?w=800&q=80",
-        rating: "0",
-      });
-    }
-  }
 
   return httpServer;
 }
