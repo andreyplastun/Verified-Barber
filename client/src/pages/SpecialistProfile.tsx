@@ -173,9 +173,8 @@ export default function SpecialistProfile() {
                   return n + (s[(v - 20) % 10] || s[v] || s[0]);
                 };
 
-                // Backend handles privacy masking - just format the display name
-                const displayName = review.customerName === 'Анонимно' 
-                  ? 'Анонимно'
+                const displayName = review.hiddenName 
+                  ? "Аноним" 
                   : (review.customerName.includes('@') 
                       ? review.customerName.split('@')[0] 
                       : review.customerName);

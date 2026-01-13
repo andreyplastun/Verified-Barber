@@ -138,9 +138,8 @@ export default function SpecialistDashboard() {
             ) : (
               <div className="space-y-3">
                 {reviews.slice(0, 5).map((review) => {
-                  // Backend handles privacy masking - just format the display name
-                  const displayName = review.customerName === 'Анонимно'
-                    ? 'Анонимно'
+                  const displayName = review.hiddenName 
+                    ? "Аноним" 
                     : (review.customerName.includes('@') 
                         ? review.customerName.split('@')[0] 
                         : review.customerName);
