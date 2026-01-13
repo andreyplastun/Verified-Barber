@@ -5,34 +5,12 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { bookings, type Review } from "@shared/schema";
 
-// Helper to mask reviewer names based on privacy settings and viewer context
-function maskReviewsForViewer(
-  reviews: Review[],
-  viewerRole: 'admin' | 'specialist' | 'client' | null,
-  viewerUserId?: string | null
-): Review[] {
-  return reviews.map(review => {
-    // Admin always sees real names
-    if (viewerRole === 'admin') {
-      return review;
-    }
-    
-    // If hiddenName is false, show real name
-    if (!review.hiddenName) {
-      return review;
-    }
-    
-    // If viewer is the review author, show their own name
-    if (viewerUserId && review.clientId === viewerUserId) {
-      return review;
-    }
-    
-    // Otherwise, mask the name
-    return {
-      ...review,
-      customerName: 'Анонимно'
-    };
-  });
+// Helper to mask reviewer names based on privacy settings
+function maskReviewsForViewer(reviews: Review[]): Review[] {
+  return reviews.map(r => ({
+    ...r,
+    customerName: r.hiddenName ? "Аноним" : r.customerName
+  }));
 }
 
 export async function registerRoutes(
@@ -151,15 +129,7 @@ export async function registerRoutes(
     }
     const reviews = await storage.getReviewsForSpecialist(id);
     
-    // Get viewer context for privacy masking
-    const viewerUserId = req.headers["x-user-id"] as string | undefined;
-    let viewerRole: 'admin' | 'specialist' | 'client' | null = null;
-    if (viewerUserId) {
-      const viewer = await storage.getUser(viewerUserId);
-      viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
-    }
-    
-    const maskedReviews = maskReviewsForViewer(reviews, viewerRole, viewerUserId);
+    const maskedReviews = maskReviewsForViewer(reviews);
     res.json({ ...specialist, reviews: maskedReviews });
   });
 
@@ -299,15 +269,7 @@ export async function registerRoutes(
     }
     const reviews = await storage.getReviewsForSpecialist(id);
     
-    // Get viewer context for privacy masking
-    const viewerUserId = req.headers["x-user-id"] as string | undefined;
-    let viewerRole: 'admin' | 'specialist' | 'client' | null = null;
-    if (viewerUserId) {
-      const viewer = await storage.getUser(viewerUserId);
-      viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
-    }
-    
-    const maskedReviews = maskReviewsForViewer(reviews, viewerRole, viewerUserId);
+    const maskedReviews = maskReviewsForViewer(reviews);
     res.json(maskedReviews);
   });
 
