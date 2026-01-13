@@ -394,7 +394,5 @@ export async function registerRoutes(
     }
   });
 
-  // Seed Data
-
   return httpServer;
 }
