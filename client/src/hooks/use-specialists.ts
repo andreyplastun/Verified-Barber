@@ -114,6 +114,8 @@ export function useCreateReview() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.specialists.get.path, variables.specialistId] });
       queryClient.invalidateQueries({ queryKey: [api.specialists.list.path] });
+      queryClient.invalidateQueries({ queryKey: ["/api/my-bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reviews"] });
     },
   });
 }

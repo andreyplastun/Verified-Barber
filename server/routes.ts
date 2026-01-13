@@ -273,6 +273,26 @@ export async function registerRoutes(
     }
   });
 
+  // Get reviews by specialistId query parameter (for specialist dashboard)
+  app.get("/api/reviews", async (req, res) => {
+    const specialistId = Number(req.query.specialistId);
+    if (isNaN(specialistId)) {
+      return res.status(400).json({ message: "Invalid specialistId" });
+    }
+    const reviews = await storage.getReviewsForSpecialist(specialistId);
+    
+    // Get viewer role for privacy masking
+    const viewerUserId = req.headers["x-user-id"] as string | undefined;
+    let viewerRole: 'admin' | 'specialist' | 'client' | null = null;
+    if (viewerUserId) {
+      const viewer = await storage.getUser(viewerUserId);
+      viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
+    }
+    
+    const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
+    res.json(maskedReviews);
+  });
+
   // Background task to finalize reviews
   setInterval(async () => {
     try {
@@ -283,9 +303,9 @@ export async function registerRoutes(
   }, 30000); // Check every 30 seconds
 
   app.get(api.reviews.list.path, async (req, res) => {
-    const id = Number(req.query.specialistId);
+    const id = Number(req.params.id);
     if (isNaN(id)) {
-      return res.status(400).json({ message: "Invalid specialistId" });
+      return res.status(400).json({ message: "Invalid specialist ID" });
     }
     const reviews = await storage.getReviewsForSpecialist(id);
     
