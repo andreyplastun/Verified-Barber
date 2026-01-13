@@ -15,10 +15,11 @@ function maskReviewsForViewer(
     if (viewerRole === 'admin') {
       return r;
     }
-    // For clients and specialists: hide name if hiddenName is true
+    // For clients and specialists: hide name if showName is false
+    const isHidden = !r.showName;
     return {
       ...r,
-      customerName: r.hiddenName ? "Аноним" : r.customerName
+      customerName: isHidden ? "Аноним" : r.customerName
     };
   });
 }
@@ -242,6 +243,7 @@ export async function registerRoutes(
         rating: input.rating,
         comment: input.comment,
         customerName: (booking as any).customerName ?? "Anonymous",
+        showName: (input as any).showName ?? true, // Default to showing name
       });
       
       // Mark booking as reviewed
@@ -262,8 +264,8 @@ export async function registerRoutes(
   app.patch("/api/reviews/:id", async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const { rating, comment, hiddenName } = req.body;
-      const updated = await storage.updateReview(id, { rating, comment, hiddenName });
+      const { rating, comment, showName } = req.body;
+      const updated = await storage.updateReview(id, { rating, comment, showName });
       if (!updated) return res.status(404).json({ message: "Review not found" });
       res.json(updated);
     } catch (err: any) {

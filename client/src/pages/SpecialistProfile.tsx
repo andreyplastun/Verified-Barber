@@ -173,7 +173,7 @@ export default function SpecialistProfile() {
                   return n + (s[(v - 20) % 10] || s[v] || s[0]);
                 };
 
-                const displayName = review.hiddenName 
+                const displayName = !review.showName 
                   ? "Аноним" 
                   : (review.customerName.includes('@') 
                       ? review.customerName.split('@')[0] 

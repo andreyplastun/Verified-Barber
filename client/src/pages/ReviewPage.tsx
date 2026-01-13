@@ -80,7 +80,7 @@ export default function ReviewPage() {
     if (booking?.review && !isEditing) {
       setRating(booking.review.rating);
       setComment(booking.review.comment);
-      setHiddenName(booking.review.hiddenName ?? false);
+      setHiddenName(!booking.review.showName);
       setIsEditing(true);
     }
   }, [booking]);
@@ -102,7 +102,7 @@ export default function ReviewPage() {
       fetch(`/api/reviews/${booking.review.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating, comment, hiddenName }),
+        body: JSON.stringify({ rating, comment, showName: !hiddenName }),
       }).then(async (res) => {
         if (res.ok) {
           toast({ title: "Отзыв обновлён", description: "Ваши изменения сохранены." });
@@ -118,7 +118,7 @@ export default function ReviewPage() {
         specialistId: booking.specialistId,
         rating,
         comment,
-        hiddenName,
+        showName: !hiddenName,
       }, {
         onSuccess: () => {
           toast({

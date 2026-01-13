@@ -31,7 +31,7 @@ export interface IStorage {
 
   // Reviews
   createReview(review: any): Promise<Review>;
-  updateReview(id: number, data: { rating?: number; comment?: string; hiddenName?: boolean }): Promise<Review | undefined>;
+  updateReview(id: number, data: { rating?: number; comment?: string; showName?: boolean }): Promise<Review | undefined>;
   finalizeReview(id: number): Promise<Review | undefined>;
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
   checkAndFinalizeReviews(): Promise<void>;
@@ -188,8 +188,8 @@ export class DatabaseStorage implements IStorage {
     const now = new Date();
     const editableUntil = new Date(now.getTime() + editableWindowMinutes * 60000);
 
-    // Simple privacy: hiddenName controls name visibility
-    const hiddenName = review.hiddenName ?? false;
+    // Simple privacy: showName controls name visibility
+    const showName = review.showName ?? true;
 
     const [newReview] = await db.insert(reviews).values({
       bookingId: review.bookingId,
@@ -199,18 +199,18 @@ export class DatabaseStorage implements IStorage {
       comment: review.comment,
       customerName: review.customerName || "Anonymous",
       isFinalized: false,
-      hiddenName: hiddenName,
+      showName: showName,
+      hiddenName: !showName,
       publishReview: true,
-      showName: !hiddenName,
       isPrivate: false,
-      isPublicName: !hiddenName,
+      isPublicName: showName,
       finalizedAt: null,
       editableUntil: editableUntil,
     } as any).returning();
     return newReview;
   }
 
-  async updateReview(id: number, data: { rating?: number; comment?: string; hiddenName?: boolean }): Promise<Review | undefined> {
+  async updateReview(id: number, data: { rating?: number; comment?: string; showName?: boolean }): Promise<Review | undefined> {
     const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
     if (!review) return undefined;
 
@@ -220,15 +220,15 @@ export class DatabaseStorage implements IStorage {
     }
 
     const newRating = data.rating ?? review.rating;
-    const newHiddenName = data.hiddenName ?? review.hiddenName;
+    const newShowName = data.showName ?? review.showName;
 
     const [updated] = await db.update(reviews)
       .set({ 
         rating: newRating, 
         comment: data.comment ?? review.comment, 
-        hiddenName: newHiddenName,
-        showName: !newHiddenName,
-        isPublicName: !newHiddenName
+        showName: newShowName,
+        hiddenName: !newShowName,
+        isPublicName: newShowName
       })
       .where(eq(reviews.id, id))
       .returning();

@@ -138,7 +138,7 @@ export default function SpecialistDashboard() {
             ) : (
               <div className="space-y-3">
                 {reviews.slice(0, 5).map((review) => {
-                  const displayName = review.hiddenName 
+                  const displayName = !review.showName 
                     ? "Аноним" 
                     : (review.customerName.includes('@') 
                         ? review.customerName.split('@')[0] 
