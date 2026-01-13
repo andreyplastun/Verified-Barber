@@ -14,12 +14,16 @@ export function useSpecialists() {
   });
 }
 
-export function useSpecialist(id: number) {
+export function useSpecialist(id: number, userId?: string | null) {
   return useQuery({
-    queryKey: [api.specialists.get.path, id],
+    queryKey: [api.specialists.get.path, id, userId],
     queryFn: async () => {
       const url = buildUrl(api.specialists.get.path, { id });
-      const res = await fetch(url);
+      const headers: Record<string, string> = {};
+      if (userId) {
+        headers["x-user-id"] = userId;
+      }
+      const res = await fetch(url, { headers });
       if (res.status === 404) return null;
       if (!res.ok) throw new Error("Failed to fetch specialist");
       return api.specialists.get.responses[200].parse(await res.json());

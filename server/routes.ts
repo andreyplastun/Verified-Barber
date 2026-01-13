@@ -3,7 +3,37 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings } from "@shared/schema";
+import { bookings, type Review } from "@shared/schema";
+
+// Helper to mask reviewer names based on privacy settings and viewer context
+function maskReviewsForViewer(
+  reviews: Review[],
+  viewerRole: 'admin' | 'specialist' | 'client' | null,
+  viewerUserId?: string | null
+): Review[] {
+  return reviews.map(review => {
+    // Admin always sees real names
+    if (viewerRole === 'admin') {
+      return review;
+    }
+    
+    // If hiddenName is false, show real name
+    if (!review.hiddenName) {
+      return review;
+    }
+    
+    // If viewer is the review author, show their own name
+    if (viewerUserId && review.clientId === viewerUserId) {
+      return review;
+    }
+    
+    // Otherwise, mask the name
+    return {
+      ...review,
+      customerName: 'Анонимно'
+    };
+  });
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -120,7 +150,17 @@ export async function registerRoutes(
       return res.status(404).json({ message: "Specialist not found" });
     }
     const reviews = await storage.getReviewsForSpecialist(id);
-    res.json({ ...specialist, reviews });
+    
+    // Get viewer context for privacy masking
+    const viewerUserId = req.headers["x-user-id"] as string | undefined;
+    let viewerRole: 'admin' | 'specialist' | 'client' | null = null;
+    if (viewerUserId) {
+      const viewer = await storage.getUser(viewerUserId);
+      viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
+    }
+    
+    const maskedReviews = maskReviewsForViewer(reviews, viewerRole, viewerUserId);
+    res.json({ ...specialist, reviews: maskedReviews });
   });
 
   // Bookings
@@ -258,7 +298,17 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Invalid specialistId" });
     }
     const reviews = await storage.getReviewsForSpecialist(id);
-    res.json(reviews);
+    
+    // Get viewer context for privacy masking
+    const viewerUserId = req.headers["x-user-id"] as string | undefined;
+    let viewerRole: 'admin' | 'specialist' | 'client' | null = null;
+    if (viewerUserId) {
+      const viewer = await storage.getUser(viewerUserId);
+      viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
+    }
+    
+    const maskedReviews = maskReviewsForViewer(reviews, viewerRole, viewerUserId);
+    res.json(maskedReviews);
   });
 
   // =====================

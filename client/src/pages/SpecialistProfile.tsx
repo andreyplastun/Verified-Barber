@@ -11,8 +11,8 @@ import type { Booking } from "@shared/schema";
 export default function SpecialistProfile() {
   const [, params] = useRoute("/specialist/:id");
   const id = params ? parseInt(params.id) : 0;
-  const { data: specialist, isLoading } = useSpecialist(id);
   const { currentUser } = useAuth();
+  const { data: specialist, isLoading } = useSpecialist(id, currentUser?.id);
 
   // Fetch user's bookings to check if they can leave a review
   const { data: myBookings = [] } = useQuery<Booking[]>({
@@ -173,9 +173,8 @@ export default function SpecialistProfile() {
                   return n + (s[(v - 20) % 10] || s[v] || s[0]);
                 };
 
-                // Privacy: show real name only to the review author themselves
-                const isOwnReview = currentUser?.id && review.clientId === currentUser.id;
-                const displayName = (review.hiddenName && !isOwnReview)
+                // Backend handles privacy masking - just format the display name
+                const displayName = review.customerName === 'Анонимно' 
                   ? 'Анонимно'
                   : (review.customerName.includes('@') 
                       ? review.customerName.split('@')[0] 

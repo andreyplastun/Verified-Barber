@@ -27,9 +27,13 @@ export default function SpecialistDashboard() {
   });
 
   const { data: reviews, isLoading: loadingReviews } = useQuery<Review[]>({
-    queryKey: ['/api/reviews', specialistId],
+    queryKey: ['/api/reviews', specialistId, currentUser?.id],
     queryFn: async () => {
-      const res = await fetch(`/api/reviews?specialistId=${specialistId}`);
+      const headers: Record<string, string> = {};
+      if (currentUser?.id) {
+        headers["x-user-id"] = currentUser.id;
+      }
+      const res = await fetch(`/api/reviews?specialistId=${specialistId}`, { headers });
       if (!res.ok) throw new Error('Failed to fetch reviews');
       return res.json();
     },
@@ -134,8 +138,8 @@ export default function SpecialistDashboard() {
             ) : (
               <div className="space-y-3">
                 {reviews.slice(0, 5).map((review) => {
-                  // Privacy: specialists always see "Анонимно" when hiddenName is true
-                  const displayName = review.hiddenName 
+                  // Backend handles privacy masking - just format the display name
+                  const displayName = review.customerName === 'Анонимно'
                     ? 'Анонимно'
                     : (review.customerName.includes('@') 
                         ? review.customerName.split('@')[0] 
