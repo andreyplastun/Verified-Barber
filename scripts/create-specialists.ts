@@ -1,95 +1,65 @@
-import { createClient } from '@supabase/supabase-js';
-import pg from 'pg';
+import { pool } from "../server/db";
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
+const defaultSpecialists = [
+  {
+    name: "Vladimir",
+    specialty: "Master Barber",
+    bio: "Expert in traditional and modern cuts",
+    imageUrl: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&q=80",
+  },
+  {
+    name: "Timur 1",
+    specialty: "Barber",
+    bio: "Short cuts and fades",
+    imageUrl: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
+  },
+  {
+    name: "Zhanibek",
+    specialty: "Barber",
+    bio: "Precision lineups",
+    imageUrl: "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=800&q=80",
+  },
+  {
+    name: "Akerke",
+    specialty: "Stylist",
+    bio: "Creative hair & style",
+    imageUrl: "https://images.unsplash.com/photo-1604654894610-df63bc536371?w=800&q=80",
+  },
+  {
+    name: "Gauhar",
+    specialty: "Stylist",
+    bio: "Color and styling",
+    imageUrl: "https://images.unsplash.com/photo-1519014816548-bf5fe059798b?w=800&q=80",
+  },
+  {
+    name: "Sergey",
+    specialty: "Master Barber",
+    bio: "Classic & straight razor",
+    imageUrl: "https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=800&q=80",
+  },
+  {
+    name: "Timur 2",
+    specialty: "Barber",
+    bio: "Fades and beard shaping",
+    imageUrl: "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800&q=80",
   }
-});
-
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL
-});
-
-function generatePassword(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
-  let password = '';
-  for (let i = 0; i < 12; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return password;
-}
-
-const specialists = [
-  { email: 'vladimir@who.kz', specialistId: 5 },
-  { email: 'timur1@who.kz', specialistId: 6 },
-  { email: 'zhanibek@who.kz', specialistId: 7 },
-  { email: 'akerke@who.kz', specialistId: 8 },
-  { email: 'gauhar@who.kz', specialistId: 9 },
-  { email: 'sergey@who.kz', specialistId: 10 },
-  { email: 'timur2@who.kz', specialistId: 11 },
 ];
 
-async function createSpecialistUsers() {
-  const results: { email: string; password: string; success: boolean; error?: string }[] = [];
-
-  for (const spec of specialists) {
-    const password = generatePassword();
-    
+async function run() {
+  for (const spec of defaultSpecialists) {
     try {
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-        email: spec.email,
-        password: password,
-        email_confirm: true
-      });
-
-      if (authError) {
-        results.push({ email: spec.email, password: '', success: false, error: authError.message });
-        continue;
-      }
-
-      const supabaseUserId = authData.user!.id;
-
       await pool.query(
-        `INSERT INTO users (id, email, role, specialist_id, created_at) 
-         VALUES ($1, $2, 'specialist', $3, NOW())`,
-        [supabaseUserId, spec.email, spec.specialistId]
+        `INSERT INTO specialists (name, specialty, bio, image_url, rating, review_count, average_rating)
+         VALUES ($1, $2, $3, $4, '0', 0, 0)`,
+        [spec.name, spec.specialty, spec.bio, spec.imageUrl]
       );
-
-      results.push({ email: spec.email, password, success: true });
-    } catch (err: any) {
-      results.push({ email: spec.email, password: '', success: false, error: err.message });
+      console.log("Inserted:", spec.name);
+    } catch (e: any) {
+      console.error("Error inserting:", spec.name, e.message);
     }
   }
-
-  console.log('\n=== RESULTS ===\n');
-  
-  const successful = results.filter(r => r.success);
-  const failed = results.filter(r => !r.success);
-
-  if (successful.length > 0) {
-    console.log('CREATED ACCOUNTS:\n');
-    for (const r of successful) {
-      console.log(`Email: ${r.email}`);
-      console.log(`Password: ${r.password}`);
-      console.log('---');
-    }
-  }
-
-  if (failed.length > 0) {
-    console.log('\nFAILED:\n');
-    for (const r of failed) {
-      console.log(`${r.email}: ${r.error}`);
-    }
-  }
-
-  console.log('\nDONE — Specialists created and linked');
-  
+  console.log("DONE: specialists created");
   await pool.end();
 }
 
-createSpecialistUsers().catch(console.error);
+run();

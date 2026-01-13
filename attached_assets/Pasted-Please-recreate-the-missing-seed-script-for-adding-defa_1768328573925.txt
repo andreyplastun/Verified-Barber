@@ -1,0 +1,89 @@
+Please recreate the missing seed script for adding default barber specialists
+and run it once so the database includes initial specialists.
+
+1. Create a new file at scripts/create-specialists.ts with the following content:
+
+-----------------
+import { pool } from "../server/db";
+import { specialists } from "../shared/schema";
+import { nanoid } from "nanoid";
+
+const defaultSpecialists = [
+  {
+    name: "Vladimir",
+    email: "vladimir@who.kz",
+    specialty: "Master Barber",
+    bio: "Expert in traditional and modern cuts",
+    imageUrl: "",
+  },
+  {
+    name: "Timur 1",
+    email: "timur1@who.kz",
+    specialty: "Barber",
+    bio: "Short cuts and fades",
+    imageUrl: "",
+  },
+  {
+    name: "Zhanibek",
+    email: "zhanibek@who.kz",
+    specialty: "Barber",
+    bio: "Precision lineups",
+    imageUrl: "",
+  },
+  {
+    name: "Akerke",
+    email: "akerke@who.kz",
+    specialty: "Stylist",
+    bio: "Creative hair & style",
+    imageUrl: "",
+  },
+  {
+    name: "Gauhar",
+    email: "gauhar@who.kz",
+    specialty: "Stylist",
+    bio: "Color and styling",
+    imageUrl: "",
+  },
+  {
+    name: "Sergey",
+    email: "sergey@who.kz",
+    specialty: "Master Barber",
+    bio: "Classic & straight razor",
+    imageUrl: "",
+  },
+  {
+    name: "Timur 2",
+    email: "timur2@who.kz",
+    specialty: "Barber",
+    bio: "Fades and beard shaping",
+    imageUrl: "",
+  }
+];
+
+async function run() {
+  for (const spec of defaultSpecialists) {
+    const id = nanoid();
+    try {
+      await pool.query(
+        `INSERT INTO specialists (id, name, email, specialty, bio, image_url)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (email) DO NOTHING`,
+        [id, spec.name, spec.email, spec.specialty, spec.bio, spec.imageUrl]
+      );
+    } catch(e) {
+      console.error("Error inserting:", spec.email, e.message);
+    }
+  }
+  console.log("DONE: specialists created or already exist");
+  await pool.end();
+}
+
+run();
+-----------------
+
+2. Run the seed once using:
+npx tsx scripts/create-specialists.ts
+
+3. Confirm that specialists now appear through the API and UI.
+
+Do not configure it to run at startup automatically.
