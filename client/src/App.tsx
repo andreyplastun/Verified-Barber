@@ -100,6 +100,8 @@ function Router() {
           <ReviewPage />
         </ProtectedRoute>
       </Route>
+      <Route path="/reviews" component={ReviewPage} />
+      <Route path="/specialists/:id/reviews" component={ReviewPage} />
       <Route path="/admin">
         <AdminProtectedRoute>
           <AdminDashboard />
