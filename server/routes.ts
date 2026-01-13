@@ -5,12 +5,22 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { bookings, type Review } from "@shared/schema";
 
-// Helper to mask reviewer names based on privacy settings
-function maskReviewsForViewer(reviews: Review[]): Review[] {
-  return reviews.map(r => ({
-    ...r,
-    customerName: r.hiddenName ? "Аноним" : r.customerName
-  }));
+// Helper to mask reviewer names based on privacy settings and viewer role
+function maskReviewsForViewer(
+  reviews: Review[],
+  viewerRole: 'admin' | 'specialist' | 'client' | null
+): Review[] {
+  return reviews.map(r => {
+    // Admin can see all names
+    if (viewerRole === 'admin') {
+      return r;
+    }
+    // For clients and specialists: hide name if hiddenName is true
+    return {
+      ...r,
+      customerName: r.hiddenName ? "Аноним" : r.customerName
+    };
+  });
 }
 
 export async function registerRoutes(
@@ -129,7 +139,15 @@ export async function registerRoutes(
     }
     const reviews = await storage.getReviewsForSpecialist(id);
     
-    const maskedReviews = maskReviewsForViewer(reviews);
+    // Get viewer role for privacy masking
+    const viewerUserId = req.headers["x-user-id"] as string | undefined;
+    let viewerRole: 'admin' | 'specialist' | 'client' | null = null;
+    if (viewerUserId) {
+      const viewer = await storage.getUser(viewerUserId);
+      viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
+    }
+    
+    const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
     res.json({ ...specialist, reviews: maskedReviews });
   });
 
@@ -269,7 +287,15 @@ export async function registerRoutes(
     }
     const reviews = await storage.getReviewsForSpecialist(id);
     
-    const maskedReviews = maskReviewsForViewer(reviews);
+    // Get viewer role for privacy masking
+    const viewerUserId = req.headers["x-user-id"] as string | undefined;
+    let viewerRole: 'admin' | 'specialist' | 'client' | null = null;
+    if (viewerUserId) {
+      const viewer = await storage.getUser(viewerUserId);
+      viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
+    }
+    
+    const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
     res.json(maskedReviews);
   });
 
