@@ -187,11 +187,16 @@ export async function registerRoutes(
 
   app.get("/api/specialists/:id/bookings", async (req, res) => {
     const id = Number(req.params.id);
+    const viewerUserId = req.headers["x-user-id"] as string | undefined;
+    console.log(`[DEBUG] GET /api/specialists/${id}/bookings - Requested by user: ${viewerUserId}`);
     if (isNaN(id)) {
       return res.status(400).json({ message: "Invalid specialist ID" });
     }
     const bookings = await storage.getBookingsForSpecialist(id);
-    console.log(`[DEBUG] GET /api/specialists/${id}/bookings - Found ${bookings.length} bookings`);
+    console.log(`[DEBUG] GET /api/specialists/${id}/bookings - Found ${bookings.length} completed bookings`);
+    bookings.forEach(b => {
+      console.log(`[DEBUG]   Booking ${b.id}: client_id=${b.clientId}, specialist_id=${b.specialistId}, status=${b.status}`);
+    });
     res.json(bookings);
   });
 
@@ -201,7 +206,12 @@ export async function registerRoutes(
     if (!userId) {
       return res.status(401).json({ message: "Unauthorized" });
     }
+    console.log(`[DEBUG] GET /api/my-bookings - userId: ${userId}`);
     const bookings = await storage.getBookingsForClient(userId);
+    console.log(`[DEBUG] GET /api/my-bookings - Found ${bookings.length} bookings for user ${userId}`);
+    bookings.forEach(b => {
+      console.log(`[DEBUG]   Booking ${b.id}: client_id=${b.clientId}, specialist_id=${b.specialistId}, status=${b.status}, has_review=${b.hasReview}`);
+    });
     res.json(bookings);
   });
 
@@ -286,6 +296,9 @@ export async function registerRoutes(
   // Get reviews by specialistId query parameter (for specialist dashboard)
   app.get("/api/reviews", async (req, res) => {
     const specialistId = Number(req.query.specialistId);
+    const viewerUserId = req.headers["x-user-id"] as string | undefined;
+    console.log(`[DEBUG] GET /api/reviews?specialistId=${specialistId} - Requested by user: ${viewerUserId}`);
+    
     if (isNaN(specialistId)) {
       return res.status(400).json({ message: "Invalid specialistId" });
     }
@@ -301,14 +314,15 @@ export async function registerRoutes(
     console.log(`[DEBUG] GET /api/reviews?specialistId=${specialistId} - Found ${reviews.length} reviews`);
     
     // Get viewer role for privacy masking
-    const viewerUserId = req.headers["x-user-id"] as string | undefined;
     let viewerRole: 'admin' | 'specialist' | 'client' | null = null;
     if (viewerUserId) {
       const viewer = await storage.getUser(viewerUserId);
       viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
+      console.log(`[DEBUG] Viewer role: ${viewerRole}`);
     }
     
     const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
+    console.log(`[DEBUG] After masking, reviews with hidden names: ${maskedReviews.filter(r => r.customerName === 'Аноним').length}`);
     res.json(maskedReviews);
   });
 
