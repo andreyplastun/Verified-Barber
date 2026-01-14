@@ -177,8 +177,11 @@ export default function ReviewPage() {
     );
   }
 
-  // Only show loading while fetching the booking itself
-  if (isLoadingBooking) {
+  // Show loading while fetching booking, or while initializing form for edit mode
+  // This prevents the "flash" where create form briefly appears before switching to edit
+  const isFormReady = !isLoadingBooking && (!booking?.hasReview || formInitialized);
+  
+  if (!isFormReady) {
     return <div className="p-6 text-center animate-pulse">Загрузка данных...</div>;
   }
   
