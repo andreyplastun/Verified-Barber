@@ -191,6 +191,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Invalid specialist ID" });
     }
     const bookings = await storage.getBookingsForSpecialist(id);
+    console.log(`[DEBUG] GET /api/specialists/${id}/bookings - Found ${bookings.length} bookings`);
     res.json(bookings);
   });
 
@@ -296,6 +297,7 @@ export async function registerRoutes(
     }
     
     const reviews = await storage.getReviewsForSpecialist(specialistId);
+    console.log(`[DEBUG] GET /api/reviews?specialistId=${specialistId} - Found ${reviews.length} reviews`);
     
     // Get viewer role for privacy masking
     const viewerUserId = req.headers["x-user-id"] as string | undefined;

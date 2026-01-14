@@ -33,9 +33,19 @@ export default function SpecialistProfile() {
     (b) => b.specialistId === id && b.status === "completed" && !b.hasReview
   );
 
+  // Find a booking that was already reviewed but might still be editable (within 5-min window)
+  const reviewedBooking = myBookings.find(
+    (b) => b.specialistId === id && b.status === "completed" && b.hasReview
+  );
+
   if (isLoading || !specialist) {
     return <div className="min-h-screen bg-background animate-pulse" />;
   }
+
+  // Check if the existing review is still editable (must be after specialist null check)
+  const editableReview = specialist.reviews?.find(
+    (r: any) => reviewedBooking && r.bookingId === reviewedBooking.id && !r.isFinalized && new Date() < new Date(r.editableUntil)
+  );
 
   const rating = specialist.averageRating / 10;
   const reviewCount = specialist.reviewCount;
@@ -231,6 +241,14 @@ export default function SpecialistProfile() {
               <Button className="w-full py-6 rounded-xl font-bold text-lg" data-testid="button-leave-review">
                 <Star className="mr-2 h-5 w-5" />
                 Leave Review
+              </Button>
+            </Link>
+          )}
+          {!eligibleBooking && editableReview && reviewedBooking && (
+            <Link href={`/review/${reviewedBooking.id}`} className="flex-1">
+              <Button variant="secondary" className="w-full py-6 rounded-xl font-bold text-lg" data-testid="button-edit-review">
+                <Star className="mr-2 h-5 w-5" />
+                Edit Review
               </Button>
             </Link>
           )}
