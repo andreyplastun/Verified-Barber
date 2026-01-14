@@ -11,6 +11,10 @@ export interface IStorage {
   updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined>;
   getClients(): Promise<User[]>;
   getBookingsWithDetails(): Promise<any[]>;
+  
+  // Specialist mapping
+  findSpecialistByEmail(email: string): Promise<Specialist | undefined>;
+  syncSpecialistMappings(): Promise<{ updated: number; warnings: string[] }>;
 
   // Specialists
   getSpecialists(): Promise<Specialist[]>;
@@ -39,13 +43,89 @@ export interface IStorage {
 }
 
 export class DatabaseStorage implements IStorage {
+  // Specialist mapping helper - finds specialist by email prefix or name match
+  async findSpecialistByEmail(email: string): Promise<Specialist | undefined> {
+    const allSpecialists = await db.select().from(specialists);
+    const emailLower = email.toLowerCase();
+    const emailPrefix = emailLower.split('@')[0];
+    
+    // First try: exact email prefix match to specialist name (case-insensitive)
+    // e.g., "vladimir@who.kz" matches specialist "Vladimir"
+    let match = allSpecialists.find(s => 
+      s.name.toLowerCase() === emailPrefix ||
+      s.name.toLowerCase().replace(/\s+/g, '') === emailPrefix ||
+      emailPrefix.includes(s.name.toLowerCase().replace(/\s+/g, ''))
+    );
+    
+    if (match) {
+      console.log(`[MAPPING] Found specialist by email prefix: ${email} → ${match.name} (id=${match.id})`);
+      return match;
+    }
+    
+    // Second try: check if email prefix starts with specialist name
+    // e.g., "timur1@who.kz" matches "Timur 1"
+    match = allSpecialists.find(s => {
+      const nameNormalized = s.name.toLowerCase().replace(/\s+/g, '');
+      return emailPrefix.startsWith(nameNormalized) || nameNormalized.startsWith(emailPrefix);
+    });
+    
+    if (match) {
+      console.log(`[MAPPING] Found specialist by partial name match: ${email} → ${match.name} (id=${match.id})`);
+      return match;
+    }
+    
+    console.log(`[MAPPING] No specialist found for email: ${email}`);
+    return undefined;
+  }
+
+  // Sync all specialist user mappings (migration utility)
+  async syncSpecialistMappings(): Promise<{ updated: number; warnings: string[] }> {
+    const specialistUsers = await db.select().from(users).where(eq(users.role, "specialist"));
+    let updated = 0;
+    const warnings: string[] = [];
+    
+    for (const user of specialistUsers) {
+      const specialist = await this.findSpecialistByEmail(user.email);
+      
+      if (specialist) {
+        if (user.specialistId !== specialist.id) {
+          await db.update(users)
+            .set({ specialistId: specialist.id })
+            .where(eq(users.id, user.id));
+          console.log(`[SYNC] Updated ${user.email}: specialist_id ${user.specialistId} → ${specialist.id}`);
+          updated++;
+        }
+      } else {
+        const warning = `No specialist found for user: ${user.email}`;
+        console.warn(`[SYNC] ${warning}`);
+        warnings.push(warning);
+      }
+    }
+    
+    console.log(`[SYNC] Specialist mapping complete: ${updated} updated, ${warnings.length} warnings`);
+    return { updated, warnings };
+  }
+
   // Users
   async createUser(user: { id: string; email: string; role?: string; specialistId?: number }): Promise<User> {
+    let specialistId = user.specialistId || null;
+    
+    // Auto-map specialist if role is 'specialist' and no specialistId provided
+    if (user.role === 'specialist' && !specialistId) {
+      const specialist = await this.findSpecialistByEmail(user.email);
+      if (specialist) {
+        specialistId = specialist.id;
+        console.log(`[CREATE_USER] Auto-mapped specialist: ${user.email} → specialist_id=${specialist.id}`);
+      } else {
+        console.warn(`[CREATE_USER] No specialist found for: ${user.email}`);
+      }
+    }
+    
     const [newUser] = await db.insert(users).values({
       id: user.id,
       email: user.email,
       role: (user.role as "client" | "specialist") || "client",
-      specialistId: user.specialistId || null,
+      specialistId,
     }).returning();
     return newUser;
   }
@@ -74,10 +154,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined> {
+    let mappedSpecialistId = specialistId || null;
+    
+    // Auto-map specialist if changing to 'specialist' role and no specialistId provided
+    if (role === 'specialist' && !mappedSpecialistId) {
+      const user = await this.getUser(id);
+      if (user) {
+        const specialist = await this.findSpecialistByEmail(user.email);
+        if (specialist) {
+          mappedSpecialistId = specialist.id;
+          console.log(`[UPDATE_ROLE] Auto-mapped specialist: ${user.email} → specialist_id=${specialist.id}`);
+        } else {
+          console.warn(`[UPDATE_ROLE] No specialist found for: ${user.email}`);
+        }
+      }
+    }
+    
     const [updated] = await db.update(users)
       .set({ 
         role: role as "client" | "specialist" | "admin", 
-        specialistId: specialistId || null 
+        specialistId: mappedSpecialistId 
       })
       .where(eq(users.id, id))
       .returning();

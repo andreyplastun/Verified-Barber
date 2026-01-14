@@ -446,6 +446,26 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Sync specialist mappings (migration utility)
+  app.post("/api/admin/sync-specialist-mappings", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      
+      const result = await storage.syncSpecialistMappings();
+      res.json(result);
+    } catch (err: any) {
+      console.error("Error syncing specialist mappings:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Run automatic sync on startup
+  console.log("[STARTUP] Running automatic specialist mapping sync...");
+  storage.syncSpecialistMappings().catch(err => {
+    console.error("[STARTUP] Failed to sync specialist mappings:", err);
+  });
+
   // Seed Data
   if (process.env.NODE_ENV !== "production") {
     const existing = await storage.getSpecialists();
