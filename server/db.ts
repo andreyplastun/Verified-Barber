@@ -10,5 +10,11 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+// Optimized pool for Autoscale: smaller pool, shorter timeouts for faster cold-starts
+export const pool = new Pool({ 
+  connectionString: process.env.DATABASE_URL,
+  max: 5, // Smaller pool for serverless
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
 export const db = drizzle(pool, { schema });

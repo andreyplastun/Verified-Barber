@@ -29,6 +29,11 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // Health check endpoint for Autoscale - must respond immediately
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ status: "ok", timestamp: Date.now() });
+  });
+
   // Users API - Input validation schemas
   const createUserSchema = z.object({
     id: z.string().uuid(),
@@ -460,47 +465,58 @@ export async function registerRoutes(
     }
   });
 
-  // Run automatic sync on startup
-  console.log("[STARTUP] Running automatic specialist mapping sync...");
-  storage.syncSpecialistMappings().catch(err => {
-    console.error("[STARTUP] Failed to sync specialist mappings:", err);
-  });
-
-  // Seed Data
-  if (process.env.NODE_ENV !== "production") {
-    const existing = await storage.getSpecialists();
-    if (existing.length === 0) {
-      console.log("Seeding specialists...");
-      await storage.createSpecialist({
-        name: "James 'The Blade' Wilson",
-        specialty: "Master Barber",
-        bio: "Specializing in classic cuts and hot towel shaves with over 15 years of experience.",
-        imageUrl: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
-        rating: "0",
+  // Defer startup tasks to run AFTER server is listening (for faster cold-start)
+  // Uses setImmediate to not block the event loop
+  setImmediate(async () => {
+    // Run automatic sync (non-blocking, low priority)
+    if (process.env.NODE_ENV === "production") {
+      console.log("[STARTUP] Deferring specialist mapping sync for faster cold-start...");
+      setTimeout(() => {
+        storage.syncSpecialistMappings().catch(err => {
+          console.error("[STARTUP] Failed to sync specialist mappings:", err);
+        });
+      }, 5000); // Run sync 5 seconds after startup
+    } else {
+      console.log("[STARTUP] Running automatic specialist mapping sync...");
+      storage.syncSpecialistMappings().catch(err => {
+        console.error("[STARTUP] Failed to sync specialist mappings:", err);
       });
-      await storage.createSpecialist({
-        name: "Sarah Jenkins",
-        specialty: "Stylist & Colorist",
-        bio: "Creative stylist known for modern fades and beard sculpting.",
-        imageUrl: "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=800&q=80",
-        rating: "0",
-      });
-      await storage.createSpecialist({
-        name: "Marcus Thorne",
-        specialty: "Beard Specialist",
-        bio: "The go-to expert for beard grooming and maintenance.",
-        imageUrl: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&q=80",
-        rating: "0",
-      });
-      await storage.createSpecialist({
-        name: "Elena Rodriguez",
-        specialty: "Hair Artist",
-        bio: "Fusion of traditional techniques with modern styling trends.",
-        imageUrl: "https://images.unsplash.com/photo-1605497788044-5a32c7078486?w=800&q=80",
-        rating: "0",
-      });
+      
+      // Seed Data (development only)
+      const existing = await storage.getSpecialists();
+      if (existing.length === 0) {
+        console.log("Seeding specialists...");
+        await storage.createSpecialist({
+          name: "James 'The Blade' Wilson",
+          specialty: "Master Barber",
+          bio: "Specializing in classic cuts and hot towel shaves with over 15 years of experience.",
+          imageUrl: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
+          rating: "0",
+        });
+        await storage.createSpecialist({
+          name: "Sarah Jenkins",
+          specialty: "Stylist & Colorist",
+          bio: "Creative stylist known for modern fades and beard sculpting.",
+          imageUrl: "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=800&q=80",
+          rating: "0",
+        });
+        await storage.createSpecialist({
+          name: "Marcus Thorne",
+          specialty: "Beard Specialist",
+          bio: "The go-to expert for beard grooming and maintenance.",
+          imageUrl: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&q=80",
+          rating: "0",
+        });
+        await storage.createSpecialist({
+          name: "Elena Rodriguez",
+          specialty: "Hair Artist",
+          bio: "Fusion of traditional techniques with modern styling trends.",
+          imageUrl: "https://images.unsplash.com/photo-1605497788044-5a32c7078486?w=800&q=80",
+          rating: "0",
+        });
+      }
     }
-  }
+  });
 
   return httpServer;
 }
