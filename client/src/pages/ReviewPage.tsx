@@ -19,18 +19,23 @@ export default function ReviewPage() {
   const specialistIdFromQuery = queryParams.get("specialistId");
 
   const { data: booking, isLoading: isLoadingBooking, error: bookingError } = useQuery({
-    queryKey: [api.bookings.list.path, params?.bookingId, specialistIdFromQuery],
+    queryKey: [api.bookings.list.path, params?.bookingId, specialistIdFromQuery, currentUser?.id],
     queryFn: async () => {
       const bookingIdStr = params?.bookingId;
+      const authHeaders: Record<string, string> = currentUser?.id ? { "x-user-id": currentUser.id } : {};
       
       if (bookingIdStr && bookingIdStr !== "auto") {
         const bId = parseInt(bookingIdStr);
         const url = buildUrl(api.bookings.get.path, { id: bId });
-        const res = await fetch(url);
+        const res = await fetch(url, { credentials: "include" });
         if (res.ok) {
           const b = await res.json();
           if (b.hasReview) {
-            const rRes = await fetch(`${api.reviews.list.path}?specialistId=${b.specialistId}`);
+            // Fetch with auth to get full review data including private reviews
+            const rRes = await fetch(`${api.reviews.list.path}?specialistId=${b.specialistId}`, {
+              credentials: "include",
+              headers: authHeaders
+            });
             if (rRes.ok) {
               const reviews = await rRes.json();
               const review = reviews.find((r: any) => r.bookingId === bId);
@@ -44,7 +49,7 @@ export default function ReviewPage() {
       }
 
       if (params?.bookingId === "auto" && specialistIdFromQuery) {
-        const res = await fetch(api.bookings.list.path);
+        const res = await fetch(api.bookings.list.path, { credentials: "include" });
         if (!res.ok) throw new Error("Failed to fetch bookings");
         const allBookings = await res.json();
         const autoBooking = allBookings.find((b: any) => 
@@ -54,7 +59,10 @@ export default function ReviewPage() {
         if (!autoBooking) throw new Error("No completed visits found to review");
         
         if (autoBooking.hasReview) {
-          const rRes = await fetch(`${api.reviews.list.path}?specialistId=${autoBooking.specialistId}`);
+          const rRes = await fetch(`${api.reviews.list.path}?specialistId=${autoBooking.specialistId}`, {
+            credentials: "include",
+            headers: authHeaders
+          });
           if (rRes.ok) {
             const reviews = await rRes.json();
             const review = reviews.find((r: any) => r.bookingId === autoBooking.id);
@@ -73,24 +81,32 @@ export default function ReviewPage() {
   const { toast } = useToast();
   const { mutate: createReview, isPending } = useCreateReview();
 
+  const [hoveredStar, setHoveredStar] = useState(0);
+  
+  // Initialize form state from existing review (if editing) or empty (if creating)
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [hiddenName, setHiddenName] = useState(false);
-  const [hoveredStar, setHoveredStar] = useState(0);
-  const [isEditing, setIsEditing] = useState(false);
+  const [formInitialized, setFormInitialized] = useState(false);
 
+  // Populate form with existing review data when it becomes available
   useEffect(() => {
-    if (booking?.review && !isEditing) {
+    if (booking?.review && !formInitialized) {
       setRating(booking.review.rating);
-      setComment(booking.review.comment);
+      setComment(booking.review.comment || "");
       setHiddenName(!booking.review.showName);
-      setIsEditing(true);
+      setFormInitialized(true);
     }
-  }, [booking]);
+  }, [booking, formInitialized]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Determine if we're in edit mode based on booking data
+  const isEditMode = !!booking?.review;
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!booking) return;
+    if (!booking || isSubmitting) return;
 
     if (rating === 0) {
       toast({
@@ -101,85 +117,53 @@ export default function ReviewPage() {
       return;
     }
 
-    if (booking.review) {
-      fetch(`/api/reviews/${booking.review.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating, comment, showName: !hiddenName }),
-      }).then(async (res) => {
+    setIsSubmitting(true);
+
+    try {
+      if (isEditMode && booking.review) {
+        // PATCH existing review
+        const res = await fetch(`/api/reviews/${booking.review.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ rating, comment, showName: !hiddenName }),
+        });
+        
         if (res.ok) {
+          // Invalidate queries to refresh data
+          queryClient.invalidateQueries({ queryKey: ['/api/reviews'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/specialists'] });
           toast({ title: "Отзыв обновлён", description: "Ваши изменения сохранены." });
           setLocation(`/specialist/${booking.specialistId}`);
         } else {
           const err = await res.json();
           toast({ variant: "destructive", title: "Ошибка", description: err.message });
         }
-      });
-    } else {
-      createReview({
-        bookingId: booking.id,
-        specialistId: booking.specialistId,
-        rating,
-        comment,
-        showName: !hiddenName,
-      }, {
-        onSuccess: () => {
-          toast({
-            title: "Отзыв опубликован",
-            description: "Вы можете редактировать его в течение 5 минут.",
-          });
-          setLocation(`/specialist/${booking.specialistId}`);
-        },
-        onError: async (err) => {
-          // If review already exists, try to fetch it and switch to edit mode
-          if (err.message.includes("already submitted")) {
-            try {
-              // Fetch reviews with credentials (cookie auth)
-              const rRes = await fetch(`/api/reviews?specialistId=${booking.specialistId}`, {
-                credentials: "include",
-                headers: currentUser?.id ? { "x-user-id": currentUser.id } : {}
-              });
-              if (rRes.ok) {
-                const reviews = await rRes.json();
-                const existingReview = reviews.find((r: any) => r.bookingId === booking.id);
-                if (existingReview) {
-                  // Check if still editable (default to 5 min from now if no editableUntil)
-                  const editableUntil = existingReview.editableUntil || new Date(Date.now() + 5 * 60 * 1000).toISOString();
-                  const isStillEditable = !existingReview.isFinalized && new Date() < new Date(editableUntil);
-                  if (isStillEditable) {
-                    // Update local state to edit mode
-                    setRating(existingReview.rating);
-                    setComment(existingReview.comment);
-                    setHiddenName(!existingReview.showName);
-                    setIsEditing(true);
-                    // Use setQueryData to properly update cache without mutation
-                    queryClient.setQueryData(
-                      [api.bookings.list.path, params?.bookingId, specialistIdFromQuery],
-                      { ...booking, review: existingReview, hasReview: true }
-                    );
-                    toast({
-                      title: "Отзыв уже существует",
-                      description: "Вы можете отредактировать его.",
-                    });
-                    return;
-                  } else {
-                    toast({
-                      variant: "destructive",
-                      title: "Отзыв уже финализирован",
-                      description: "Время редактирования истекло.",
-                    });
-                    setLocation(`/specialist/${booking.specialistId}`);
-                    return;
-                  }
-                }
-              }
-            } catch (fetchErr) {
-              console.error("Failed to fetch existing review:", fetchErr);
-            }
+      } else {
+        // POST new review
+        createReview({
+          bookingId: booking.id,
+          specialistId: booking.specialistId,
+          rating,
+          comment,
+          showName: !hiddenName,
+        }, {
+          onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['/api/reviews'] });
+            queryClient.invalidateQueries({ queryKey: ['/api/specialists'] });
+            toast({
+              title: "Отзыв опубликован",
+              description: "Вы можете редактировать его в течение 5 минут.",
+            });
+            setLocation(`/specialist/${booking.specialistId}`);
+          },
+          onError: (err) => {
+            toast({ variant: "destructive", title: "Ошибка", description: err.message });
           }
-          toast({ variant: "destructive", title: "Ошибка", description: err.message });
-        }
-      });
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -195,7 +179,12 @@ export default function ReviewPage() {
     );
   }
 
-  if (isLoadingBooking) return <div className="p-6 text-center animate-pulse">Checking for completed visits...</div>;
+  // Show loading while fetching booking or while waiting for review data in edit mode
+  const isLoadingReviewData = booking?.hasReview && !booking?.review && !formInitialized;
+  
+  if (isLoadingBooking || isLoadingReviewData) {
+    return <div className="p-6 text-center animate-pulse">Загрузка данных...</div>;
+  }
   
   if (bookingError || !booking) {
     return (
@@ -267,11 +256,11 @@ export default function ReviewPage() {
         >
           <ChevronLeft size={24} />
         </button>
-        <h1 className="text-xl font-bold">{booking.review ? "Edit Review" : "Write a Review"}</h1>
+        <h1 className="text-xl font-bold">{isEditMode ? "Редактировать отзыв" : "Написать отзыв"}</h1>
       </header>
 
       <div className="mb-8">
-        <h2 className="text-lg font-medium">{booking.review ? "Update your feedback" : "How was your visit?"}</h2>
+        <h2 className="text-lg font-medium">{isEditMode ? "Обновите ваш отзыв" : "Как прошёл визит?"}</h2>
         <p className="text-sm text-muted-foreground">
           Booking #{booking.id} • {new Date(booking.appointmentTime).toLocaleDateString()}
         </p>
@@ -341,7 +330,7 @@ export default function ReviewPage() {
             required
             rows={4}
             className="w-full bg-card border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
-            placeholder="Tell us about your experience..."
+            placeholder="Расскажите о вашем опыте..."
             value={comment}
             onChange={e => setComment(e.target.value)}
             data-testid="textarea-comment"
@@ -351,11 +340,11 @@ export default function ReviewPage() {
         <div className="space-y-3">
           <button
             type="submit"
-            disabled={isPending}
+            disabled={isSubmitting || isPending}
             className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             data-testid="button-submit-review"
           >
-            {isPending ? "Сохранение..." : booking.review ? "Обновить отзыв" : "Опубликовать"}
+            {isSubmitting || isPending ? "Сохранение..." : isEditMode ? "Обновить отзыв" : "Опубликовать"}
           </button>
         </div>
       </form>
