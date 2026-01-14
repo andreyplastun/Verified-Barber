@@ -138,6 +138,14 @@ export async function registerRoutes(
     if (!specialist) {
       return res.status(404).json({ message: "Specialist not found" });
     }
+    
+    // Lazy finalization: finalize any expired reviews on-demand (autoscale-friendly)
+    try {
+      await storage.checkAndFinalizeReviews();
+    } catch (err) {
+      console.error("Error finalizing reviews:", err);
+    }
+    
     const reviews = await storage.getReviewsForSpecialist(id);
     
     // Get viewer role for privacy masking
@@ -279,6 +287,14 @@ export async function registerRoutes(
     if (isNaN(specialistId)) {
       return res.status(400).json({ message: "Invalid specialistId" });
     }
+    
+    // Lazy finalization on-demand (autoscale-friendly)
+    try {
+      await storage.checkAndFinalizeReviews();
+    } catch (err) {
+      console.error("Error finalizing reviews:", err);
+    }
+    
     const reviews = await storage.getReviewsForSpecialist(specialistId);
     
     // Get viewer role for privacy masking
@@ -293,20 +309,19 @@ export async function registerRoutes(
     res.json(maskedReviews);
   });
 
-  // Background task to finalize reviews
-  setInterval(async () => {
-    try {
-      await storage.checkAndFinalizeReviews();
-    } catch (err) {
-      console.error("Error finalizing reviews:", err);
-    }
-  }, 30000); // Check every 30 seconds
-
   app.get(api.reviews.list.path, async (req, res) => {
     const id = Number(req.params.id);
     if (isNaN(id)) {
       return res.status(400).json({ message: "Invalid specialist ID" });
     }
+    
+    // Lazy finalization on-demand (autoscale-friendly)
+    try {
+      await storage.checkAndFinalizeReviews();
+    } catch (err) {
+      console.error("Error finalizing reviews:", err);
+    }
+    
     const reviews = await storage.getReviewsForSpecialist(id);
     
     // Get viewer role for privacy masking
