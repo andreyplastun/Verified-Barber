@@ -18,6 +18,7 @@ export interface IStorage {
   getFirstSpecialist(): Promise<Specialist | undefined>;
   createSpecialist(specialist: Omit<Specialist, "id" | "reviewCount" | "averageRating">): Promise<Specialist>;
   updateSpecialistRating(id: number): Promise<void>;
+  updateSpecialistRatingIncludingPending(id: number): Promise<void>;
 
   // Bookings
   createBooking(booking: CreateBookingRequest): Promise<Booking>;
@@ -120,17 +121,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSpecialistRating(id: number): Promise<void> {
+    // Always include ALL reviews (finalized and pending) for consistent rating display
     const reviewsList = await db.select()
       .from(reviews)
-      .where(and(eq(reviews.specialistId, id), eq(reviews.isFinalized, true)));
+      .where(eq(reviews.specialistId, id));
     
     const newCount = reviewsList.length;
     const newTotal = reviewsList.reduce((acc, r) => acc + r.rating, 0);
     const newAvg = newCount > 0 ? Math.round((newTotal / newCount) * 10) : 0;
 
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - All reviews: ${newCount}, Total: ${newTotal}, New avg (x10): ${newAvg}`);
+
     await db.update(specialists)
       .set({ reviewCount: newCount, averageRating: newAvg })
       .where(eq(specialists.id, id));
+  }
+
+  async updateSpecialistRatingIncludingPending(id: number): Promise<void> {
+    // Alias for updateSpecialistRating - both now use all reviews
+    await this.updateSpecialistRating(id);
   }
 
   async createBooking(booking: CreateBookingRequest): Promise<Booking> {
@@ -160,9 +169,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBookingsForSpecialist(specialistId: number): Promise<Booking[]> {
-    return await db.select().from(bookings)
-      .where(eq(bookings.specialistId, specialistId))
+    const result = await db.select().from(bookings)
+      .where(and(
+        eq(bookings.specialistId, specialistId),
+        eq(bookings.status, "completed")
+      ))
       .orderBy(desc(bookings.appointmentTime));
+    console.log(`[STORAGE] getBookingsForSpecialist(${specialistId}) - SQL filter: specialist_id=${specialistId} AND status='completed' - Found ${result.length} completed bookings`);
+    return result;
   }
 
   async getBookingsForClient(clientId: string): Promise<Booking[]> {
@@ -191,6 +205,8 @@ export class DatabaseStorage implements IStorage {
     // Simple privacy: showName controls name visibility
     const showName = review.showName ?? true;
 
+    console.log(`[STORAGE] createReview - specialistId: ${review.specialistId}, bookingId: ${review.bookingId}, rating: ${review.rating}, showName: ${showName}`);
+
     const [newReview] = await db.insert(reviews).values({
       bookingId: review.bookingId,
       specialistId: review.specialistId,
@@ -207,6 +223,8 @@ export class DatabaseStorage implements IStorage {
       finalizedAt: null,
       editableUntil: editableUntil,
     } as any).returning();
+    
+    console.log(`[STORAGE] createReview - Created review ID: ${newReview.id} for specialist ${newReview.specialistId}`);
     return newReview;
   }
 
@@ -256,7 +274,10 @@ export class DatabaseStorage implements IStorage {
       and(eq(reviews.isFinalized, false), lt(reviews.editableUntil, now))
     );
 
+    console.log(`[STORAGE] checkAndFinalizeReviews - Found ${pendingReviews.length} reviews ready to finalize`);
+
     for (const review of pendingReviews) {
+      console.log(`[STORAGE] Finalizing review ${review.id} for specialist ${review.specialistId}`);
       await db.update(reviews)
         .set({ isFinalized: true, finalizedAt: now })
         .where(eq(reviews.id, review.id));
@@ -265,10 +286,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getReviewsForSpecialist(specialistId: number): Promise<Review[]> {
-    return await db.select()
+    const result = await db.select()
       .from(reviews)
       .where(eq(reviews.specialistId, specialistId))
       .orderBy(desc(reviews.createdAt));
+    console.log(`[STORAGE] getReviewsForSpecialist(${specialistId}) - Found ${result.length} reviews`);
+    return result;
   }
 }
 
