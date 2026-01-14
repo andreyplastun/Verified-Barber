@@ -355,6 +355,43 @@ export async function registerRoutes(
     res.json(maskedReviews);
   });
 
+  // Get review by booking ID - for the author to edit their own review
+  app.get("/api/reviews/by-booking/:bookingId", async (req, res) => {
+    const bookingId = Number(req.params.bookingId);
+    if (isNaN(bookingId)) {
+      return res.status(400).json({ message: "Invalid booking ID" });
+    }
+
+    const review = await storage.getReviewByBookingId(bookingId);
+    if (!review) {
+      return res.status(404).json({ message: "Review not found" });
+    }
+
+    // Verify the requester owns this booking
+    const booking = await storage.getBooking(bookingId);
+    const viewerUserId = req.headers["x-user-id"] as string | undefined;
+    
+    // Allow the booking owner (direct clientId match) or admin to see full review
+    if (booking && viewerUserId) {
+      // Direct match: clientId === viewerUserId (no users table lookup needed)
+      if (booking.clientId === viewerUserId) {
+        return res.json(review);
+      }
+      
+      // Check if viewer is admin (requires users table lookup)
+      const viewer = await storage.getUser(viewerUserId);
+      if (viewer?.role === 'admin') {
+        return res.json(review);
+      }
+    }
+
+    // For others, mask the name if hidden
+    const maskedReview = !review.showName 
+      ? { ...review, customerName: "Аноним" }
+      : review;
+    res.json(maskedReview);
+  });
+
   // =====================
   // ADMIN ENDPOINTS
   // =====================

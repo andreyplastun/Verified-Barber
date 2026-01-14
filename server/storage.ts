@@ -39,6 +39,7 @@ export interface IStorage {
   updateReview(id: number, data: { rating?: number; comment?: string; showName?: boolean }): Promise<Review | undefined>;
   finalizeReview(id: number): Promise<Review | undefined>;
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
+  getReviewByBookingId(bookingId: number): Promise<Review | undefined>;
   checkAndFinalizeReviews(): Promise<void>;
 }
 
@@ -386,6 +387,14 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(reviews.createdAt));
     console.log(`[STORAGE] getReviewsForSpecialist(${specialistId}) - Found ${result.length} reviews`);
     return result;
+  }
+
+  async getReviewByBookingId(bookingId: number): Promise<Review | undefined> {
+    const result = await db.select()
+      .from(reviews)
+      .where(eq(reviews.bookingId, bookingId))
+      .limit(1);
+    return result[0];
   }
 }
 

@@ -31,18 +31,16 @@ export default function ReviewPage() {
         if (res.ok) {
           const b = await res.json();
           if (b.hasReview) {
-            // Fetch with auth to get full review data including private reviews
-            const rRes = await fetch(`${api.reviews.list.path}?specialistId=${b.specialistId}`, {
+            // Use dedicated endpoint to get review by bookingId
+            const rRes = await fetch(`/api/reviews/by-booking/${bId}`, {
               credentials: "include",
               headers: authHeaders
             });
             if (rRes.ok) {
-              const reviews = await rRes.json();
-              const review = reviews.find((r: any) => r.bookingId === bId);
-              if (review) {
-                return { ...b, review };
-              }
+              const review = await rRes.json();
+              return { ...b, review };
             }
+            // If 404, review doesn't exist - proceed without it
           }
           return b;
         }
@@ -59,14 +57,14 @@ export default function ReviewPage() {
         if (!autoBooking) throw new Error("No completed visits found to review");
         
         if (autoBooking.hasReview) {
-          const rRes = await fetch(`${api.reviews.list.path}?specialistId=${autoBooking.specialistId}`, {
+          // Use dedicated endpoint to get review by bookingId
+          const rRes = await fetch(`/api/reviews/by-booking/${autoBooking.id}`, {
             credentials: "include",
             headers: authHeaders
           });
           if (rRes.ok) {
-            const reviews = await rRes.json();
-            const review = reviews.find((r: any) => r.bookingId === autoBooking.id);
-            if (review) return { ...autoBooking, review };
+            const review = await rRes.json();
+            return { ...autoBooking, review };
           }
         }
         return autoBooking;
@@ -179,10 +177,8 @@ export default function ReviewPage() {
     );
   }
 
-  // Show loading while fetching booking or while waiting for review data in edit mode
-  const isLoadingReviewData = booking?.hasReview && !booking?.review && !formInitialized;
-  
-  if (isLoadingBooking || isLoadingReviewData) {
+  // Only show loading while fetching the booking itself
+  if (isLoadingBooking) {
     return <div className="p-6 text-center animate-pulse">Загрузка данных...</div>;
   }
   
