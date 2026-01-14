@@ -265,13 +265,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBookingsForSpecialist(specialistId: number): Promise<Booking[]> {
+    // Return ALL bookings for the specialist - frontend handles filtering by status
     const result = await db.select().from(bookings)
-      .where(and(
-        eq(bookings.specialistId, specialistId),
-        eq(bookings.status, "completed")
-      ))
+      .where(eq(bookings.specialistId, specialistId))
       .orderBy(desc(bookings.appointmentTime));
-    console.log(`[STORAGE] getBookingsForSpecialist(${specialistId}) - SQL filter: specialist_id=${specialistId} AND status='completed' - Found ${result.length} completed bookings`);
+    console.log(`[STORAGE] getBookingsForSpecialist(${specialistId}) - Found ${result.length} bookings (all statuses)`);
     return result;
   }
 

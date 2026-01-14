@@ -198,10 +198,7 @@ export async function registerRoutes(
       return res.status(400).json({ message: "Invalid specialist ID" });
     }
     const bookings = await storage.getBookingsForSpecialist(id);
-    console.log(`[DEBUG] GET /api/specialists/${id}/bookings - Found ${bookings.length} completed bookings`);
-    bookings.forEach(b => {
-      console.log(`[DEBUG]   Booking ${b.id}: client_id=${b.clientId}, specialist_id=${b.specialistId}, status=${b.status}`);
-    });
+    console.log(`[DEBUG] GET /api/specialists/${id}/bookings - Found ${bookings.length} bookings`);
     res.json(bookings);
   });
 

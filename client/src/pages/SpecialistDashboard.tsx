@@ -48,8 +48,9 @@ export default function SpecialistDashboard() {
     );
   }
 
+  // Upcoming = all non-completed bookings (pending, confirmed) - excluding cancelled
   const upcomingBookings = bookings?.filter(b => 
-    b.status === 'pending' && new Date(b.appointmentTime) >= new Date()
+    b.status !== 'completed' && b.status !== 'cancelled'
   ) || [];
 
   const completedBookings = bookings?.filter(b => b.status === 'completed') || [];
