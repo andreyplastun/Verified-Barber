@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 
 import SpecialistList from "@/pages/index";
 import SpecialistProfile from "@/pages/SpecialistProfile";
+import SpecialistReviews from "@/pages/SpecialistReviews";
 import BookingPage from "@/pages/BookingPage";
 import ReviewPage from "@/pages/ReviewPage";
 import AdminDashboard from "@/pages/AdminDashboard";
@@ -101,7 +102,8 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/reviews" component={ReviewPage} />
-      <Route path="/specialists/:id/reviews" component={ReviewPage} />
+      <Route path="/specialist/:id/reviews" component={SpecialistReviews} />
+      <Route path="/specialists/:id/reviews" component={SpecialistReviews} />
       <Route path="/admin">
         <AdminProtectedRoute>
           <AdminDashboard />

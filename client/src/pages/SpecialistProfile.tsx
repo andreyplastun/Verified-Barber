@@ -228,8 +228,8 @@ export default function SpecialistProfile() {
         </div>
       </div>
 
-      {/* Bottom Action Bar */}
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-background/80 backdrop-blur-xl border-t border-white/5 z-40 pb-safe">
+      {/* Bottom Action Bar - positioned above navigation (nav is h-16 + safe area) */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 pb-[calc(4rem+env(safe-area-inset-bottom)+0.5rem)] bg-background/80 backdrop-blur-xl border-t border-white/5 z-40">
         <div className="max-w-md mx-auto flex gap-3">
           <Link href="/" className="flex-1">
             <Button variant="outline" className="w-full py-6 rounded-xl font-bold text-lg" data-testid="button-back-home">

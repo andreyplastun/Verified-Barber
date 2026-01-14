@@ -1,16 +1,19 @@
 import { useState, useEffect } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useCreateReview } from "@/hooks/use-specialists";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
 import { Star, ChevronLeft, AlertCircle, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function ReviewPage() {
   const [, params] = useRoute("/review/:bookingId");
   const [, setLocation] = useLocation();
+  const { currentUser } = useAuth();
+  const queryClient = useQueryClient();
   
   const queryParams = new URLSearchParams(window.location.search);
   const specialistIdFromQuery = queryParams.get("specialistId");
@@ -127,7 +130,53 @@ export default function ReviewPage() {
           });
           setLocation(`/specialist/${booking.specialistId}`);
         },
-        onError: (err) => {
+        onError: async (err) => {
+          // If review already exists, try to fetch it and switch to edit mode
+          if (err.message.includes("already submitted")) {
+            try {
+              // Fetch reviews with credentials (cookie auth)
+              const rRes = await fetch(`/api/reviews?specialistId=${booking.specialistId}`, {
+                credentials: "include",
+                headers: currentUser?.id ? { "x-user-id": currentUser.id } : {}
+              });
+              if (rRes.ok) {
+                const reviews = await rRes.json();
+                const existingReview = reviews.find((r: any) => r.bookingId === booking.id);
+                if (existingReview) {
+                  // Check if still editable (default to 5 min from now if no editableUntil)
+                  const editableUntil = existingReview.editableUntil || new Date(Date.now() + 5 * 60 * 1000).toISOString();
+                  const isStillEditable = !existingReview.isFinalized && new Date() < new Date(editableUntil);
+                  if (isStillEditable) {
+                    // Update local state to edit mode
+                    setRating(existingReview.rating);
+                    setComment(existingReview.comment);
+                    setHiddenName(!existingReview.showName);
+                    setIsEditing(true);
+                    // Use setQueryData to properly update cache without mutation
+                    queryClient.setQueryData(
+                      [api.bookings.list.path, params?.bookingId, specialistIdFromQuery],
+                      { ...booking, review: existingReview, hasReview: true }
+                    );
+                    toast({
+                      title: "Отзыв уже существует",
+                      description: "Вы можете отредактировать его.",
+                    });
+                    return;
+                  } else {
+                    toast({
+                      variant: "destructive",
+                      title: "Отзыв уже финализирован",
+                      description: "Время редактирования истекло.",
+                    });
+                    setLocation(`/specialist/${booking.specialistId}`);
+                    return;
+                  }
+                }
+              }
+            } catch (fetchErr) {
+              console.error("Failed to fetch existing review:", fetchErr);
+            }
+          }
           toast({ variant: "destructive", title: "Ошибка", description: err.message });
         }
       });
