@@ -72,3 +72,22 @@ Preferred communication style: Simple, everyday language.
 ### Development Tools
 - **Vite**: Development server with HMR, includes Replit-specific plugins for error overlay and dev banner
 - **esbuild**: Production server bundling with selective dependency bundling for faster cold starts
+
+## Deployment
+
+### Railway Deployment
+Configuration files: `railway.toml`, `nixpacks.toml`, `Procfile`
+
+Required environment variables on Railway:
+- `DATABASE_URL` - PostgreSQL connection string
+- `VITE_SUPABASE_URL` - Supabase project URL
+- `VITE_SUPABASE_ANON_KEY` - Supabase anon key
+- `SESSION_SECRET` - Secret for admin role assignment
+
+Build command: `npm ci --include=dev && npm run build`
+Start command: `npm run start`
+Health check: `/health`
+
+### Production Endpoints
+- `/health` - Liveness probe (no DB check, instant response)
+- `/ready` - Readiness probe (checks DB connection)
