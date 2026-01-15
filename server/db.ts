@@ -10,11 +10,24 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-// Optimized pool for Autoscale: smaller pool, shorter timeouts for faster cold-starts
+// Optimized pool for Autoscale: handle cold-starts and reconnection after sleep
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
-  max: 5, // Smaller pool for serverless
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  max: 3, // Minimal pool for serverless - reduces cold-start time
+  min: 0, // Allow pool to shrink to 0 when idle
+  idleTimeoutMillis: 10000, // Close idle connections faster (10s)
+  connectionTimeoutMillis: 10000, // Allow more time to reconnect after sleep
+  allowExitOnIdle: true, // Allow process to exit when pool is idle
 });
+
+// Handle pool errors gracefully (prevents crash on stale connections)
+pool.on('error', (err) => {
+  console.error('[DB] Pool error (will reconnect):', err.message);
+});
+
+// Log successful connection for debugging cold-starts
+pool.on('connect', () => {
+  console.log('[DB] New connection established');
+});
+
 export const db = drizzle(pool, { schema });

@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import { bookings, type Review } from "@shared/schema";
+import { pool } from "./db";
 
 // Helper to mask reviewer names based on privacy settings and viewer role
 function maskReviewsForViewer(
@@ -29,9 +30,22 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
-  // Health check endpoint for Autoscale - must respond immediately
+  // Liveness probe - responds immediately (no DB check)
   app.get("/health", (_req, res) => {
     res.status(200).json({ status: "ok", timestamp: Date.now() });
+  });
+
+  // Readiness probe - checks DB connection (useful for debugging)
+  app.get("/ready", async (_req, res) => {
+    try {
+      const client = await pool.connect();
+      await client.query('SELECT 1');
+      client.release();
+      res.status(200).json({ status: "ready", db: "connected", timestamp: Date.now() });
+    } catch (err: any) {
+      console.error("[READY] DB check failed:", err.message);
+      res.status(503).json({ status: "not ready", db: "disconnected", error: err.message });
+    }
   });
 
   // Users API - Input validation schemas
