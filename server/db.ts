@@ -10,6 +10,14 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
+// Debug: log connection info (without password)
+try {
+  const url = new URL(process.env.DATABASE_URL);
+  console.log(`[DB] Connecting to: ${url.hostname}:${url.port} as user: ${url.username} db: ${url.pathname}`);
+} catch (e) {
+  console.log('[DB] Could not parse DATABASE_URL');
+}
+
 // Optimized pool for Autoscale: handle cold-starts and reconnection after sleep
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
