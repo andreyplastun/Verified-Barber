@@ -1,0 +1,70 @@
+-- Удалить старые таблицы и создать правильные
+DROP TABLE IF EXISTS public.reviews;
+DROP TABLE IF EXISTS public.bookings;
+DROP TABLE IF EXISTS public.users;
+DROP TABLE IF EXISTS public.specialists;
+
+-- Create specialists table
+CREATE TABLE public.specialists (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  specialty TEXT NOT NULL,
+  bio TEXT NOT NULL,
+  image_url TEXT NOT NULL,
+  rating TEXT NOT NULL DEFAULT '0',
+  review_count INTEGER NOT NULL DEFAULT 0,
+  average_rating INTEGER NOT NULL DEFAULT 0
+);
+
+-- Create users table
+CREATE TABLE public.users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email TEXT NOT NULL UNIQUE,
+  role TEXT NOT NULL DEFAULT 'client' CHECK (role IN ('client', 'specialist', 'admin')),
+  specialist_id INTEGER REFERENCES public.specialists(id),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create bookings table
+CREATE TABLE public.bookings (
+  id SERIAL PRIMARY KEY,
+  specialist_id INTEGER NOT NULL REFERENCES public.specialists(id),
+  client_id UUID REFERENCES public.users(id),
+  customer_name TEXT NOT NULL,
+  customer_phone TEXT NOT NULL,
+  customer_email TEXT,
+  appointment_time TIMESTAMPTZ NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'confirmed', 'completed', 'cancelled')),
+  has_review BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Create reviews table
+CREATE TABLE public.reviews (
+  id SERIAL PRIMARY KEY,
+  booking_id INTEGER NOT NULL REFERENCES public.bookings(id),
+  specialist_id INTEGER NOT NULL REFERENCES public.specialists(id),
+  client_id UUID REFERENCES public.users(id),
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  comment TEXT NOT NULL,
+  customer_name TEXT NOT NULL,
+  is_finalized BOOLEAN NOT NULL DEFAULT FALSE,
+  hidden_name BOOLEAN NOT NULL DEFAULT FALSE,
+  publish_review BOOLEAN NOT NULL DEFAULT TRUE,
+  show_name BOOLEAN NOT NULL DEFAULT FALSE,
+  is_private BOOLEAN NOT NULL DEFAULT FALSE,
+  is_public_name BOOLEAN NOT NULL DEFAULT FALSE,
+  finalized_at TIMESTAMPTZ,
+  editable_until TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Insert test specialists
+INSERT INTO specialists (name, specialty, bio, image_url, rating, review_count, average_rating) VALUES
+('Vladimir', 'Senior Barber', 'Опытный барбер с 10-летним стажем', 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400', '4.8', 15, 48),
+('Timur 1', 'Stylist', 'Креативный стилист', 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400', '4.5', 10, 45),
+('Zhanibek', 'Barber', 'Классические стрижки', 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=400', '4.7', 12, 47),
+('Akerke', 'Hair Stylist', 'Женские стрижки и окрашивание', 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=400', '4.9', 20, 49),
+('Gauhar', 'Colorist', 'Профессиональное окрашивание', 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=400', '4.6', 8, 46),
+('Sergey', 'Master Barber', 'Мужские стрижки любой сложности', 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=400', '4.4', 18, 44),
+('Timur 2', 'Junior Barber', 'Начинающий барбер', 'https://images.unsplash.com/photo-1463453091185-61582044d556?w=400', '4.2', 5, 42);
