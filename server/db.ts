@@ -14,6 +14,7 @@ if (!process.env.DATABASE_URL) {
 try {
   const url = new URL(process.env.DATABASE_URL);
   console.log(`[DB] Connecting to: ${url.hostname}:${url.port} as user: ${url.username} db: ${url.pathname}`);
+  console.log(`[DB] Password length: ${url.password.length}, first 2 chars: ${url.password.substring(0, 2)}`);
 } catch (e) {
   console.log('[DB] Could not parse DATABASE_URL');
 }
