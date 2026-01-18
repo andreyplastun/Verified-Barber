@@ -15,9 +15,37 @@ const DB_NAME = process.env.DB_NAME;
 // Debug: show which variables are present
 console.log(`[DB] Variables check: HOST=${!!DB_HOST}, PORT=${!!DB_PORT}, USER=${!!DB_USER}, PASS=${!!DB_PASSWORD}, NAME=${!!DB_NAME}`);
 
+// TEMPORARY WORKAROUND: Railway has a bug with environment variables
+// Hardcode Supabase connection to bypass Railway's broken variable injection
+const SUPABASE_HOST = "aws-1-ap-southeast-1.pooler.supabase.com";
+const SUPABASE_PORT = 5432;
+const SUPABASE_USER = "postgres.btltvgmurloofyfzmeue";
+const SUPABASE_DB = "postgres";
+// Password from user's Supabase dashboard
+const SUPABASE_PASSWORD = process.env.SUPABASE_DB_PASSWORD || DB_PASSWORD;
+
 let poolConfig: pg.PoolConfig;
 
-if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
+// Use hardcoded Supabase connection if SUPABASE_DB_PASSWORD is set
+if (SUPABASE_PASSWORD) {
+  console.log(`[DB] Using hardcoded Supabase connection`);
+  console.log(`[DB] Host: ${SUPABASE_HOST}, Port: ${SUPABASE_PORT}, User: ${SUPABASE_USER}, DB: ${SUPABASE_DB}`);
+  console.log(`[DB] Password length: ${SUPABASE_PASSWORD.length}, first 4 chars: ${SUPABASE_PASSWORD.substring(0, 4)}`);
+  
+  poolConfig = {
+    host: SUPABASE_HOST,
+    port: SUPABASE_PORT,
+    database: SUPABASE_DB,
+    user: SUPABASE_USER,
+    password: SUPABASE_PASSWORD,
+    max: 3,
+    min: 0,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 10000,
+    allowExitOnIdle: true,
+    ssl: { rejectUnauthorized: false },
+  };
+} else if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
   // Use individual variables (preferred for Railway)
   console.log(`[DB] Using individual DB_* variables`);
   console.log(`[DB] Host: ${DB_HOST}, Port: ${DB_PORT || 5432}, User: ${DB_USER}, DB: ${DB_NAME}`);
