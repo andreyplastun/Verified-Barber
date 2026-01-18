@@ -10,31 +10,55 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-// Debug: log connection info (without password)
+// Debug: log full DATABASE_URL structure
+const rawUrl = process.env.DATABASE_URL;
+console.log(`[DB] Raw DATABASE_URL length: ${rawUrl.length}`);
+console.log(`[DB] Raw DATABASE_URL first 50 chars: ${rawUrl.substring(0, 50)}...`);
+
+let poolConfig: pg.PoolConfig;
+
 try {
-  const url = new URL(process.env.DATABASE_URL);
-  console.log(`[DB] Connecting to: ${url.hostname}:${url.port} as user: ${url.username} db: ${url.pathname}`);
-  console.log(`[DB] Password length: ${url.password.length}, first 2 chars: ${url.password.substring(0, 2)}`);
+  const url = new URL(rawUrl);
+  const host = url.hostname;
+  const port = parseInt(url.port) || 5432;
+  const database = url.pathname.slice(1); // remove leading /
+  const user = decodeURIComponent(url.username);
+  const password = decodeURIComponent(url.password);
+  
+  console.log(`[DB] Parsed - Host: ${host}, Port: ${port}, User: ${user}, DB: ${database}`);
+  console.log(`[DB] Password length: ${password.length}, first 4 chars: ${password.substring(0, 4)}`);
+  
+  // Use explicit parameters instead of connection string
+  poolConfig = {
+    host,
+    port,
+    database,
+    user,
+    password,
+    max: 3,
+    min: 0,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 10000,
+    allowExitOnIdle: true,
+  };
 } catch (e) {
-  console.log('[DB] Could not parse DATABASE_URL');
+  console.error('[DB] Could not parse DATABASE_URL, using as-is');
+  poolConfig = {
+    connectionString: rawUrl,
+    max: 3,
+    min: 0,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 10000,
+    allowExitOnIdle: true,
+  };
 }
 
-// Optimized pool for Autoscale: handle cold-starts and reconnection after sleep
-export const pool = new Pool({ 
-  connectionString: process.env.DATABASE_URL,
-  max: 3, // Minimal pool for serverless - reduces cold-start time
-  min: 0, // Allow pool to shrink to 0 when idle
-  idleTimeoutMillis: 10000, // Close idle connections faster (10s)
-  connectionTimeoutMillis: 10000, // Allow more time to reconnect after sleep
-  allowExitOnIdle: true, // Allow process to exit when pool is idle
-});
+export const pool = new Pool(poolConfig);
 
-// Handle pool errors gracefully (prevents crash on stale connections)
 pool.on('error', (err) => {
   console.error('[DB] Pool error (will reconnect):', err.message);
 });
 
-// Log successful connection for debugging cold-starts
 pool.on('connect', () => {
   console.log('[DB] New connection established');
 });
