@@ -16,18 +16,19 @@ const DB_NAME = process.env.DB_NAME;
 console.log(`[DB] Variables check: HOST=${!!DB_HOST}, PORT=${!!DB_PORT}, USER=${!!DB_USER}, PASS=${!!DB_PASSWORD}, NAME=${!!DB_NAME}`);
 
 // TEMPORARY WORKAROUND: Railway has a bug with environment variables
-// Hardcode Supabase connection to bypass Railway's broken variable injection
+// Hardcode Supabase connection completely for production
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const SUPABASE_HOST = "aws-1-ap-southeast-1.pooler.supabase.com";
 const SUPABASE_PORT = 5432;
 const SUPABASE_USER = "postgres.btltvgmurloofyfzmeue";
 const SUPABASE_DB = "postgres";
-// Password from user's Supabase dashboard
-const SUPABASE_PASSWORD = process.env.SUPABASE_DB_PASSWORD || DB_PASSWORD;
+// TEMPORARY: Hardcode password to bypass Railway's broken env var injection
+const SUPABASE_PASSWORD = "MyNewPass2026abd";
 
 let poolConfig: pg.PoolConfig;
 
-// Use hardcoded Supabase connection if SUPABASE_DB_PASSWORD is set
-if (SUPABASE_PASSWORD) {
+// In production (Railway), ALWAYS use hardcoded Supabase connection
+if (IS_PRODUCTION) {
   console.log(`[DB] Using hardcoded Supabase connection`);
   console.log(`[DB] Host: ${SUPABASE_HOST}, Port: ${SUPABASE_PORT}, User: ${SUPABASE_USER}, DB: ${SUPABASE_DB}`);
   console.log(`[DB] Password length: ${SUPABASE_PASSWORD.length}, first 4 chars: ${SUPABASE_PASSWORD.substring(0, 4)}`);
