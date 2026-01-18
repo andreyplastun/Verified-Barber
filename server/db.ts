@@ -12,6 +12,9 @@ const DB_USER = process.env.DB_USER;
 const DB_PASSWORD = process.env.DB_PASSWORD;
 const DB_NAME = process.env.DB_NAME;
 
+// Debug: show which variables are present
+console.log(`[DB] Variables check: HOST=${!!DB_HOST}, PORT=${!!DB_PORT}, USER=${!!DB_USER}, PASS=${!!DB_PASSWORD}, NAME=${!!DB_NAME}`);
+
 let poolConfig: pg.PoolConfig;
 
 if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
