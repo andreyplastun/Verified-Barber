@@ -4,53 +4,78 @@ import * as schema from "@shared/schema";
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
-  console.error("FATAL: DATABASE_URL environment variable is not set!");
-  console.error("Please add DATABASE_URL in Railway Variables tab.");
-  process.exit(1);
-}
-
-// Debug: log full DATABASE_URL structure
-const rawUrl = process.env.DATABASE_URL;
-console.log(`[DB] Raw DATABASE_URL length: ${rawUrl.length}`);
-console.log(`[DB] Raw DATABASE_URL first 50 chars: ${rawUrl.substring(0, 50)}...`);
+// Support both DATABASE_URL and individual DB_* variables
+// Individual variables bypass any Railway variable interpolation issues
+const DB_HOST = process.env.DB_HOST;
+const DB_PORT = process.env.DB_PORT;
+const DB_USER = process.env.DB_USER;
+const DB_PASSWORD = process.env.DB_PASSWORD;
+const DB_NAME = process.env.DB_NAME;
 
 let poolConfig: pg.PoolConfig;
 
-try {
-  const url = new URL(rawUrl);
-  const host = url.hostname;
-  const port = parseInt(url.port) || 5432;
-  const database = url.pathname.slice(1); // remove leading /
-  const user = decodeURIComponent(url.username);
-  const password = decodeURIComponent(url.password);
+if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
+  // Use individual variables (preferred for Railway)
+  console.log(`[DB] Using individual DB_* variables`);
+  console.log(`[DB] Host: ${DB_HOST}, Port: ${DB_PORT || 5432}, User: ${DB_USER}, DB: ${DB_NAME}`);
+  console.log(`[DB] Password length: ${DB_PASSWORD.length}, first 4 chars: ${DB_PASSWORD.substring(0, 4)}`);
   
-  console.log(`[DB] Parsed - Host: ${host}, Port: ${port}, User: ${user}, DB: ${database}`);
-  console.log(`[DB] Password length: ${password.length}, first 4 chars: ${password.substring(0, 4)}`);
-  
-  // Use explicit parameters instead of connection string
   poolConfig = {
-    host,
-    port,
-    database,
-    user,
-    password,
+    host: DB_HOST,
+    port: parseInt(DB_PORT || '5432'),
+    database: DB_NAME,
+    user: DB_USER,
+    password: DB_PASSWORD,
     max: 3,
     min: 0,
     idleTimeoutMillis: 10000,
     connectionTimeoutMillis: 10000,
     allowExitOnIdle: true,
   };
-} catch (e) {
-  console.error('[DB] Could not parse DATABASE_URL, using as-is');
-  poolConfig = {
-    connectionString: rawUrl,
-    max: 3,
-    min: 0,
-    idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 10000,
-    allowExitOnIdle: true,
-  };
+} else if (process.env.DATABASE_URL) {
+  // Fallback to DATABASE_URL
+  const rawUrl = process.env.DATABASE_URL;
+  console.log(`[DB] Using DATABASE_URL`);
+  console.log(`[DB] Raw URL length: ${rawUrl.length}, first 60 chars: ${rawUrl.substring(0, 60)}...`);
+  
+  try {
+    const url = new URL(rawUrl);
+    const host = url.hostname;
+    const port = parseInt(url.port) || 5432;
+    const database = url.pathname.slice(1);
+    const user = decodeURIComponent(url.username);
+    const password = decodeURIComponent(url.password);
+    
+    console.log(`[DB] Parsed - Host: ${host}, Port: ${port}, User: ${user}, DB: ${database}`);
+    console.log(`[DB] Password length: ${password.length}, first 4 chars: ${password.substring(0, 4)}`);
+    
+    poolConfig = {
+      host,
+      port,
+      database,
+      user,
+      password,
+      max: 3,
+      min: 0,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 10000,
+      allowExitOnIdle: true,
+    };
+  } catch (e) {
+    console.error('[DB] Could not parse DATABASE_URL, using as-is');
+    poolConfig = {
+      connectionString: rawUrl,
+      max: 3,
+      min: 0,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 10000,
+      allowExitOnIdle: true,
+    };
+  }
+} else {
+  console.error("FATAL: No database configuration found!");
+  console.error("Set either DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME");
+  process.exit(1);
 }
 
 export const pool = new Pool(poolConfig);
