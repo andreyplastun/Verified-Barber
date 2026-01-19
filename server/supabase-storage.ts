@@ -3,10 +3,13 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
+console.log(`[SUPABASE STORAGE] URL present: ${!!SUPABASE_URL}, KEY present: ${!!SUPABASE_SERVICE_KEY}`);
+
 const hasCredentials = !!(SUPABASE_URL && SUPABASE_SERVICE_KEY);
 
 if (!hasCredentials) {
   console.warn('[SUPABASE STORAGE] Missing credentials - photo upload disabled');
+  console.warn(`[SUPABASE STORAGE] URL length: ${SUPABASE_URL.length}, KEY length: ${SUPABASE_SERVICE_KEY.length}`);
 }
 
 // Only create client if we have valid credentials

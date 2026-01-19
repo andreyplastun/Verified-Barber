@@ -6,6 +6,7 @@ import { rm, readFile } from "fs/promises";
 // which helps cold start times
 const allowlist = [
   "@google/generative-ai",
+  "@supabase/supabase-js",
   "axios",
   "connect-pg-simple",
   "cors",
@@ -33,7 +34,10 @@ const allowlist = [
 ];
 
 async function buildAll() {
+  // Force clean rebuild
+  console.log("cleaning dist and node_modules cache...");
   await rm("dist", { recursive: true, force: true });
+  await rm(".cache", { recursive: true, force: true }).catch(() => {});
 
   console.log("building client...");
   await viteBuild();
