@@ -107,13 +107,26 @@ export async function getCurrentUserWithRole(): Promise<{
 } | null> {
   const { data: { user } } = await supabase.auth.getUser()
   
-  if (!user) return null
+  console.log('[AUTH] Supabase user:', user?.id, user?.email)
+  
+  if (!user) {
+    console.log('[AUTH] No Supabase user found')
+    return null
+  }
 
   try {
+    console.log('[AUTH] Fetching role from /api/users/' + user.id)
     const res = await fetch(`/api/users/${user.id}`)
-    if (!res.ok) return null
+    console.log('[AUTH] API response status:', res.status)
+    
+    if (!res.ok) {
+      console.error('[AUTH] API error:', res.status, res.statusText)
+      return null
+    }
     
     const data = await res.json()
+    console.log('[AUTH] User data from API:', data)
+    
     return {
       id: data.id,
       email: data.email,
@@ -122,7 +135,7 @@ export async function getCurrentUserWithRole(): Promise<{
       createdAt: data.createdAt ?? null,
     }
   } catch (err) {
-    console.error('Failed to get user with role:', err)
+    console.error('[AUTH] Failed to get user with role:', err)
     return null
   }
 }
