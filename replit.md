@@ -46,6 +46,17 @@ Preferred communication style: Simple, everyday language.
 - **Security**: Users always created as `client` role; role changes require admin key (SESSION_SECRET)
 - **Files**: `client/src/lib/auth.ts`, `client/src/lib/users.ts`, `client/src/contexts/AuthContext.tsx`
 
+### Photo Upload System
+- **Storage**: Supabase Storage with public bucket "specialist-photos"
+- **Photo Types**: Avatar (single, auto-replaces on new upload) and Work Gallery (up to 5 photos)
+- **Constraints**: JPG/PNG only, max 5MB per file
+- **Authorization**: Only specialist owner or admin can upload/delete
+- **Files**: `server/supabase-storage.ts`, `shared/schema.ts` (specialist_photos table)
+- **Endpoints**: 
+  - `POST /api/specialists/:id/photos` - Upload photo (multipart/form-data)
+  - `GET /api/specialists/:id/photos` - Get specialist's photos
+  - `DELETE /api/specialist-photos/:id` - Delete photo
+
 ### Application Flow
 1. Users browse specialists on the home page (or login via bottom nav)
 2. Clicking a specialist shows their profile with reviews and ratings
@@ -53,6 +64,7 @@ Preferred communication style: Simple, everyday language.
 4. Admin dashboard allows marking bookings as "completed"
 5. Completed bookings unlock the ability to submit a verified review
 6. Reviews update the specialist's average rating (only after 5-min finalization)
+7. Specialists can upload avatar and work photos from their dashboard
 
 ## External Dependencies
 
