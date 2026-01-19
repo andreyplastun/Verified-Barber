@@ -1,4 +1,4 @@
-import { specialists, bookings, reviews, users, type Specialist, type Booking, type Review, type User, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, specialistPhotos, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, lt, asc } from "drizzle-orm";
 
@@ -41,6 +41,12 @@ export interface IStorage {
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
   getReviewByBookingId(bookingId: number): Promise<Review | undefined>;
   checkAndFinalizeReviews(): Promise<void>;
+  
+  // Specialist Photos
+  getPhotosForSpecialist(specialistId: number): Promise<SpecialistPhoto[]>;
+  addSpecialistPhoto(photo: { specialistId: number; photoUrl: string; photoType: "avatar" | "work"; storagePath: string }): Promise<SpecialistPhoto>;
+  deleteSpecialistPhoto(id: number): Promise<SpecialistPhoto | undefined>;
+  updateSpecialistAvatar(specialistId: number, imageUrl: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -395,6 +401,37 @@ export class DatabaseStorage implements IStorage {
       .where(eq(reviews.bookingId, bookingId))
       .limit(1);
     return result[0];
+  }
+
+  // Specialist Photos
+  async getPhotosForSpecialist(specialistId: number): Promise<SpecialistPhoto[]> {
+    return await db.select()
+      .from(specialistPhotos)
+      .where(eq(specialistPhotos.specialistId, specialistId))
+      .orderBy(desc(specialistPhotos.createdAt));
+  }
+
+  async addSpecialistPhoto(photo: { specialistId: number; photoUrl: string; photoType: "avatar" | "work"; storagePath: string }): Promise<SpecialistPhoto> {
+    const [newPhoto] = await db.insert(specialistPhotos).values({
+      specialistId: photo.specialistId,
+      photoUrl: photo.photoUrl,
+      photoType: photo.photoType,
+      storagePath: photo.storagePath,
+    }).returning();
+    return newPhoto;
+  }
+
+  async deleteSpecialistPhoto(id: number): Promise<SpecialistPhoto | undefined> {
+    const [deleted] = await db.delete(specialistPhotos)
+      .where(eq(specialistPhotos.id, id))
+      .returning();
+    return deleted;
+  }
+
+  async updateSpecialistAvatar(specialistId: number, imageUrl: string): Promise<void> {
+    await db.update(specialists)
+      .set({ imageUrl })
+      .where(eq(specialists.id, specialistId));
   }
 }
 

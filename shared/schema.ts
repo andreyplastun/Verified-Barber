@@ -60,6 +60,15 @@ export const reviews = pgTable("reviews", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const specialistPhotos = pgTable("specialist_photos", {
+  id: serial("id").primaryKey(),
+  specialistId: integer("specialist_id").notNull(),
+  photoUrl: text("photo_url").notNull(),
+  photoType: text("photo_type", { enum: ["avatar", "work"] }).notNull(), // avatar or work gallery
+  storagePath: text("storage_path").notNull(), // Supabase storage path for deletion
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === RELATIONS ===
 export const usersRelations = relations(users, ({ one }) => ({
   specialist: one(specialists, {
@@ -71,7 +80,15 @@ export const usersRelations = relations(users, ({ one }) => ({
 export const specialistsRelations = relations(specialists, ({ many, one }) => ({
   bookings: many(bookings),
   reviews: many(reviews),
+  photos: many(specialistPhotos),
   user: one(users),
+}));
+
+export const specialistPhotosRelations = relations(specialistPhotos, ({ one }) => ({
+  specialist: one(specialists, {
+    fields: [specialistPhotos.specialistId],
+    references: [specialists.id],
+  }),
 }));
 
 export const bookingsRelations = relations(bookings, ({ one }) => ({
@@ -141,6 +158,7 @@ export type User = typeof users.$inferSelect;
 export type Specialist = typeof specialists.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
 export type Review = typeof reviews.$inferSelect;
+export type SpecialistPhoto = typeof specialistPhotos.$inferSelect;
 
 export type CreateBookingRequest = z.infer<typeof insertBookingSchema>;
 export type CreateReviewRequest = z.infer<typeof insertReviewSchema>;

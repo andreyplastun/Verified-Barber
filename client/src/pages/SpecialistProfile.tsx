@@ -3,10 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
 import { useAuth } from "@/contexts/AuthContext";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, Share2, ShieldCheck, MapPin, Calendar, User, Star } from "lucide-react";
+import { ChevronLeft, Share2, ShieldCheck, MapPin, Calendar, User, Star, Image } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
-import type { Booking } from "@shared/schema";
+import type { Booking, SpecialistPhoto } from "@shared/schema";
 
 export default function SpecialistProfile() {
   const [, params] = useRoute("/specialist/:id");
@@ -37,6 +37,19 @@ export default function SpecialistProfile() {
   const reviewedBooking = myBookings.find(
     (b) => b.specialistId === id && b.status === "completed" && b.hasReview
   );
+
+  // Fetch work photos
+  const { data: photos = [] } = useQuery<SpecialistPhoto[]>({
+    queryKey: ['/api/specialists', id, 'photos'],
+    queryFn: async () => {
+      const res = await fetch(`/api/specialists/${id}/photos`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: id > 0,
+  });
+
+  const workPhotos = photos.filter(p => p.photoType === 'work');
 
   if (isLoading || !specialist) {
     return <div className="min-h-screen bg-background animate-pulse" />;
@@ -147,6 +160,36 @@ export default function SpecialistProfile() {
             </div>
           </div>
         </motion.div>
+
+        {/* Work Photos Gallery */}
+        {workPhotos.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="mt-6"
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <Image size={18} className="text-primary" />
+              <h2 className="text-lg font-bold">Работы</h2>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {workPhotos.map((photo) => (
+                <div 
+                  key={photo.id} 
+                  className="aspect-square rounded-xl overflow-hidden border border-white/5"
+                  data-testid={`work-photo-display-${photo.id}`}
+                >
+                  <img
+                    src={photo.photoUrl}
+                    alt="Work"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* Reviews Section */}
         <div className="mt-8 mb-8">

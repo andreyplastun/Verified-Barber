@@ -5,6 +5,8 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import { bookings, type Review } from "@shared/schema";
 import { pool } from "./db";
+import multer from "multer";
+import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
 
 // Helper to mask reviewer names based on privacy settings and viewer role
 function maskReviewsForViewer(
@@ -509,6 +511,166 @@ export async function registerRoutes(
       res.json(result);
     } catch (err: any) {
       console.error("Error syncing specialist mappings:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =====================
+  // SPECIALIST PHOTO ENDPOINTS
+  // =====================
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    fileFilter: (_req, file, cb) => {
+      if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
+        cb(new Error('Only JPG and PNG allowed'));
+        return;
+      }
+      cb(null, true);
+    }
+  });
+
+  // Helper to check if user is the specialist owner
+  const checkSpecialistOwner = async (userId: string, specialistId: number): Promise<boolean> => {
+    const user = await storage.getUser(userId);
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    if (user.role === 'specialist' && user.specialistId === specialistId) return true;
+    return false;
+  };
+
+  // Get photos for a specialist
+  app.get("/api/specialists/:id/photos", async (req, res) => {
+    try {
+      const specialistId = Number(req.params.id);
+      if (isNaN(specialistId)) {
+        return res.status(400).json({ message: "Invalid specialist ID" });
+      }
+      const photos = await storage.getPhotosForSpecialist(specialistId);
+      res.json(photos);
+    } catch (err: any) {
+      console.error("Error fetching photos:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Upload photo for specialist
+  app.post("/api/specialists/:id/photos", upload.single('photo'), async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      const specialistId = Number(req.params.id);
+      const photoType = req.body.photoType as "avatar" | "work";
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      if (isNaN(specialistId)) {
+        return res.status(400).json({ message: "Invalid specialist ID" });
+      }
+
+      if (!(await checkSpecialistOwner(userId, specialistId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      if (!photoType || !['avatar', 'work'].includes(photoType)) {
+        return res.status(400).json({ message: "Photo type must be 'avatar' or 'work'" });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      // Check limits and handle existing photos
+      const existingPhotos = await storage.getPhotosForSpecialist(specialistId);
+      
+      if (photoType === 'work') {
+        const workPhotos = existingPhotos.filter(p => p.photoType === 'work');
+        if (workPhotos.length >= 5) {
+          return res.status(400).json({ message: "Maximum 5 work photos allowed" });
+        }
+      }
+      
+      // For avatar: delete existing avatar first (enforce single avatar rule)
+      if (photoType === 'avatar') {
+        const existingAvatars = existingPhotos.filter(p => p.photoType === 'avatar');
+        for (const oldAvatar of existingAvatars) {
+          await deletePhoto(oldAvatar.storagePath);
+          await storage.deleteSpecialistPhoto(oldAvatar.id);
+        }
+      }
+
+      // Ensure bucket exists
+      await ensureBucketExists();
+
+      // Upload to Supabase Storage
+      const result = await uploadPhoto(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype
+      );
+
+      if (!result) {
+        return res.status(500).json({ message: "Failed to upload photo" });
+      }
+
+      // Save to database
+      const photo = await storage.addSpecialistPhoto({
+        specialistId,
+        photoUrl: result.url,
+        photoType,
+        storagePath: result.path
+      });
+
+      // If it's an avatar, also update the specialist's imageUrl
+      if (photoType === 'avatar') {
+        await storage.updateSpecialistAvatar(specialistId, result.url);
+      }
+
+      res.status(201).json(photo);
+    } catch (err: any) {
+      console.error("Error uploading photo:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Delete photo
+  app.delete("/api/specialists/:specialistId/photos/:photoId", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      const specialistId = Number(req.params.specialistId);
+      const photoId = Number(req.params.photoId);
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      if (isNaN(specialistId) || isNaN(photoId)) {
+        return res.status(400).json({ message: "Invalid ID" });
+      }
+
+      if (!(await checkSpecialistOwner(userId, specialistId))) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Get photo to find storage path
+      const photos = await storage.getPhotosForSpecialist(specialistId);
+      const photo = photos.find(p => p.id === photoId);
+
+      if (!photo) {
+        return res.status(404).json({ message: "Photo not found" });
+      }
+
+      // Delete from Supabase Storage
+      await deletePhoto(photo.storagePath);
+
+      // Delete from database
+      const deleted = await storage.deleteSpecialistPhoto(photoId);
+
+      res.json({ success: true, deleted });
+    } catch (err: any) {
+      console.error("Error deleting photo:", err);
       res.status(500).json({ message: err.message });
     }
   });
