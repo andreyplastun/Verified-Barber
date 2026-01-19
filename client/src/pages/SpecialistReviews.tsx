@@ -112,9 +112,24 @@ export default function SpecialistReviews() {
                   </div>
                 </div>
                 
-                <p className="text-sm text-foreground leading-relaxed mb-3" data-testid={`text-review-comment-${review.id}`}>
-                  {review.comment}
-                </p>
+                {review.triggers && review.triggers.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {review.triggers.map((trigger: string, idx: number) => (
+                      <span 
+                        key={idx}
+                        className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium"
+                        data-testid={`trigger-chip-${review.id}-${idx}`}
+                      >
+                        {trigger}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {review.comment && (
+                  <p className="text-sm text-foreground leading-relaxed mb-3" data-testid={`text-review-comment-${review.id}`}>
+                    {review.comment}
+                  </p>
+                )}
                 
                 <div className="flex items-center justify-between pt-2 border-t border-white/5">
                   <div className="flex items-center gap-1 text-[10px] text-green-500 font-medium">

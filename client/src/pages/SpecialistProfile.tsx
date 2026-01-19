@@ -253,7 +253,22 @@ export default function SpecialistProfile() {
                       </div>
                     </div>
                     <RatingStars rating={review.rating} size={12} className="mb-2" />
-                    <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>{review.comment}</p>
+                    {review.triggers && review.triggers.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {review.triggers.map((trigger: string, idx: number) => (
+                          <span 
+                            key={idx}
+                            className="px-2.5 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium"
+                            data-testid={`trigger-chip-${review.id}-${idx}`}
+                          >
+                            {trigger}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {review.comment && (
+                      <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>{review.comment}</p>
+                    )}
                     <div className="mt-2 flex items-center justify-between">
                       <div className="flex items-center gap-1 text-[10px] text-green-500 font-medium">
                         <ShieldCheck size={10} />

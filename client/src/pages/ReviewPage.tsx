@@ -84,18 +84,49 @@ export default function ReviewPage() {
   // Initialize form state from existing review (if editing) or empty (if creating)
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
+  const [triggers, setTriggers] = useState<string[]>([]);
   const [hiddenName, setHiddenName] = useState(false);
   const [formInitialized, setFormInitialized] = useState(false);
+
+  // Trigger chips by rating
+  const triggersByRating: Record<number, string[]> = {
+    5: ["Понравилась стрижка", "Аккуратно", "Вежливый", "Профессионал", "Хочу прийти ещё"],
+    4: ["Долго ждал", "Не понял результат", "Неаккуратно", "Не услышал пожелания"],
+    3: ["Долго ждал", "Не понял результат", "Неаккуратно", "Не услышал пожелания"],
+    2: ["Долго ждал", "Не понял результат", "Неаккуратно", "Не услышал пожелания"],
+    1: ["Не понравилась стрижка", "Невежливо", "Плохо объяснил", "Не рекомендую"],
+  };
+
+  const availableTriggers = rating > 0 ? (triggersByRating[rating] || []) : [];
+
+  const toggleTrigger = (trigger: string) => {
+    setTriggers(prev => 
+      prev.includes(trigger) 
+        ? prev.filter(t => t !== trigger)
+        : [...prev, trigger]
+    );
+  };
 
   // Populate form with existing review data when it becomes available
   useEffect(() => {
     if (booking?.review && !formInitialized) {
       setRating(booking.review.rating);
       setComment(booking.review.comment || "");
+      setTriggers(booking.review.triggers || []);
       setHiddenName(!booking.review.showName);
       setFormInitialized(true);
     }
   }, [booking, formInitialized]);
+
+  // Clear triggers when rating changes to different category
+  const handleRatingChange = (newRating: number) => {
+    const oldCategory = rating === 5 ? 'positive' : rating === 1 ? 'negative' : 'neutral';
+    const newCategory = newRating === 5 ? 'positive' : newRating === 1 ? 'negative' : 'neutral';
+    if (oldCategory !== newCategory) {
+      setTriggers([]);
+    }
+    setRating(newRating);
+  };
 
   // Determine if we're in edit mode based on booking data
   const isEditMode = !!booking?.review;
@@ -124,7 +155,7 @@ export default function ReviewPage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ rating, comment, showName: !hiddenName }),
+          body: JSON.stringify({ rating, comment, triggers, showName: !hiddenName }),
         });
         
         if (res.ok) {
@@ -144,6 +175,7 @@ export default function ReviewPage() {
           specialistId: booking.specialistId,
           rating,
           comment,
+          triggers,
           showName: !hiddenName,
         }, {
           onSuccess: () => {
@@ -279,7 +311,7 @@ export default function ReviewPage() {
               type="button"
               onMouseEnter={() => setHoveredStar(star)}
               onMouseLeave={() => setHoveredStar(0)}
-              onClick={() => setRating(star)}
+              onClick={() => handleRatingChange(star)}
               className="p-1 transition-transform hover:scale-110 focus:outline-none"
               data-testid={`button-star-${star}`}
             >
@@ -293,6 +325,30 @@ export default function ReviewPage() {
             </button>
           ))}
         </div>
+
+        {/* Trigger Chips */}
+        {rating > 0 && availableTriggers.length > 0 && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground text-center">Что запомнилось?</p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {availableTriggers.map((trigger) => (
+                <button
+                  key={trigger}
+                  type="button"
+                  onClick={() => toggleTrigger(trigger)}
+                  className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                    triggers.includes(trigger)
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-secondary text-secondary-foreground hover-elevate"
+                  }`}
+                  data-testid={`chip-${trigger}`}
+                >
+                  {trigger}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Privacy Switch - placed right below stars */}
         <div className="flex items-center justify-center gap-3 py-2">
@@ -324,12 +380,11 @@ export default function ReviewPage() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium ml-1">Ваш отзыв</label>
+          <label className="text-sm font-medium ml-1">Комментарий <span className="text-muted-foreground">(необязательно)</span></label>
           <textarea
-            required
-            rows={4}
+            rows={3}
             className="w-full bg-card border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
-            placeholder="Расскажите о вашем опыте..."
+            placeholder="Добавьте детали..."
             value={comment}
             onChange={e => setComment(e.target.value)}
             data-testid="textarea-comment"

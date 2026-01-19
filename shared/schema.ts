@@ -45,7 +45,8 @@ export const reviews = pgTable("reviews", {
   specialistId: integer("specialist_id").notNull(),
   clientId: uuid("client_id"), // References users.id - copied from booking
   rating: integer("rating").notNull(), // 1-5
-  comment: text("comment").notNull(),
+  comment: text("comment"), // Optional text comment
+  triggers: text("triggers").array(), // Quick feedback chips selected by user
   customerName: text("customer_name").notNull(), // Snapshot from booking
   isFinalized: boolean("is_finalized").default(false).notNull(),
   // Simple privacy: if true, name is hidden from everyone (master + clients)

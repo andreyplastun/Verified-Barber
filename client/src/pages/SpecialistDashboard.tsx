@@ -376,9 +376,23 @@ export default function SpecialistDashboard() {
                           </span>
                         </div>
                       </div>
-                      <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>
-                        {review.comment}
-                      </p>
+                      {review.triggers && review.triggers.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-1">
+                          {review.triggers.map((trigger: string, idx: number) => (
+                            <span 
+                              key={idx}
+                              className="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-medium"
+                            >
+                              {trigger}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {review.comment && (
+                        <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>
+                          {review.comment}
+                        </p>
+                      )}
                     </div>
                   );
                 })}

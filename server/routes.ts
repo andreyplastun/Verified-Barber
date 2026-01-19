@@ -278,7 +278,8 @@ export async function registerRoutes(
         specialistId: input.specialistId,
         clientId: (booking as any).clientId || null, // Copy from booking for privacy display
         rating: input.rating,
-        comment: input.comment,
+        comment: input.comment || null,
+        triggers: (input as any).triggers || null,
         customerName: (booking as any).customerName ?? "Anonymous",
         showName: (input as any).showName ?? true, // Default to showing name
       });
@@ -302,8 +303,8 @@ export async function registerRoutes(
   app.patch("/api/reviews/:id", async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const { rating, comment, showName } = req.body;
-      const updated = await storage.updateReview(id, { rating, comment, showName });
+      const { rating, comment, triggers, showName } = req.body;
+      const updated = await storage.updateReview(id, { rating, comment, triggers, showName });
       if (!updated) return res.status(404).json({ message: "Review not found" });
       res.json(updated);
     } catch (err: any) {

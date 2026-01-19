@@ -36,7 +36,7 @@ export interface IStorage {
 
   // Reviews
   createReview(review: any): Promise<Review>;
-  updateReview(id: number, data: { rating?: number; comment?: string; showName?: boolean }): Promise<Review | undefined>;
+  updateReview(id: number, data: { rating?: number; comment?: string; triggers?: string[]; showName?: boolean }): Promise<Review | undefined>;
   finalizeReview(id: number): Promise<Review | undefined>;
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
   getReviewByBookingId(bookingId: number): Promise<Review | undefined>;
@@ -313,7 +313,8 @@ export class DatabaseStorage implements IStorage {
       specialistId: review.specialistId,
       clientId: review.clientId || null, // Copy from booking for privacy display
       rating: review.rating,
-      comment: review.comment,
+      comment: review.comment || null,
+      triggers: review.triggers || null,
       customerName: review.customerName || "Anonymous",
       isFinalized: false,
       showName: showName,
@@ -329,7 +330,7 @@ export class DatabaseStorage implements IStorage {
     return newReview;
   }
 
-  async updateReview(id: number, data: { rating?: number; comment?: string; showName?: boolean }): Promise<Review | undefined> {
+  async updateReview(id: number, data: { rating?: number; comment?: string; triggers?: string[]; showName?: boolean }): Promise<Review | undefined> {
     const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
     if (!review) return undefined;
 
@@ -344,7 +345,8 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db.update(reviews)
       .set({ 
         rating: newRating, 
-        comment: data.comment ?? review.comment, 
+        comment: data.comment ?? review.comment,
+        triggers: data.triggers !== undefined ? data.triggers : review.triggers,
         showName: newShowName,
         hiddenName: !newShowName,
         isPublicName: newShowName
