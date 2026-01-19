@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Home, ShieldCheck, LogIn, LogOut } from "lucide-react";
+import { Home, ShieldCheck, LogIn, LogOut, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { signOut, getCurrentUserWithRole } from "@/lib/auth";
@@ -9,7 +9,7 @@ import { queryClient } from "@/lib/queryClient";
 
 export function Navigation() {
   const [location, setLocation] = useLocation();
-  const { authUser, refetchUser } = useAuth();
+  const { authUser, currentUser, refetchUser } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -23,14 +23,29 @@ export function Navigation() {
     const userWithRole = await getCurrentUserWithRole();
     if (userWithRole?.role === 'specialist') {
       setLocation('/specialist-dashboard');
+    } else if (userWithRole?.role === 'admin') {
+      setLocation('/admin-dashboard');
     } else {
       setLocation('/');
     }
   };
 
+  // Dynamic dashboard link based on user role
+  const getDashboardLink = () => {
+    if (currentUser?.role === 'admin') {
+      return { href: "/admin-dashboard", icon: ShieldCheck, label: "Admin" };
+    }
+    if (currentUser?.role === 'specialist') {
+      return { href: "/specialist-dashboard", icon: User, label: "Dashboard" };
+    }
+    return null;
+  };
+
+  const dashboardItem = getDashboardLink();
+
   const navItems = [
     { href: "/", icon: Home, label: "Explore" },
-    { href: "/admin", icon: ShieldCheck, label: "Admin" },
+    ...(dashboardItem ? [dashboardItem] : []),
   ];
 
   return (
