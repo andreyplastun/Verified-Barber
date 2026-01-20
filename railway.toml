@@ -1,10 +1,10 @@
 [build]
 builder = "nixpacks"
-buildCommand = "npm ci --include=dev && npm run build"
 nixpacksConfigPath = "nixpacks.toml"
 
 [build.env]
 NIXPACKS_NODE_VERSION = "20"
+CI = "true"
 
 [deploy]
 startCommand = "NODE_ENV=production node dist/index.cjs"

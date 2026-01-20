@@ -7,8 +7,13 @@ NODE_VERSION = "20"
 [phases.setup]
 nixPkgs = ["nodejs_20", "npm-9_x", "openssl"]
 
+[phases.install]
+cmds = ["npm ci --include=dev"]
+
 [phases.build]
-cmds = ["npm ci --include=dev", "npm run build"]
+dependsOn = ["install"]
+cmds = ["npm run build"]
+cacheDirectories = []
 
 [start]
 cmd = "NODE_ENV=production node dist/index.cjs"
