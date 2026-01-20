@@ -8,7 +8,7 @@ NODE_VERSION = "20"
 nixPkgs = ["nodejs_20", "npm-9_x", "openssl"]
 
 [phases.install]
-cmds = ["npm ci --include=dev"]
+cmds = ["rm -rf node_modules/.cache && npm ci --include=dev"]
 
 [phases.build]
 dependsOn = ["install"]
