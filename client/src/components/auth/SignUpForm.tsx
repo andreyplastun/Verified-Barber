@@ -21,12 +21,12 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
     setError('');
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError('Пароли не совпадают');
       return;
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError('Пароль должен быть не менее 6 символов');
       return;
     }
 
@@ -36,7 +36,7 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
       await signUp(email, password);
       onSuccess();
     } catch (err: any) {
-      setError(err.message || 'Sign up failed');
+      setError(err.message || 'Ошибка регистрации');
     } finally {
       setLoading(false);
     }
@@ -51,33 +51,33 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="your@email.com"
+          placeholder="ваш@email.com"
           required
           data-testid="input-signup-email"
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="signup-password">Password</Label>
+        <Label htmlFor="signup-password">Пароль</Label>
         <Input
           id="signup-password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password (min 6 characters)"
+          placeholder="Пароль (мин. 6 символов)"
           required
           data-testid="input-signup-password"
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="confirm-password">Confirm Password</Label>
+        <Label htmlFor="confirm-password">Подтвердите пароль</Label>
         <Input
           id="confirm-password"
           type="password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
-          placeholder="Confirm password"
+          placeholder="Повторите пароль"
           required
           data-testid="input-signup-confirm-password"
         />
@@ -93,18 +93,18 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
         disabled={loading}
         data-testid="button-signup-submit"
       >
-        {loading ? 'Creating account...' : 'Create Account'}
+        {loading ? 'Регистрация...' : 'Зарегистрироваться'}
       </Button>
 
       <p className="text-center text-sm text-muted-foreground">
-        Already have an account?{' '}
+        Уже есть аккаунт?{' '}
         <button
           type="button"
           onClick={onSwitchToLogin}
           className="text-primary underline"
           data-testid="link-switch-to-login"
         >
-          Sign in
+          Войти
         </button>
       </p>
     </form>

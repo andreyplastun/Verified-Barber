@@ -140,8 +140,8 @@ export default function ReviewPage() {
     if (rating === 0) {
       toast({
         variant: "destructive",
-        title: "Rating required",
-        description: "Please select a star rating.",
+        title: "Выберите оценку",
+        description: "Пожалуйста, выберите количество звёзд.",
       });
       return;
     }
@@ -203,8 +203,8 @@ export default function ReviewPage() {
     return (
       <div className="p-6 text-center">
         <AlertCircle className="mx-auto w-12 h-12 text-destructive mb-4" />
-        <h2 className="text-xl font-bold">Invalid Link</h2>
-        <p className="text-muted-foreground">Booking information is missing.</p>
+        <h2 className="text-xl font-bold">Неверная ссылка</h2>
+        <p className="text-muted-foreground">Информация о записи отсутствует.</p>
       </div>
     );
   }
@@ -223,16 +223,16 @@ export default function ReviewPage() {
         <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-6">
           <AlertCircle className="w-8 h-8 text-muted-foreground" />
         </div>
-        <h2 className="text-2xl font-bold mb-2">No Verified Visit Found</h2>
+        <h2 className="text-2xl font-bold mb-2">Визит не найден</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          We couldn't find a completed visit for you to review at this time.
+          Мы не нашли завершённый визит для оставления отзыва.
         </p>
         <button 
           onClick={() => setLocation("/")}
           className="px-6 py-3 bg-secondary rounded-xl font-medium hover-elevate"
           data-testid="button-back-home"
         >
-          Back Home
+          На главную
         </button>
       </div>
     );
@@ -244,16 +244,16 @@ export default function ReviewPage() {
         <div className="w-16 h-16 bg-yellow-500/10 rounded-full flex items-center justify-center mb-6">
           <AlertCircle className="w-8 h-8 text-yellow-500" />
         </div>
-        <h1 className="text-2xl font-bold mb-2">Visit Not Verified</h1>
+        <h1 className="text-2xl font-bold mb-2">Визит не подтверждён</h1>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          You can only review after your visit is marked as completed by the specialist.
+          Оставить отзыв можно только после того, как специалист подтвердит завершение визита.
         </p>
         <button 
           onClick={() => setLocation("/")}
           className="px-6 py-3 bg-secondary rounded-xl font-medium"
           data-testid="button-back-home"
         >
-          Back Home
+          На главную
         </button>
       </div>
     );
@@ -264,14 +264,14 @@ export default function ReviewPage() {
   if (booking.review && !isEditable) {
     return (
       <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
-         <h1 className="text-2xl font-bold mb-2">Review Finalized</h1>
-         <p className="text-muted-foreground mb-8">The 5-minute editing window has expired. This review can no longer be modified.</p>
+         <h1 className="text-2xl font-bold mb-2">Отзыв опубликован</h1>
+         <p className="text-muted-foreground mb-8">Время редактирования (5 минут) истекло. Отзыв больше нельзя изменить.</p>
          <button 
           onClick={() => setLocation(`/specialist/${booking.specialistId}`)}
           className="px-6 py-3 bg-secondary rounded-xl font-medium"
           data-testid="button-view-profile"
         >
-          View Profile
+          К профилю
         </button>
       </div>
     );
@@ -293,11 +293,11 @@ export default function ReviewPage() {
       <div className="mb-8">
         <h2 className="text-lg font-medium">{isEditMode ? "Обновите ваш отзыв" : "Как прошёл визит?"}</h2>
         <p className="text-sm text-muted-foreground">
-          Booking #{booking.id} • {new Date(booking.appointmentTime).toLocaleDateString()}
+          Запись #{booking.id} • {new Date(booking.appointmentTime).toLocaleDateString()}
         </p>
         {isEditable && booking.review?.editableUntil && (
           <p className="text-xs text-primary mt-2">
-            Editable until: {new Date(booking.review.editableUntil).toLocaleTimeString()}
+            Можно редактировать до: {new Date(booking.review.editableUntil).toLocaleTimeString()}
           </p>
         )}
       </div>

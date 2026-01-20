@@ -70,7 +70,7 @@ export default function AdminDashboard() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Booking created successfully" });
+      toast({ title: "Запись создана" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings"] });
       setFormData({
         specialistId: "",
@@ -81,7 +81,7 @@ export default function AdminDashboard() {
       });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
     },
   });
 
@@ -98,11 +98,11 @@ export default function AdminDashboard() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Booking marked as completed" });
+      toast({ title: "Визит завершён" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings"] });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
     },
   });
 
@@ -124,7 +124,7 @@ export default function AdminDashboard() {
       <div className="max-w-4xl mx-auto space-y-6">
         <div className="flex items-center gap-3">
           <ShieldCheck className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-bold" data-testid="text-admin-title">Admin Dashboard</h1>
+          <h1 className="text-2xl font-bold" data-testid="text-admin-title">Панель администратора</h1>
         </div>
 
         <div className="grid grid-cols-3 gap-4">
@@ -133,7 +133,7 @@ export default function AdminDashboard() {
               <Calendar className="h-8 w-8 text-muted-foreground" />
               <div>
                 <p className="text-2xl font-bold" data-testid="text-total-bookings">{bookings.length}</p>
-                <p className="text-xs text-muted-foreground">Total Bookings</p>
+                <p className="text-xs text-muted-foreground">Всего записей</p>
               </div>
             </CardContent>
           </Card>
@@ -142,7 +142,7 @@ export default function AdminDashboard() {
               <Clock className="h-8 w-8 text-yellow-500" />
               <div>
                 <p className="text-2xl font-bold" data-testid="text-pending-count">{pendingCount}</p>
-                <p className="text-xs text-muted-foreground">Pending</p>
+                <p className="text-xs text-muted-foreground">Ожидают</p>
               </div>
             </CardContent>
           </Card>
@@ -151,7 +151,7 @@ export default function AdminDashboard() {
               <CheckCircle className="h-8 w-8 text-green-500" />
               <div>
                 <p className="text-2xl font-bold" data-testid="text-completed-count">{completedCount}</p>
-                <p className="text-xs text-muted-foreground">Completed</p>
+                <p className="text-xs text-muted-foreground">Завершено</p>
               </div>
             </CardContent>
           </Card>
@@ -161,17 +161,17 @@ export default function AdminDashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Plus size={20} />
-              Create Booking
+              Создать запись
             </CardTitle>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="customerName">Client Name</Label>
+                  <Label htmlFor="customerName">Имя клиента</Label>
                   <Input
                     id="customerName"
-                    placeholder="Enter client name"
+                    placeholder="Введите имя"
                     value={formData.customerName}
                     onChange={(e) => setFormData({ ...formData, customerName: e.target.value })}
                     required
@@ -179,7 +179,7 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="customerEmail">Client Email</Label>
+                  <Label htmlFor="customerEmail">Email клиента</Label>
                   <Input
                     id="customerEmail"
                     type="email"
@@ -194,10 +194,10 @@ export default function AdminDashboard() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="customerPhone">Phone Number</Label>
+                  <Label htmlFor="customerPhone">Телефон</Label>
                   <Input
                     id="customerPhone"
-                    placeholder="Enter phone number"
+                    placeholder="Введите номер"
                     value={formData.customerPhone}
                     onChange={(e) => setFormData({ ...formData, customerPhone: e.target.value })}
                     required
@@ -205,13 +205,13 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="specialist">Specialist</Label>
+                  <Label htmlFor="specialist">Специалист</Label>
                   <Select
                     value={formData.specialistId}
                     onValueChange={(value) => setFormData({ ...formData, specialistId: value })}
                   >
                     <SelectTrigger data-testid="select-specialist">
-                      <SelectValue placeholder="Select specialist" />
+                      <SelectValue placeholder="Выберите специалиста" />
                     </SelectTrigger>
                     <SelectContent>
                       {specialists.map((s) => (
@@ -225,7 +225,7 @@ export default function AdminDashboard() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="appointmentTime">Date & Time</Label>
+                <Label htmlFor="appointmentTime">Дата и время</Label>
                 <Input
                   id="appointmentTime"
                   type="datetime-local"
@@ -242,7 +242,7 @@ export default function AdminDashboard() {
                 disabled={createBookingMutation.isPending}
                 data-testid="button-create-booking"
               >
-                {createBookingMutation.isPending ? "Creating..." : "Create Booking"}
+                {createBookingMutation.isPending ? "Создание..." : "Создать запись"}
               </Button>
             </form>
           </CardContent>
@@ -252,29 +252,29 @@ export default function AdminDashboard() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Users size={20} />
-              All Bookings
+              Все записи
             </CardTitle>
           </CardHeader>
           <CardContent>
             <Tabs value={statusFilter} onValueChange={setStatusFilter}>
               <TabsList className="grid w-full grid-cols-3 mb-4">
                 <TabsTrigger value="all" data-testid="tab-all">
-                  All ({bookings.length})
+                  Все ({bookings.length})
                 </TabsTrigger>
                 <TabsTrigger value="pending" data-testid="tab-pending">
-                  Pending ({pendingCount})
+                  Ожидают ({pendingCount})
                 </TabsTrigger>
                 <TabsTrigger value="completed" data-testid="tab-completed">
-                  Completed ({completedCount})
+                  Завершены ({completedCount})
                 </TabsTrigger>
               </TabsList>
 
               <div className="space-y-3">
                 {bookingsLoading ? (
-                  <div className="text-center py-8 text-muted-foreground">Loading...</div>
+                  <div className="text-center py-8 text-muted-foreground">Загрузка...</div>
                 ) : filteredBookings.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
-                    No bookings found
+                    Записи не найдены
                   </div>
                 ) : (
                   filteredBookings.map((booking) => (
@@ -297,7 +297,7 @@ export default function AdminDashboard() {
                           </span>
                           {booking.hasReview && (
                             <span className="px-2 py-0.5 text-[10px] rounded-full font-bold bg-blue-500/10 text-blue-500">
-                              Has Review
+                              Есть отзыв
                             </span>
                           )}
                         </div>
@@ -311,7 +311,7 @@ export default function AdminDashboard() {
                           </span>
                         </div>
                         <div className="text-xs text-muted-foreground mt-1">
-                          ID: {booking.id} • Phone: {booking.customerPhone}
+                          ID: {booking.id} • Тел: {booking.customerPhone}
                         </div>
                       </div>
                       {booking.status === "pending" && (
@@ -322,7 +322,7 @@ export default function AdminDashboard() {
                           data-testid={`button-complete-${booking.id}`}
                         >
                           <CheckCircle className="h-4 w-4 mr-1" />
-                          Mark Completed
+                          Завершить
                         </Button>
                       )}
                     </div>

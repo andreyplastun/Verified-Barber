@@ -7,6 +7,7 @@ This is a full-stack booking and review platform for service specialists (e.g., 
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+Language: Russian (Русский) - all UI text is in Russian.
 
 ## System Architecture
 

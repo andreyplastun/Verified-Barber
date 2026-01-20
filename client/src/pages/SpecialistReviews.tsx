@@ -55,7 +55,7 @@ export default function SpecialistReviews() {
             </button>
           </Link>
           <div>
-            <h1 className="text-xl font-bold">All Reviews</h1>
+            <h1 className="text-xl font-bold">Все отзывы</h1>
             {specialist && (
               <p className="text-sm text-muted-foreground">{specialist.name}</p>
             )}
@@ -66,8 +66,8 @@ export default function SpecialistReviews() {
       <div className="p-4 space-y-4">
         {publicReviews.length === 0 ? (
           <div className="text-center py-12 text-muted-foreground">
-            <p className="text-lg font-medium mb-2">No reviews yet</p>
-            <p className="text-sm">Be the first to leave a review after your visit!</p>
+            <p className="text-lg font-medium mb-2">Пока нет отзывов</p>
+            <p className="text-sm">Будьте первым, кто оставит отзыв после визита!</p>
           </div>
         ) : (
           publicReviews.map((review) => {
@@ -107,7 +107,7 @@ export default function SpecialistReviews() {
                   <div className="flex flex-col items-end gap-1">
                     <RatingStars rating={review.rating} size={14} />
                     <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[9px] font-bold border border-green-500/20">
-                      Verified
+                      Проверен
                     </span>
                   </div>
                 </div>
@@ -134,10 +134,10 @@ export default function SpecialistReviews() {
                 <div className="flex items-center justify-between pt-2 border-t border-white/5">
                   <div className="flex items-center gap-1 text-[10px] text-green-500 font-medium">
                     <ShieldCheck size={10} />
-                    Verified Visit
+                    Подтверждённый визит
                   </div>
                   <span className="text-[10px] text-muted-foreground italic">
-                    {getOrdinal(visitNumber)} verified visit
+                    Визит #{visitNumber}
                   </span>
                 </div>
               </div>

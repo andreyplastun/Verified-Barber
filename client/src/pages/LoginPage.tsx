@@ -22,10 +22,10 @@ export default function LoginPage() {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
           <h1 className="text-2xl font-bold" data-testid="text-login-title">
-            {isLogin ? 'Welcome Back' : 'Create Account'}
+            {isLogin ? 'Добро пожаловать' : 'Регистрация'}
           </h1>
           <p className="text-muted-foreground">
-            {isLogin ? 'Sign in to continue' : 'Sign up to get started'}
+            {isLogin ? 'Войдите, чтобы продолжить' : 'Зарегистрируйтесь для начала'}
           </p>
         </div>
 

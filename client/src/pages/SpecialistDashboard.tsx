@@ -140,7 +140,7 @@ export default function SpecialistDashboard() {
   if (!specialistId) {
     return (
       <div className="p-6" data-testid="specialist-dashboard">
-        <p className="text-muted-foreground">No specialist profile linked to your account.</p>
+        <p className="text-muted-foreground">К вашему аккаунту не привязан профиль специалиста.</p>
       </div>
     );
   }
@@ -178,7 +178,7 @@ export default function SpecialistDashboard() {
                   <span data-testid="text-rating">{averageRating}</span>
                 </div>
                 <Badge variant="secondary" data-testid="badge-review-count">
-                  {specialist.reviewCount || 0} reviews
+                  {specialist.reviewCount || 0} отзывов
                 </Badge>
               </div>
             </div>
@@ -298,7 +298,7 @@ export default function SpecialistDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
             <Calendar className="w-5 h-5" />
-            <CardTitle>Upcoming Appointments</CardTitle>
+            <CardTitle>Предстоящие записи</CardTitle>
           </CardHeader>
           <CardContent>
             {loadingBookings ? (
@@ -307,7 +307,7 @@ export default function SpecialistDashboard() {
                 <Skeleton className="h-16 w-full" />
               </div>
             ) : upcomingBookings.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No upcoming appointments</p>
+              <p className="text-muted-foreground text-sm">Нет предстоящих записей</p>
             ) : (
               <div className="space-y-3">
                 {upcomingBookings.map((booking) => (
@@ -333,7 +333,7 @@ export default function SpecialistDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
             <MessageSquare className="w-5 h-5" />
-            <CardTitle>Recent Reviews</CardTitle>
+            <CardTitle>Последние отзывы</CardTitle>
           </CardHeader>
           <CardContent>
             {loadingReviews ? (
@@ -342,7 +342,7 @@ export default function SpecialistDashboard() {
                 <Skeleton className="h-20 w-full" />
               </div>
             ) : !reviews || reviews.length === 0 ? (
-              <p className="text-muted-foreground text-sm">No reviews yet</p>
+              <p className="text-muted-foreground text-sm">Пока нет отзывов</p>
             ) : (
               <div className="space-y-3">
                 {reviews.slice(0, 5).map((review) => {
@@ -404,13 +404,13 @@ export default function SpecialistDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Completed Visits</CardTitle>
+          <CardTitle>Завершённые визиты</CardTitle>
         </CardHeader>
         <CardContent>
           {loadingBookings ? (
             <Skeleton className="h-16 w-full" />
           ) : completedBookings.length === 0 ? (
-            <p className="text-muted-foreground text-sm">No completed visits yet</p>
+            <p className="text-muted-foreground text-sm">Пока нет завершённых визитов</p>
           ) : (
             <div className="space-y-2">
               {completedBookings.slice(0, 10).map((booking) => (
@@ -429,7 +429,7 @@ export default function SpecialistDashboard() {
                     </Badge>
                     {booking.hasReview && (
                       <Badge variant="outline" className="text-green-600">
-                        Reviewed
+                        Есть отзыв
                       </Badge>
                     )}
                   </div>

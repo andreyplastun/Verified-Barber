@@ -18,7 +18,7 @@ export default function SpecialistList() {
   }, [loading, role, setLocation]);
 
   if (loading) {
-    return <div style={{ color: 'white', padding: 20 }}>Loading...</div>;
+    return <div style={{ color: 'white', padding: 20 }}>Загрузка...</div>;
   }
 
   if (isLoading) {
@@ -36,11 +36,11 @@ export default function SpecialistList() {
       {/* Header */}
       <header className="pt-16 pb-8 px-6 bg-gradient-to-b from-primary/10 to-background">
         <h1 className="text-4xl font-display font-bold text-foreground">
-          Find your <br />
-          <span className="text-primary">Style Specialist</span>
+          Найди своего <br />
+          <span className="text-primary">Мастера</span>
         </h1>
         <p className="mt-2 text-muted-foreground text-lg">
-          Book verified top-rated barbers near you.
+          Запишись к проверенным специалистам рядом с тобой.
         </p>
       </header>
 
@@ -78,13 +78,13 @@ export default function SpecialistList() {
                     <div className="flex items-center gap-1 mb-3">
                       <RatingStars rating={specialist.averageRating / 10} size={14} />
                       <span className="text-xs text-muted-foreground ml-1">
-                        ({specialist.reviewCount} verified)
+                        ({specialist.reviewCount} отзывов)
                       </span>
                     </div>
 
                     <div className="flex items-center text-xs text-muted-foreground">
                       <MapPin size={12} className="mr-1" />
-                      <span>2.4 km away</span>
+                      <span>2.4 км</span>
                     </div>
                   </div>
 
@@ -100,7 +100,7 @@ export default function SpecialistList() {
 
         {specialists?.length === 0 && (
           <div className="text-center py-20 text-muted-foreground">
-            No specialists found.
+            Специалисты не найдены.
           </div>
         )}
       </main>

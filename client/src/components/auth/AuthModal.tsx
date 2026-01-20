@@ -28,7 +28,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle data-testid="text-auth-modal-title">
-            {mode === 'login' ? 'Sign In' : 'Create Account'}
+            {mode === 'login' ? 'Вход' : 'Регистрация'}
           </DialogTitle>
         </DialogHeader>
 

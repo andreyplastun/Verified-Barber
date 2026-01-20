@@ -33,10 +33,10 @@ export function Navigation() {
   // Dynamic dashboard link based on user role
   const getDashboardLink = () => {
     if (currentUser?.role === 'admin') {
-      return { href: "/admin-dashboard", icon: ShieldCheck, label: "Admin" };
+      return { href: "/admin-dashboard", icon: ShieldCheck, label: "Админ" };
     }
     if (currentUser?.role === 'specialist') {
-      return { href: "/specialist-dashboard", icon: User, label: "Dashboard" };
+      return { href: "/specialist-dashboard", icon: User, label: "Кабинет" };
     }
     return null;
   };
@@ -44,7 +44,7 @@ export function Navigation() {
   const dashboardItem = getDashboardLink();
 
   const navItems = [
-    { href: "/", icon: Home, label: "Explore" },
+    { href: "/", icon: Home, label: "Главная" },
     ...(dashboardItem ? [dashboardItem] : []),
   ];
 
@@ -82,7 +82,7 @@ export function Navigation() {
               data-testid="button-logout"
             >
               <LogOut className="w-6 h-6" strokeWidth={2} />
-              <span className="text-[10px] font-medium">Logout</span>
+              <span className="text-[10px] font-medium">Выйти</span>
             </button>
           ) : (
             <button
@@ -91,7 +91,7 @@ export function Navigation() {
               data-testid="button-login"
             >
               <LogIn className="w-6 h-6" strokeWidth={2} />
-              <span className="text-[10px] font-medium">Login</span>
+              <span className="text-[10px] font-medium">Войти</span>
             </button>
           )}
         </div>

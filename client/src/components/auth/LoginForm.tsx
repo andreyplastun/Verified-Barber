@@ -24,7 +24,7 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
       await signIn(email, password);
       onSuccess();
     } catch (err: any) {
-      setError(err.message || 'Login failed');
+      setError(err.message || 'Ошибка входа');
     } finally {
       setLoading(false);
     }
@@ -39,20 +39,20 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          placeholder="your@email.com"
+          placeholder="ваш@email.com"
           required
           data-testid="input-login-email"
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password">Пароль</Label>
         <Input
           id="password"
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          placeholder="Password"
+          placeholder="Пароль"
           required
           data-testid="input-login-password"
         />
@@ -68,18 +68,18 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
         disabled={loading}
         data-testid="button-login-submit"
       >
-        {loading ? 'Signing in...' : 'Sign In'}
+        {loading ? 'Вход...' : 'Войти'}
       </Button>
 
       <p className="text-center text-sm text-muted-foreground">
-        Don't have an account?{' '}
+        Нет аккаунта?{' '}
         <button
           type="button"
           onClick={onSwitchToSignUp}
           className="text-primary underline"
           data-testid="link-switch-to-signup"
         >
-          Create account
+          Зарегистрироваться
         </button>
       </p>
     </form>
