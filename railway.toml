@@ -1,12 +1,6 @@
 [build]
-builder = "nixpacks"
-nixpacksConfigPath = "nixpacks.toml"
-buildCommand = "rm -rf node_modules/.cache && npm ci --include=dev && npm run build"
-
-[build.env]
-NIXPACKS_NODE_VERSION = "20"
-CI = "true"
-NPM_CONFIG_CACHE = "/tmp/.npm"
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "NODE_ENV=production node dist/index.cjs"
