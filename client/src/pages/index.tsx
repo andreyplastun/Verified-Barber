@@ -34,19 +34,19 @@ export default function SpecialistList() {
     
     let result = [...specialists];
     
-    // Apply rating filter
+    // Apply rating filter (using validReviewCount for "Сформированный рейтинг" status)
     if (ratingFilter === 'formed') {
-      result = result.filter(s => s.reviewCount >= 10);
+      result = result.filter(s => ((s as any).validReviewCount || 0) >= 10);
     } else if (ratingFilter === 'forming') {
-      result = result.filter(s => s.reviewCount < 10);
+      result = result.filter(s => ((s as any).validReviewCount || 0) < 10);
     }
     
     // Apply sorting
     if (sortBy === 'default') {
       // Default: formed rating first, then by rating
       result.sort((a, b) => {
-        const aFormed = a.reviewCount >= 10 ? 1 : 0;
-        const bFormed = b.reviewCount >= 10 ? 1 : 0;
+        const aFormed = ((a as any).validReviewCount || 0) >= 10 ? 1 : 0;
+        const bFormed = ((b as any).validReviewCount || 0) >= 10 ? 1 : 0;
         if (bFormed !== aFormed) return bFormed - aFormed;
         return (b.averageRating || 0) - (a.averageRating || 0);
       });
@@ -213,18 +213,18 @@ export default function SpecialistList() {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${
-                          specialist.reviewCount >= 10
+                          ((specialist as any).validReviewCount || 0) >= 10
                             ? 'bg-emerald-50 text-emerald-700'
                             : 'bg-[#F1F5F9] text-[#475569]'
                         }`}>
                           <span>
-                            {specialist.reviewCount >= 10 ? 'Сформированный' : 'Формируется'}
+                            {((specialist as any).validReviewCount || 0) >= 10 ? 'Сформированный' : 'Формируется'}
                           </span>
                           <Info size={10} className="opacity-60" />
                         </div>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="max-w-[200px] text-xs">
-                        {specialist.reviewCount >= 10
+                        {((specialist as any).validReviewCount || 0) >= 10
                           ? 'Рейтинг основан на достаточном количестве подтверждённых визитов'
                           : 'Рейтинг станет точнее по мере увеличения количества отзывов'}
                       </TooltipContent>

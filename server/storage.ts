@@ -20,7 +20,7 @@ export interface IStorage {
   getSpecialists(): Promise<Specialist[]>;
   getSpecialist(id: number): Promise<Specialist | undefined>;
   getFirstSpecialist(): Promise<Specialist | undefined>;
-  createSpecialist(specialist: Omit<Specialist, "id" | "reviewCount" | "averageRating">): Promise<Specialist>;
+  createSpecialist(specialist: Omit<Specialist, "id" | "reviewCount" | "averageRating" | "validReviewCount">): Promise<Specialist>;
   updateSpecialistRating(id: number): Promise<void>;
   updateSpecialistRatingIncludingPending(id: number): Promise<void>;
 
@@ -219,7 +219,7 @@ export class DatabaseStorage implements IStorage {
     return specialist;
   }
 
-  async createSpecialist(insertSpecialist: Omit<Specialist, "id" | "reviewCount" | "averageRating">): Promise<Specialist> {
+  async createSpecialist(insertSpecialist: Omit<Specialist, "id" | "reviewCount" | "averageRating" | "validReviewCount">): Promise<Specialist> {
     const [specialist] = await db.insert(specialists).values(insertSpecialist).returning();
     return specialist;
   }
@@ -233,11 +233,14 @@ export class DatabaseStorage implements IStorage {
     const newCount = reviewsList.length;
     const newTotal = reviewsList.reduce((acc, r) => acc + r.rating, 0);
     const newAvg = newCount > 0 ? Math.round((newTotal / newCount) * 10) : 0;
+    
+    // Count only non-limited reviews for "Сформированный рейтинг" status
+    const validCount = reviewsList.filter(r => !r.isRatingLimited).length;
 
-    console.log(`[STORAGE] updateSpecialistRating(${id}) - All reviews: ${newCount}, Total: ${newTotal}, New avg (x10): ${newAvg}`);
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - All reviews: ${newCount}, Valid: ${validCount}, Total: ${newTotal}, New avg (x10): ${newAvg}`);
 
     await db.update(specialists)
-      .set({ reviewCount: newCount, averageRating: newAvg })
+      .set({ reviewCount: newCount, averageRating: newAvg, validReviewCount: validCount })
       .where(eq(specialists.id, id));
   }
 

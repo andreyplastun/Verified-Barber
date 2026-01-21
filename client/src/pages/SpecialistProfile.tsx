@@ -62,6 +62,7 @@ export default function SpecialistProfile() {
 
   const rating = specialist.averageRating / 10;
   const reviewCount = specialist.reviewCount;
+  const validReviewCount = (specialist as any).validReviewCount || 0;
 
   const getRatingStatus = (count: number) => {
     if (count >= 10) return { 
@@ -74,7 +75,7 @@ export default function SpecialistProfile() {
     };
   };
 
-  const ratingStatus = getRatingStatus(reviewCount);
+  const ratingStatus = getRatingStatus(validReviewCount);
 
   return (
     <div className="min-h-screen bg-background pb-32">

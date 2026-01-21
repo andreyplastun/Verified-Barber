@@ -20,10 +20,10 @@ export const specialists = pgTable("specialists", {
   specialty: text("specialty").notNull(), // e.g., "Senior Barber"
   bio: text("bio").notNull(),
   imageUrl: text("image_url").notNull(),
-  rating: text("rating").default("0").notNull(), // stored as string to avoid floating point issues, or simpler to use decimal/real if supported but text is safe. Let's use numeric/real in real PG, but text parsed as float is fine for simple apps. Actually lets use integer for "multiplied by 10" or just real. Let's stick to simple text for display or real. Drizzle has real.
-  // Actually, let's calculate rating dynamically or cache it. Caching is better for sorting.
+  rating: text("rating").default("0").notNull(),
   reviewCount: integer("review_count").default(0).notNull(),
   averageRating: integer("average_rating").default(0).notNull(), // Stored as (rating * 10) to keep precision e.g. 4.5 -> 45
+  validReviewCount: integer("valid_review_count").default(0).notNull(), // Count of non-limited reviews for "Сформированный рейтинг" status
 });
 
 export const bookings = pgTable("bookings", {
@@ -127,7 +127,8 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
 export const insertSpecialistSchema = createInsertSchema(specialists).omit({ 
   id: true, 
   reviewCount: true, 
-  averageRating: true 
+  averageRating: true,
+  validReviewCount: true
 });
 
 export const insertBookingSchema = createInsertSchema(bookings).omit({ 
