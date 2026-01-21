@@ -6,9 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload } from 'lucide-react';
 import { format } from 'date-fns';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import type { Specialist, Booking, Review, SpecialistPhoto } from '@shared/schema';
 
 export default function SpecialistDashboard() {
@@ -18,6 +20,8 @@ export default function SpecialistDashboard() {
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const workInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<'avatar' | 'work' | null>(null);
+  const [bio, setBio] = useState('');
+  const [savingBio, setSavingBio] = useState(false);
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -156,6 +160,37 @@ export default function SpecialistDashboard() {
   const workPhotos = photos.filter(p => p.photoType === 'work');
   const canAddWorkPhoto = workPhotos.length < 5;
 
+  useEffect(() => {
+    if (specialist?.bio) {
+      setBio(specialist.bio);
+    }
+  }, [specialist?.bio]);
+
+  const handleSaveBio = async () => {
+    if (!specialistId || !currentUser?.id) return;
+    setSavingBio(true);
+    try {
+      const res = await fetch(`/api/specialists/${specialistId}/bio`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({ bio }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to save');
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      toast({ title: 'Описание сохранено' });
+    } catch (err: any) {
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    } finally {
+      setSavingBio(false);
+    }
+  };
+
   return (
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
       {loadingSpecialist ? (
@@ -185,6 +220,39 @@ export default function SpecialistDashboard() {
           </CardHeader>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>О специалисте</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="bio">Краткое описание</Label>
+            <Textarea
+              id="bio"
+              value={bio}
+              onChange={(e) => setBio(e.target.value.slice(0, 180))}
+              placeholder="Расскажите о своей специализации, опыте и подходе к работе"
+              className="resize-none"
+              rows={3}
+              data-testid="input-specialist-bio"
+            />
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">
+                {bio.length} / 180
+              </span>
+              <Button
+                size="sm"
+                onClick={handleSaveBio}
+                disabled={savingBio || bio === specialist?.bio}
+                data-testid="button-save-bio"
+              >
+                {savingBio ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">

@@ -47,6 +47,7 @@ export interface IStorage {
   addSpecialistPhoto(photo: { specialistId: number; photoUrl: string; photoType: "avatar" | "work"; storagePath: string }): Promise<SpecialistPhoto>;
   deleteSpecialistPhoto(id: number): Promise<SpecialistPhoto | undefined>;
   updateSpecialistAvatar(specialistId: number, imageUrl: string): Promise<void>;
+  updateSpecialistBio(specialistId: number, bio: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -433,6 +434,12 @@ export class DatabaseStorage implements IStorage {
   async updateSpecialistAvatar(specialistId: number, imageUrl: string): Promise<void> {
     await db.update(specialists)
       .set({ imageUrl })
+      .where(eq(specialists.id, specialistId));
+  }
+
+  async updateSpecialistBio(specialistId: number, bio: string): Promise<void> {
+    await db.update(specialists)
+      .set({ bio })
       .where(eq(specialists.id, specialistId));
   }
 }

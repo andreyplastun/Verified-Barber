@@ -541,6 +541,38 @@ export async function registerRoutes(
     return false;
   };
 
+  // Update specialist bio
+  app.patch("/api/specialists/:id/bio", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      const specialistId = Number(req.params.id);
+      const { bio } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      if (isNaN(specialistId)) {
+        return res.status(400).json({ message: "Invalid specialist ID" });
+      }
+
+      if (typeof bio !== 'string' || bio.length > 180) {
+        return res.status(400).json({ message: "Bio must be a string with max 180 characters" });
+      }
+
+      const canEdit = await checkSpecialistOwner(userId, specialistId);
+      if (!canEdit) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      await storage.updateSpecialistBio(specialistId, bio);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error updating bio:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Get photos for a specialist
   app.get("/api/specialists/:id/photos", async (req, res) => {
     try {
