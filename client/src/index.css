@@ -8,36 +8,36 @@
   --font-display: 'Outfit', sans-serif;
   --font-body: 'Plus Jakarta Sans', sans-serif;
 
-  /* Modern, Premium Dark Theme Palette */
-  --background: 224 71% 4%;
-  --foreground: 210 40% 98%;
+  /* Light, Calm, Professional Theme */
+  --background: 0 0% 100%;
+  --foreground: 210 24% 16%;
   
-  --card: 222 47% 11%;
-  --card-foreground: 210 40% 98%;
+  --card: 0 0% 100%;
+  --card-foreground: 210 24% 16%;
   
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 210 24% 16%;
   
-  --primary: 263 70% 50%; /* Vibrant Purple */
-  --primary-foreground: 210 40% 98%;
+  --primary: 210 24% 16%; /* Neutral graphite */
+  --primary-foreground: 0 0% 100%;
   
-  --secondary: 217 33% 17%;
-  --secondary-foreground: 210 40% 98%;
+  --secondary: 214 32% 91%;
+  --secondary-foreground: 210 24% 16%;
   
-  --muted: 217 33% 17%;
-  --muted-foreground: 215 20% 65%;
+  --muted: 214 32% 91%;
+  --muted-foreground: 215 16% 47%;
   
-  --accent: 173 80% 40%; /* Teal Accent */
-  --accent-foreground: 210 40% 98%;
+  --accent: 214 32% 91%;
+  --accent-foreground: 210 24% 16%;
   
-  --destructive: 0 62% 30%;
-  --destructive-foreground: 210 40% 98%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
   
-  --border: 217 33% 17%;
-  --input: 217 33% 17%;
-  --ring: 263 70% 50%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 210 24% 16%;
   
-  --radius: 1rem;
+  --radius: 0.5rem;
 }
 
 @layer base {

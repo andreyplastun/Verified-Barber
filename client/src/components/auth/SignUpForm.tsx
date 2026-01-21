@@ -96,12 +96,12 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
         {loading ? 'Регистрация...' : 'Зарегистрироваться'}
       </Button>
 
-      <p className="text-center text-sm text-muted-foreground">
+      <p className="text-center text-sm text-[#6B7280]">
         Уже есть аккаунт?{' '}
         <button
           type="button"
           onClick={onSwitchToLogin}
-          className="text-primary underline"
+          className="text-[#1F2933] underline font-medium"
           data-testid="link-switch-to-login"
         >
           Войти

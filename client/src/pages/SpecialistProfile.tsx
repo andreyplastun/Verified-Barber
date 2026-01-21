@@ -66,9 +66,12 @@ export default function SpecialistProfile() {
   const getRatingStatus = (count: number) => {
     if (count >= 10) return { 
       label: "Сформированный рейтинг", 
-      tooltip: "Имеет достаточное количество отзывов"
+      tooltip: "Рейтинг сформирован на основе достаточного количества подтверждённых визитов"
     };
-    return null;
+    return { 
+      label: "Рейтинг формируется", 
+      tooltip: "Рейтинг будет точнее по мере увеличения количества отзывов"
+    };
   };
 
   const ratingStatus = getRatingStatus(reviewCount);
@@ -128,22 +131,20 @@ export default function SpecialistProfile() {
                   return 'визитов';
                 })()}
               </p>
-              {ratingStatus && (
-                <motion.div 
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ delay: 0.3, duration: 0.3 }}
-                  className="group relative mt-1.5"
-                >
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569] cursor-help">
-                    {ratingStatus.label}
-                    <Info size={10} className="opacity-60" />
-                  </span>
-                  <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs text-[#475569] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 shadow-lg pointer-events-none">
-                    {ratingStatus.tooltip}
-                  </div>
-                </motion.div>
-              )}
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.3, duration: 0.3 }}
+                className="group relative mt-1.5"
+              >
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569] cursor-help">
+                  {ratingStatus.label}
+                  <Info size={10} className="opacity-60" />
+                </span>
+                <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs text-[#475569] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 shadow-lg pointer-events-none">
+                  {ratingStatus.tooltip}
+                </div>
+              </motion.div>
             </div>
           </div>
 

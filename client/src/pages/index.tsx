@@ -1,15 +1,23 @@
 import { useSpecialists } from "@/hooks/use-specialists";
 import { RatingStars } from "@/components/RatingStars";
 import { Link, useLocation } from "wouter";
-import { MapPin, ArrowRight } from "lucide-react";
+import { MapPin, ArrowRight, Filter, ChevronDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
-import { useEffect } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { Button } from "@/components/ui/button";
+
+type SortOption = 'default' | 'rating' | 'visits';
+type RatingFilter = 'all' | 'formed' | 'forming';
 
 export default function SpecialistList() {
   const { data: specialists, isLoading } = useSpecialists();
   const { user, role, loading } = useAuth();
   const [, setLocation] = useLocation();
+  
+  const [showFilters, setShowFilters] = useState(false);
+  const [sortBy, setSortBy] = useState<SortOption>('default');
+  const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
 
   useEffect(() => {
     if (!loading && role === 'specialist') {
@@ -17,48 +25,142 @@ export default function SpecialistList() {
     }
   }, [loading, role, setLocation]);
 
+  const filteredAndSortedSpecialists = useMemo(() => {
+    if (!specialists) return [];
+    
+    let result = [...specialists];
+    
+    // Apply rating filter
+    if (ratingFilter === 'formed') {
+      result = result.filter(s => s.reviewCount >= 10);
+    } else if (ratingFilter === 'forming') {
+      result = result.filter(s => s.reviewCount < 10);
+    }
+    
+    // Apply sorting
+    if (sortBy === 'default') {
+      // Default: formed rating first, then by rating
+      result.sort((a, b) => {
+        const aFormed = a.reviewCount >= 10 ? 1 : 0;
+        const bFormed = b.reviewCount >= 10 ? 1 : 0;
+        if (bFormed !== aFormed) return bFormed - aFormed;
+        return (b.averageRating || 0) - (a.averageRating || 0);
+      });
+    } else if (sortBy === 'rating') {
+      result.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0));
+    } else if (sortBy === 'visits') {
+      result.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
+    }
+    
+    return result;
+  }, [specialists, sortBy, ratingFilter]);
+
   if (loading) {
-    return <div style={{ color: 'white', padding: 20 }}>Загрузка...</div>;
+    return <div className="p-5 text-[#6B7280]">Загрузка...</div>;
   }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen pt-20 px-4 space-y-4">
+      <div className="min-h-screen pt-20 px-4 space-y-3 bg-[#FAFAFA]">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-card h-32 rounded-2xl animate-pulse" />
+          <div key={i} className="bg-white h-24 rounded-xl border border-gray-100 animate-pulse" />
         ))}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-24 bg-background">
+    <div className="min-h-screen pb-24 bg-[#FAFAFA]">
       {/* Header */}
-      <header className="pt-16 pb-8 px-6 bg-gradient-to-b from-primary/10 to-background">
-        <h1 className="text-4xl font-display font-bold text-foreground">
-          Найди своего <br />
-          <span className="text-primary">Мастера</span>
-        </h1>
-        <p className="mt-2 text-muted-foreground text-lg">
-          Запишись к проверенным специалистам рядом с тобой.
-        </p>
+      <header className="pt-12 pb-4 px-6 bg-white border-b border-gray-100">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-display font-bold text-[#1F2933]">
+              Специалисты
+            </h1>
+            <p className="mt-1 text-[#6B7280] text-sm">
+              Запишись к проверенным мастерам
+            </p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowFilters(!showFilters)}
+            className="text-[#6B7280]"
+            data-testid="button-toggle-filters"
+          >
+            <Filter size={16} className="mr-1" />
+            Фильтры
+            <ChevronDown size={14} className={`ml-1 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
+        
+        {/* Filters panel */}
+        {showFilters && (
+          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+            {/* Rating filter */}
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs text-[#6B7280] mr-2 self-center">Рейтинг:</span>
+              {[
+                { value: 'all', label: 'Все' },
+                { value: 'formed', label: 'Сформированный' },
+                { value: 'forming', label: 'Формируется' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setRatingFilter(opt.value as RatingFilter)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                    ratingFilter === opt.value
+                      ? 'bg-[#1F2933] text-white'
+                      : 'bg-[#F1F5F9] text-[#475569] hover:bg-gray-200'
+                  }`}
+                  data-testid={`filter-rating-${opt.value}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            
+            {/* Sort */}
+            <div className="flex flex-wrap gap-2">
+              <span className="text-xs text-[#6B7280] mr-2 self-center">Сортировка:</span>
+              {[
+                { value: 'default', label: 'По умолчанию' },
+                { value: 'rating', label: 'По рейтингу' },
+                { value: 'visits', label: 'По визитам' },
+              ].map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSortBy(opt.value as SortOption)}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                    sortBy === opt.value
+                      ? 'bg-[#1F2933] text-white'
+                      : 'bg-[#F1F5F9] text-[#475569] hover:bg-gray-200'
+                  }`}
+                  data-testid={`sort-${opt.value}`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* List */}
-      <main className="px-4 space-y-4">
-        {specialists?.map((specialist, index) => (
+      <main className="px-4 py-4 space-y-3">
+        {filteredAndSortedSpecialists.map((specialist, index) => (
           <motion.div
             key={specialist.id}
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: index * 0.1 }}
+            transition={{ delay: index * 0.05 }}
           >
             <Link href={`/specialist/${specialist.id}`}>
-              <div className="group relative overflow-hidden bg-card rounded-3xl border border-white/5 shadow-lg active:scale-[0.98] transition-all duration-200">
-                <div className="flex p-4 gap-4">
+              <div className="group bg-white rounded-xl border border-gray-100 shadow-sm active:scale-[0.99] transition-transform duration-150">
+                <div className="flex p-3 gap-3">
                   {/* Avatar */}
-                  <div className="relative w-24 h-24 flex-shrink-0 rounded-2xl overflow-hidden bg-muted">
-                    {/* specialist portrait */}
+                  <div className="relative w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
                     <img 
                       src={specialist.imageUrl} 
                       alt={specialist.name}
@@ -67,17 +169,17 @@ export default function SpecialistList() {
                   </div>
 
                   {/* Info */}
-                  <div className="flex-1 flex flex-col justify-center">
-                    <h3 className="text-xl font-bold text-foreground group-hover:text-primary transition-colors">
+                  <div className="flex-1 flex flex-col justify-center min-w-0">
+                    <h3 className="text-base font-semibold text-[#1F2933] truncate">
                       {specialist.name}
                     </h3>
-                    <p className="text-sm text-primary/80 font-medium mb-1">
+                    <p className="text-sm text-[#6B7280] mb-1">
                       {specialist.specialty}
                     </p>
                     
-                    <div className="flex items-center gap-1 mb-3">
-                      <RatingStars rating={specialist.averageRating / 10} size={14} />
-                      <span className="text-xs text-muted-foreground ml-1">
+                    <div className="flex items-center gap-1 mb-1">
+                      <RatingStars rating={specialist.averageRating / 10} size={12} />
+                      <span className="text-xs text-[#6B7280] ml-1">
                         ({specialist.reviewCount} {(() => {
                           const n = specialist.reviewCount % 100;
                           if (n >= 11 && n <= 19) return 'отзывов';
@@ -89,15 +191,15 @@ export default function SpecialistList() {
                       </span>
                     </div>
 
-                    <div className="flex items-center text-xs text-muted-foreground">
-                      <MapPin size={12} className="mr-1" />
-                      <span>2.4 км</span>
+                    <div className="flex items-center text-xs text-[#9CA3AF]">
+                      <MapPin size={11} className="mr-1" />
+                      <span>Алматы</span>
                     </div>
                   </div>
 
                   {/* Arrow Action */}
-                  <div className="flex items-center justify-center text-muted-foreground group-hover:text-primary group-hover:translate-x-1 transition-all">
-                    <ArrowRight size={20} />
+                  <div className="flex items-center justify-center text-[#9CA3AF] group-hover:text-[#6B7280] transition-colors">
+                    <ArrowRight size={18} />
                   </div>
                 </div>
               </div>
@@ -105,9 +207,15 @@ export default function SpecialistList() {
           </motion.div>
         ))}
 
-        {specialists?.length === 0 && (
-          <div className="text-center py-20 text-muted-foreground">
-            Специалисты не найдены.
+        {filteredAndSortedSpecialists.length === 0 && (
+          <div className="text-center py-16 px-4">
+            <p className="text-[#6B7280]">
+              {ratingFilter === 'formed' 
+                ? 'В этом районе пока нет специалистов со сформированным рейтингом'
+                : ratingFilter === 'forming'
+                ? 'В этом районе пока нет специалистов с формирующимся рейтингом'
+                : 'Специалисты не найдены'}
+            </p>
           </div>
         )}
       </main>
