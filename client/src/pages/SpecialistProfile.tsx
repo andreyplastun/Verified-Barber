@@ -138,7 +138,7 @@ export default function SpecialistProfile() {
                   {ratingStatus.label}
                   <Info size={10} className="opacity-60" />
                 </span>
-                <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs text-[#475569] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 shadow-lg pointer-events-none">
+                <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs text-[#475569] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-lg pointer-events-none max-w-[200px] text-right">
                   {ratingStatus.tooltip}
                 </div>
               </motion.div>
