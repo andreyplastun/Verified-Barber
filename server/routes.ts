@@ -272,16 +272,31 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Booking does not match specialist" });
       }
 
-      // Create review as non-finalized
+      // Check antifraud conditions (soft, non-blocking)
+      const { checkAntifraudConditions, normalizeReviewText } = await import("./antifraud");
+      const clientId = (booking as any).clientId || null;
+      const antifraudResult = await checkAntifraudConditions(
+        clientId,
+        input.specialistId,
+        input.comment,
+        booking.createdAt // Use booking creation as proxy for completion time
+      );
+      
+      const normalizedText = normalizeReviewText(input.comment);
+
+      // Create review as non-finalized (with antifraud data)
       const review = await storage.createReview({
         bookingId: input.bookingId,
         specialistId: input.specialistId,
-        clientId: (booking as any).clientId || null, // Copy from booking for privacy display
+        clientId: clientId,
         rating: input.rating,
         comment: input.comment || null,
         triggers: (input as any).triggers || null,
         customerName: (booking as any).customerName ?? "Anonymous",
-        showName: (input as any).showName ?? true, // Default to showing name
+        showName: (input as any).showName ?? true,
+        normalizedText: normalizedText || null,
+        isRatingLimited: antifraudResult.isLimited,
+        ratingLimitReason: antifraudResult.reason,
       });
       
       // Mark booking as reviewed
@@ -291,7 +306,11 @@ export async function registerRoutes(
       // Rating will be recalculated on finalization too, using only finalized reviews
       await storage.updateSpecialistRatingIncludingPending(input.specialistId);
 
-      res.status(201).json(review);
+      // Return review with showNewAccountPopup flag for UI
+      res.status(201).json({
+        ...review,
+        showNewAccountPopup: antifraudResult.showNewAccountPopup
+      });
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message });

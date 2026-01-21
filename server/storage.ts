@@ -307,12 +307,12 @@ export class DatabaseStorage implements IStorage {
     // Simple privacy: showName controls name visibility
     const showName = review.showName ?? true;
 
-    console.log(`[STORAGE] createReview - specialistId: ${review.specialistId}, bookingId: ${review.bookingId}, rating: ${review.rating}, showName: ${showName}`);
+    console.log(`[STORAGE] createReview - specialistId: ${review.specialistId}, bookingId: ${review.bookingId}, rating: ${review.rating}, showName: ${showName}, isRatingLimited: ${review.isRatingLimited || false}`);
 
     const [newReview] = await db.insert(reviews).values({
       bookingId: review.bookingId,
       specialistId: review.specialistId,
-      clientId: review.clientId || null, // Copy from booking for privacy display
+      clientId: review.clientId || null,
       rating: review.rating,
       comment: review.comment || null,
       triggers: review.triggers || null,
@@ -325,9 +325,12 @@ export class DatabaseStorage implements IStorage {
       isPublicName: showName,
       finalizedAt: null,
       editableUntil: editableUntil,
+      normalizedText: review.normalizedText || null,
+      isRatingLimited: review.isRatingLimited || false,
+      ratingLimitReason: review.ratingLimitReason || null,
     } as any).returning();
     
-    console.log(`[STORAGE] createReview - Created review ID: ${newReview.id} for specialist ${newReview.specialistId}`);
+    console.log(`[STORAGE] createReview - Created review ID: ${newReview.id} for specialist ${newReview.specialistId}, isRatingLimited: ${newReview.isRatingLimited}`);
     return newReview;
   }
 
