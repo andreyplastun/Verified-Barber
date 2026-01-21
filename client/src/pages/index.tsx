@@ -239,7 +239,10 @@ export default function SpecialistList() {
 
                 {/* Description block (below, separated) */}
                 {specialist.bio && (
-                  <div className="mt-3 pt-3 border-t border-gray-50">
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-wide mb-1">
+                      О мастере
+                    </p>
                     <p className="text-sm text-[#6B7280] line-clamp-2">
                       {specialist.bio}
                     </p>

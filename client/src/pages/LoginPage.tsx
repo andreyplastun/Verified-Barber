@@ -19,8 +19,15 @@ export default function LoginPage() {
 
   return (
     <div className="fixed inset-0 bg-background overflow-hidden">
-      <div className="h-full w-full flex items-center justify-center p-4 overflow-y-auto">
-        <div className="w-full max-w-sm space-y-6 my-auto">
+      <div className="h-full w-full flex flex-col items-center justify-center p-4 overflow-y-auto">
+        {/* Logo */}
+        <div className="mb-8">
+          <span className="text-4xl font-bold tracking-tight text-[#1F2933]" data-testid="text-logo">
+            Who
+          </span>
+        </div>
+
+        <div className="w-full max-w-sm space-y-6">
           <div className="text-center space-y-2">
             <h1 className="text-2xl font-bold" data-testid="text-login-title">
               {isLogin ? 'Добро пожаловать' : 'Создание аккаунта'}

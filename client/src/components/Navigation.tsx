@@ -15,7 +15,7 @@ export function Navigation() {
   const handleLogout = async () => {
     await signOut();
     queryClient.clear();
-    setLocation("/login");
+    window.location.href = "/login";
   };
 
   const handleLoginSuccess = async () => {
