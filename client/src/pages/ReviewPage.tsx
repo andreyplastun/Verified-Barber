@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/contexts/AuthContext";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 export default function ReviewPage() {
   const [, params] = useRoute("/review/:bookingId");
@@ -132,6 +134,8 @@ export default function ReviewPage() {
   const isEditMode = !!booking?.review;
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showNewAccountPopup, setShowNewAccountPopup] = useState(false);
+  const [pendingRedirectSpecialistId, setPendingRedirectSpecialistId] = useState<number | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,14 +182,21 @@ export default function ReviewPage() {
           triggers,
           showName: !hiddenName,
         }, {
-          onSuccess: () => {
+          onSuccess: (result) => {
             queryClient.invalidateQueries({ queryKey: ['/api/reviews'] });
             queryClient.invalidateQueries({ queryKey: ['/api/specialists'] });
             toast({
               title: "Отзыв опубликован",
               description: "Вы можете редактировать его в течение 5 минут.",
             });
-            setLocation(`/specialist/${booking.specialistId}`);
+            
+            // Show popup for new accounts, then redirect
+            if ((result as any).showNewAccountPopup) {
+              setPendingRedirectSpecialistId(booking.specialistId);
+              setShowNewAccountPopup(true);
+            } else {
+              setLocation(`/specialist/${booking.specialistId}`);
+            }
           },
           onError: (err) => {
             toast({ variant: "destructive", title: "Ошибка", description: err.message });
@@ -402,6 +413,46 @@ export default function ReviewPage() {
           </button>
         </div>
       </form>
+
+      {/* New account info popup */}
+      <Dialog open={showNewAccountPopup} onOpenChange={(open) => {
+        if (!open && pendingRedirectSpecialistId) {
+          setLocation(`/specialist/${pendingRedirectSpecialistId}`);
+        }
+        setShowNewAccountPopup(open);
+      }}>
+        <DialogContent className="w-[calc(100%-2rem)] max-w-md mx-4">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold text-[#1F2933]">
+              Почему этот отзыв может не влиять на рейтинг?
+            </DialogTitle>
+          </DialogHeader>
+          <DialogDescription className="text-sm text-[#6B7280] space-y-3">
+            <p>
+              Мы показываем все отзывы.
+              Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.
+            </p>
+            <p>
+              Ваш отзыв будет виден другим пользователям и поможет мастеру,
+              а в рейтинг он начнёт влиять чуть позже.
+            </p>
+          </DialogDescription>
+          <div className="mt-4">
+            <Button 
+              onClick={() => {
+                setShowNewAccountPopup(false);
+                if (pendingRedirectSpecialistId) {
+                  setLocation(`/specialist/${pendingRedirectSpecialistId}`);
+                }
+              }}
+              className="w-full"
+              data-testid="button-popup-understand"
+            >
+              Понятно
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

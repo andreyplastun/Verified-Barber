@@ -109,7 +109,11 @@ export function useCreateReview() {
         }
         throw new Error("Failed to submit review");
       }
-      return api.reviews.create.responses[201].parse(await res.json());
+      const responseData = await res.json();
+      return {
+        ...api.reviews.create.responses[201].parse(responseData),
+        showNewAccountPopup: responseData.showNewAccountPopup || false
+      };
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: [api.specialists.get.path, variables.specialistId] });
