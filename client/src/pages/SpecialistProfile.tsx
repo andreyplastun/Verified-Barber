@@ -124,11 +124,11 @@ export default function SpecialistProfile() {
               <p className="mt-0.5 text-xs text-[#6B7280]">
                 {reviewCount} {(() => {
                   const n = reviewCount % 100;
-                  if (n >= 11 && n <= 19) return 'визитов';
+                  if (n >= 11 && n <= 19) return 'отзывов';
                   const last = n % 10;
-                  if (last === 1) return 'визит';
-                  if (last >= 2 && last <= 4) return 'визита';
-                  return 'визитов';
+                  if (last === 1) return 'отзыв';
+                  if (last >= 2 && last <= 4) return 'отзыва';
+                  return 'отзывов';
                 })()}
               </p>
               <motion.div 
