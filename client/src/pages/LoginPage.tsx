@@ -18,22 +18,24 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <div className="w-full max-w-md space-y-6">
-        <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold" data-testid="text-login-title">
-            {isLogin ? 'Добро пожаловать' : 'Регистрация'}
-          </h1>
-          <p className="text-muted-foreground">
-            {isLogin ? 'Войдите, чтобы продолжить' : 'Зарегистрируйтесь для начала'}
-          </p>
-        </div>
+    <div className="fixed inset-0 bg-background overflow-hidden">
+      <div className="h-full w-full flex items-center justify-center p-4 overflow-y-auto">
+        <div className="w-full max-w-sm space-y-6 my-auto">
+          <div className="text-center space-y-2">
+            <h1 className="text-2xl font-bold" data-testid="text-login-title">
+              {isLogin ? 'Добро пожаловать' : 'Регистрация'}
+            </h1>
+            <p className="text-muted-foreground">
+              {isLogin ? 'Войдите, чтобы продолжить' : 'Создайте аккаунт'}
+            </p>
+          </div>
 
-        {isLogin ? (
-          <LoginForm onSuccess={handleSuccess} onSwitchToSignUp={() => setIsLogin(false)} />
-        ) : (
-          <SignUpForm onSuccess={handleSuccess} onSwitchToLogin={() => setIsLogin(true)} />
-        )}
+          {isLogin ? (
+            <LoginForm onSuccess={handleSuccess} onSwitchToSignUp={() => setIsLogin(false)} />
+          ) : (
+            <SignUpForm onSuccess={handleSuccess} onSwitchToLogin={() => setIsLogin(true)} />
+          )}
+        </div>
       </div>
     </div>
   );

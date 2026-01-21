@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
 import { useAuth } from "@/contexts/AuthContext";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, Share2, ShieldCheck, MapPin, Calendar, User, Star, Image } from "lucide-react";
+import { ChevronLeft, Share2, ShieldCheck, MapPin, Calendar, User, Star, Image, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
@@ -63,25 +63,20 @@ export default function SpecialistProfile() {
   const rating = specialist.averageRating / 10;
   const reviewCount = specialist.reviewCount;
 
-  const getTrustConfidence = (count: number) => {
+  const getRatingStatus = (count: number) => {
     if (count >= 10) return { 
-      label: "Высокая", 
+      label: "Сформированный рейтинг", 
       color: "text-green-500 bg-green-500/10 border-green-500/20",
-      description: "Рейтинг надёжный"
-    };
-    if (count >= 3) return { 
-      label: "Средняя", 
-      color: "text-blue-500 bg-blue-500/10 border-blue-500/20",
-      description: "Рейтинг стабилизируется с новыми визитами"
+      tooltip: "Достаточно отзывов для точной оценки"
     };
     return { 
-      label: "Низкая", 
+      label: "Рейтинг формируется", 
       color: "text-yellow-500 bg-yellow-500/10 border-yellow-500/20",
-      description: "Основан на небольшом числе визитов"
+      tooltip: "Рейтинг будет точнее по мере увеличения количества отзывов"
     };
   };
 
-  const confidence = getTrustConfidence(reviewCount);
+  const ratingStatus = getRatingStatus(reviewCount);
 
   return (
     <div className="min-h-screen bg-background pb-32">
@@ -121,24 +116,33 @@ export default function SpecialistProfile() {
               <p className="text-primary font-medium">{specialist.specialty}</p>
             </div>
             <div className="flex flex-col items-end">
-              <div className="flex items-center bg-primary/10 px-2 py-1 rounded-lg border border-primary/20">
+              <div className="flex items-center bg-primary/10 px-3 py-1.5 rounded-lg border border-primary/20">
                 <ShieldCheck size={14} className="text-primary mr-1" />
                 <span className="font-bold text-primary text-lg">{rating.toFixed(1)}</span>
-              </div>
-              <div className={`mt-1 px-2 py-0.5 rounded text-[10px] font-bold border ${confidence.color}`}>
-                {confidence.label} достоверность
               </div>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-col gap-1">
-            <p className="text-sm font-semibold">На основе {reviewCount} подтверждённых визитов</p>
-            <p className="text-[11px] text-muted-foreground italic leading-tight">
-              {confidence.description}
+          <div className="mt-4 flex items-center gap-2 flex-wrap">
+            <p className="text-sm text-muted-foreground">
+              На основе {reviewCount} {(() => {
+                const n = reviewCount % 100;
+                if (n >= 11 && n <= 19) return 'визитов';
+                const last = n % 10;
+                if (last === 1) return 'визита';
+                if (last >= 2 && last <= 4) return 'визита';
+                return 'визитов';
+              })()}
             </p>
-            <p className="text-xs text-muted-foreground italic mt-1">
-              Рейтинг основан только на завершённых визитах.
-            </p>
+            <div className="group relative">
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium border cursor-help ${ratingStatus.color}`}>
+                {ratingStatus.label}
+                <Info size={10} className="opacity-70" />
+              </span>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-popover border border-border rounded-lg text-xs text-popover-foreground opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all whitespace-nowrap z-50 shadow-lg pointer-events-none">
+                {ratingStatus.tooltip}
+              </div>
+            </div>
           </div>
 
           <p className="mt-4 text-muted-foreground leading-relaxed text-sm">

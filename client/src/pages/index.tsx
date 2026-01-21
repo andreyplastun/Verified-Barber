@@ -78,7 +78,14 @@ export default function SpecialistList() {
                     <div className="flex items-center gap-1 mb-3">
                       <RatingStars rating={specialist.averageRating / 10} size={14} />
                       <span className="text-xs text-muted-foreground ml-1">
-                        ({specialist.reviewCount} отзывов)
+                        ({specialist.reviewCount} {(() => {
+                          const n = specialist.reviewCount % 100;
+                          if (n >= 11 && n <= 19) return 'отзывов';
+                          const last = n % 10;
+                          if (last === 1) return 'отзыв';
+                          if (last >= 2 && last <= 4) return 'отзыва';
+                          return 'отзывов';
+                        })()})
                       </span>
                     </div>
 
