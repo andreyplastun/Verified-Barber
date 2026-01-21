@@ -51,6 +51,10 @@ export const reviews = pgTable("reviews", {
   isFinalized: boolean("is_finalized").default(false).notNull(),
   // Simple privacy: if true, name is hidden from everyone (master + clients)
   hiddenName: boolean("hidden_name").default(false).notNull(),
+  // Anti-fraud fields (soft, non-blocking)
+  normalizedText: text("normalized_text"), // Normalized review text for comparison
+  isRatingLimited: boolean("is_rating_limited").default(false).notNull(), // If true, doesn't count for "Сформированный рейтинг"
+  ratingLimitReason: text("rating_limit_reason"), // Internal: duplicate_text, similar_text, new_account, frequency, expired
   // Legacy fields (kept for backwards compatibility)
   publishReview: boolean("publish_review").default(true).notNull(),
   showName: boolean("show_name").default(false).notNull(),
