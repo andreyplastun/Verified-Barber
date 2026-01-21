@@ -1,11 +1,15 @@
 import { useSpecialists } from "@/hooks/use-specialists";
-import { RatingStars } from "@/components/RatingStars";
 import { Link, useLocation } from "wouter";
-import { MapPin, ArrowRight, Filter, ChevronDown } from "lucide-react";
+import { MapPin, ArrowRight, Filter, ChevronDown, Star, Info } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type SortOption = 'default' | 'rating' | 'visits';
 type RatingFilter = 'all' | 'formed' | 'forming';
@@ -157,10 +161,11 @@ export default function SpecialistList() {
             transition={{ delay: index * 0.05 }}
           >
             <Link href={`/specialist/${specialist.id}`}>
-              <div className="group bg-white rounded-xl border border-gray-100 shadow-sm active:scale-[0.99] transition-transform duration-150">
-                <div className="flex p-3 gap-3">
+              <div className="group bg-white rounded-xl border border-gray-100 shadow-sm active:scale-[0.99] transition-transform duration-150 p-3">
+                {/* Top row: Avatar + Basic info + Trust block */}
+                <div className="flex gap-3">
                   {/* Avatar */}
-                  <div className="relative w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+                  <div className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
                     <img 
                       src={specialist.imageUrl} 
                       alt={specialist.name}
@@ -168,40 +173,78 @@ export default function SpecialistList() {
                     />
                   </div>
 
-                  {/* Info */}
-                  <div className="flex-1 flex flex-col justify-center min-w-0">
+                  {/* Basic Info */}
+                  <div className="flex-1 min-w-0">
                     <h3 className="text-base font-semibold text-[#1F2933] truncate">
                       {specialist.name}
                     </h3>
-                    <p className="text-sm text-[#6B7280] mb-1">
+                    <p className="text-sm text-[#6B7280]">
                       {specialist.specialty}
                     </p>
-                    
-                    <div className="flex items-center gap-1 mb-1">
-                      <RatingStars rating={specialist.averageRating / 10} size={12} />
-                      <span className="text-xs text-[#6B7280] ml-1">
-                        ({specialist.reviewCount} {(() => {
-                          const n = specialist.reviewCount % 100;
-                          if (n >= 11 && n <= 19) return 'отзывов';
-                          const last = n % 10;
-                          if (last === 1) return 'отзыв';
-                          if (last >= 2 && last <= 4) return 'отзыва';
-                          return 'отзывов';
-                        })()})
-                      </span>
-                    </div>
-
-                    <div className="flex items-center text-xs text-[#9CA3AF]">
+                    <div className="flex items-center text-xs text-[#9CA3AF] mt-1">
                       <MapPin size={11} className="mr-1" />
                       <span>Алматы</span>
                     </div>
                   </div>
 
-                  {/* Arrow Action */}
+                  {/* Trust Block (right) */}
+                  <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                    {/* Rating */}
+                    <div className="flex items-center gap-1">
+                      <Star size={14} className="text-amber-400 fill-amber-400" />
+                      <span className="text-sm font-semibold text-[#1F2933]">
+                        {(specialist.averageRating / 10).toFixed(1)}
+                      </span>
+                    </div>
+                    
+                    {/* Review count */}
+                    <span className="text-xs text-[#6B7280]">
+                      {specialist.reviewCount} {(() => {
+                        const n = specialist.reviewCount % 100;
+                        if (n >= 11 && n <= 19) return 'отзывов';
+                        const last = n % 10;
+                        if (last === 1) return 'отзыв';
+                        if (last >= 2 && last <= 4) return 'отзыва';
+                        return 'отзывов';
+                      })()}
+                    </span>
+                    
+                    {/* Rating status badge */}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${
+                          specialist.reviewCount >= 10
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-[#F1F5F9] text-[#475569]'
+                        }`}>
+                          <span>
+                            {specialist.reviewCount >= 10 ? 'Сформированный' : 'Формируется'}
+                          </span>
+                          <Info size={10} className="opacity-60" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="max-w-[200px] text-xs">
+                        {specialist.reviewCount >= 10
+                          ? 'Рейтинг основан на достаточном количестве подтверждённых визитов'
+                          : 'Рейтинг станет точнее по мере увеличения количества отзывов'}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+
+                  {/* Arrow */}
                   <div className="flex items-center justify-center text-[#9CA3AF] group-hover:text-[#6B7280] transition-colors">
                     <ArrowRight size={18} />
                   </div>
                 </div>
+
+                {/* Description block (below, separated) */}
+                {specialist.bio && (
+                  <div className="mt-3 pt-3 border-t border-gray-50">
+                    <p className="text-sm text-[#6B7280] line-clamp-2">
+                      {specialist.bio}
+                    </p>
+                  </div>
+                )}
               </div>
             </Link>
           </motion.div>
