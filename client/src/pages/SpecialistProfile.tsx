@@ -110,9 +110,6 @@ export default function SpecialistProfile() {
             <div className="flex-1 min-w-0">
               <h1 className="text-lg font-semibold text-[#1F2933] dark:text-[#1F2933]">{specialist.name}</h1>
               <p className="mt-1 text-sm text-[#6B7280]">{specialist.specialty}</p>
-              <p className="mt-2 text-sm text-[#6B7280] leading-relaxed">
-                {specialist.bio}
-              </p>
             </div>
 
             {/* Right block - Trust (pinned to top) */}
@@ -147,6 +144,18 @@ export default function SpecialistProfile() {
               </motion.div>
             </div>
           </div>
+
+          {/* Bio section - full width, separated */}
+          {specialist.bio && (
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-wide mb-1.5">
+                О мастере
+              </p>
+              <p className="text-sm text-[#6B7280] leading-relaxed">
+                {specialist.bio}
+              </p>
+            </div>
+          )}
 
           {/* Service tags */}
           <div className="mt-4 flex gap-2">
