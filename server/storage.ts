@@ -233,18 +233,27 @@ export class DatabaseStorage implements IStorage {
     // Total review count (for display - all visible reviews)
     const totalCount = reviewsList.length;
     
+    // baseRating = average of ALL reviews (never 0 if there are reviews)
+    const allTotal = reviewsList.reduce((acc, r) => acc + r.rating, 0);
+    const baseRating = totalCount > 0 ? Math.round((allTotal / totalCount) * 10) : 0;
+    
     // Valid reviews = only those where isRatingLimited is false
     const validReviews = reviewsList.filter(r => !r.isRatingLimited);
     const validCount = validReviews.length;
     
-    // Average rating is calculated ONLY from valid reviews
+    // trustedRating = average of ONLY valid (non-limited) reviews
     const validTotal = validReviews.reduce((acc, r) => acc + r.rating, 0);
-    const newAvg = validCount > 0 ? Math.round((validTotal / validCount) * 10) : 0;
+    const trustedRating = validCount > 0 ? Math.round((validTotal / validCount) * 10) : 0;
 
-    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total reviews: ${totalCount}, Valid: ${validCount}, Valid sum: ${validTotal}, Avg (x10): ${newAvg}`);
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, BaseRating: ${baseRating/10}, TrustedRating: ${trustedRating/10}`);
 
     await db.update(specialists)
-      .set({ reviewCount: totalCount, averageRating: newAvg, validReviewCount: validCount })
+      .set({ 
+        reviewCount: totalCount, 
+        averageRating: baseRating,  // baseRating = all reviews
+        trustedRating: trustedRating,  // trustedRating = valid reviews only
+        validReviewCount: validCount 
+      })
       .where(eq(specialists.id, id));
   }
 
