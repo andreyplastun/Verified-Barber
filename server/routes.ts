@@ -149,6 +149,13 @@ export async function registerRoutes(
 
   // Specialists
   app.get(api.specialists.list.path, async (req, res) => {
+    // Lazy finalization: finalize any expired reviews on-demand (autoscale-friendly)
+    try {
+      await storage.checkAndFinalizeReviews();
+    } catch (err) {
+      console.error("Error finalizing reviews:", err);
+    }
+    
     const specialists = await storage.getSpecialists();
     res.json(specialists);
   });
