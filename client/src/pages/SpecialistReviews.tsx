@@ -2,7 +2,8 @@ import { useRoute, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, User, ShieldCheck } from "lucide-react";
+import { ChevronLeft, User, ShieldCheck, Info } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import type { Review } from "@shared/schema";
 
 export default function SpecialistReviews() {
@@ -106,9 +107,29 @@ export default function SpecialistReviews() {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <RatingStars rating={review.rating} size={14} />
-                    <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[9px] font-bold border border-green-500/20">
-                      Проверен
-                    </span>
+                    {review.isRatingLimited ? (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button 
+                            type="button"
+                            className="p-1 text-muted-foreground hover:text-foreground transition-colors rounded-full hover:bg-muted"
+                            data-testid={`button-limited-info-${review.id}`}
+                          >
+                            <Info size={14} />
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent side="left" className="max-w-xs text-sm p-3">
+                          <p className="font-medium mb-1">Отзыв учитывается ограниченно</p>
+                          <p className="text-muted-foreground text-xs">
+                            Он виден другим пользователям, но не участвует в формировании рейтинга.
+                          </p>
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[9px] font-bold border border-green-500/20">
+                        Проверен
+                      </span>
+                    )}
                   </div>
                 </div>
                 
