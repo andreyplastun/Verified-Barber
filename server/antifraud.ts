@@ -2,9 +2,24 @@ import { db } from "./db";
 import { reviews, users } from "@shared/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 
+// Test mode: speeds up time limits for testing (set via env var)
+const TEST_MODE = process.env.ANTI_FRAUD_TEST_MODE === 'true';
+
+// Time constants (in milliseconds)
+const SEVEN_DAYS = TEST_MODE ? 60 * 1000 : 7 * 24 * 60 * 60 * 1000; // 7 days or 1 minute in test mode
+const TWENTY_FOUR_HOURS = TEST_MODE ? 60 * 1000 : 24 * 60 * 60 * 1000; // 24 hours or 1 minute in test mode
+const THIRTY_DAYS = TEST_MODE ? 2 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000; // 30 days or 2 minutes in test mode
+const FREQUENCY_LIMIT = TEST_MODE ? 2 : 2; // Max reviews before limiting (more than this = limited)
+
+if (TEST_MODE) {
+  console.log('[ANTIFRAUD] TEST MODE ENABLED - 7 days = 1 minute, 24 hours = 1 minute');
+}
+
 const STOP_WORDS = new Set([
   "очень", "просто", "супер", "отличный", "отличная", 
-  "понравилось", "понравился", "мастер", "рекомендую", "советую"
+  "понравилось", "понравился", "мастер", "рекомендую", "советую",
+  "хороший", "хорошая", "хорошо", "всё", "все", "было", "был",
+  "был", "была", "были", "это", "как", "так", "уже", "ещё", "еще"
 ]);
 
 export function normalizeReviewText(text: string | null | undefined): string {
@@ -24,40 +39,28 @@ export function normalizeReviewText(text: string | null | undefined): string {
   return normalized.substring(0, 200);
 }
 
-function levenshteinDistance(a: string, b: string): number {
-  const matrix: number[][] = [];
-  
-  for (let i = 0; i <= b.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= a.length; j++) {
-    matrix[0][j] = j;
-  }
-  
-  for (let i = 1; i <= b.length; i++) {
-    for (let j = 1; j <= a.length; j++) {
-      if (b.charAt(i - 1) === a.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          matrix[i][j - 1] + 1,
-          matrix[i - 1][j] + 1
-        );
-      }
-    }
-  }
-  
-  return matrix[b.length][a.length];
-}
-
-export function calculateTextSimilarity(a: string, b: string): number {
+// Jaccard similarity: |A ∩ B| / |A ∪ B| by words
+export function calculateJaccardSimilarity(a: string, b: string): number {
   if (a === b) return 1;
   if (a.length === 0 || b.length === 0) return 0;
   
-  const distance = levenshteinDistance(a, b);
-  const maxLength = Math.max(a.length, b.length);
-  return 1 - (distance / maxLength);
+  const wordsA = new Set(a.split(/\s+/).filter(w => w.length > 0));
+  const wordsB = new Set(b.split(/\s+/).filter(w => w.length > 0));
+  
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  
+  let intersection = 0;
+  for (const word of wordsA) {
+    if (wordsB.has(word)) intersection++;
+  }
+  
+  const union = wordsA.size + wordsB.size - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+// Keep for backwards compatibility
+export function calculateTextSimilarity(a: string, b: string): number {
+  return calculateJaccardSimilarity(a, b);
 }
 
 export interface AntifraudResult {
@@ -87,51 +90,58 @@ export async function checkAntifraudConditions(
     return result;
   }
 
+  // Check 1: Account age < 7 days
   const accountAgeMs = user.createdAt ? Date.now() - new Date(user.createdAt).getTime() : Infinity;
-  const accountAgeDays = accountAgeMs / (1000 * 60 * 60 * 24);
   
-  if (accountAgeDays < 7) {
+  if (accountAgeMs < SEVEN_DAYS) {
     result.isLimited = true;
     result.reason = "new_account";
     result.showNewAccountPopup = true;
+    console.log(`[ANTIFRAUD] Limited: new_account (age: ${Math.round(accountAgeMs / 60000)} min)`);
     return result;
   }
 
+  // Check 2: Review submitted > 7 days after visit
   if (bookingCompletedAt) {
-    const daysSinceBooking = (Date.now() - new Date(bookingCompletedAt).getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSinceBooking > 7) {
+    const timeSinceBooking = Date.now() - new Date(bookingCompletedAt).getTime();
+    if (timeSinceBooking > SEVEN_DAYS) {
       result.isLimited = true;
       result.reason = "expired";
+      console.log(`[ANTIFRAUD] Limited: expired (${Math.round(timeSinceBooking / 60000)} min after visit)`);
       return result;
     }
   }
 
-  const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  // Check 3: More than 2 reviews to same specialist in 24 hours
+  const frequencyWindow = new Date(Date.now() - TWENTY_FOUR_HOURS);
   const recentReviews = await db.select()
     .from(reviews)
     .where(
       and(
         eq(reviews.specialistId, specialistId),
-        gte(reviews.createdAt, twentyFourHoursAgo)
+        gte(reviews.createdAt, frequencyWindow)
       )
     );
   
-  if (recentReviews.length >= 3) {
+  if (recentReviews.length > FREQUENCY_LIMIT) {
     result.isLimited = true;
     result.reason = "frequency";
+    console.log(`[ANTIFRAUD] Limited: frequency (${recentReviews.length} reviews in window)`);
     return result;
   }
 
+  // Check 4 & 5: Text similarity checks
   const normalizedComment = normalizeReviewText(comment);
   
   if (normalizedComment.length > 0) {
-    const seventyTwoHoursAgo = new Date(Date.now() - 72 * 60 * 60 * 1000);
+    // Check for exact duplicates (last 30 days)
+    const thirtyDaysAgo = new Date(Date.now() - THIRTY_DAYS);
     const existingReviewsForDuplicate = await db.select()
       .from(reviews)
       .where(
         and(
           eq(reviews.specialistId, specialistId),
-          gte(reviews.createdAt, seventyTwoHoursAgo)
+          gte(reviews.createdAt, thirtyDaysAgo)
         )
       );
     
@@ -139,27 +149,20 @@ export async function checkAntifraudConditions(
       if (existing.normalizedText === normalizedComment && existing.clientId !== clientId) {
         result.isLimited = true;
         result.reason = "duplicate_text";
+        console.log(`[ANTIFRAUD] Limited: duplicate_text`);
         return result;
       }
     }
 
-    if (normalizedComment.length >= 40) {
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const existingReviewsForSimilarity = await db.select()
-        .from(reviews)
-        .where(
-          and(
-            eq(reviews.specialistId, specialistId),
-            gte(reviews.createdAt, sevenDaysAgo)
-          )
-        );
-      
-      for (const existing of existingReviewsForSimilarity) {
-        if (existing.normalizedText && existing.normalizedText.length >= 40 && existing.clientId !== clientId) {
-          const similarity = calculateTextSimilarity(normalizedComment, existing.normalizedText);
+    // Check for similar text (Jaccard >= 0.8, last 30 days)
+    if (normalizedComment.length >= 20) {
+      for (const existing of existingReviewsForDuplicate) {
+        if (existing.normalizedText && existing.normalizedText.length >= 20 && existing.clientId !== clientId) {
+          const similarity = calculateJaccardSimilarity(normalizedComment, existing.normalizedText);
           if (similarity >= 0.8) {
             result.isLimited = true;
             result.reason = "similar_text";
+            console.log(`[ANTIFRAUD] Limited: similar_text (Jaccard: ${similarity.toFixed(2)})`);
             return result;
           }
         }
