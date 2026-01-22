@@ -541,6 +541,28 @@ export async function registerRoutes(
     }
   });
 
+  // Force recalculate all specialist ratings (admin only)
+  app.post("/api/admin/recalculate-ratings", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      
+      // First finalize all pending reviews
+      await storage.checkAndFinalizeReviews();
+      
+      // Then recalculate ratings for all specialists
+      const specialists = await storage.getSpecialists();
+      for (const specialist of specialists) {
+        await storage.updateSpecialistRating(specialist.id);
+      }
+      
+      res.json({ success: true, message: `Recalculated ratings for ${specialists.length} specialists` });
+    } catch (err: any) {
+      console.error("Error recalculating ratings:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // =====================
   // SPECIALIST PHOTO ENDPOINTS
   // =====================
