@@ -20,7 +20,7 @@ export interface IStorage {
   getSpecialists(): Promise<Specialist[]>;
   getSpecialist(id: number): Promise<Specialist | undefined>;
   getFirstSpecialist(): Promise<Specialist | undefined>;
-  createSpecialist(specialist: Omit<Specialist, "id" | "reviewCount" | "averageRating" | "validReviewCount">): Promise<Specialist>;
+  createSpecialist(specialist: Omit<Specialist, "id" | "reviewCount" | "averageRating" | "trustedRating" | "validReviewCount">): Promise<Specialist>;
   updateSpecialistRating(id: number): Promise<void>;
   updateSpecialistRatingIncludingPending(id: number): Promise<void>;
 
@@ -219,39 +219,42 @@ export class DatabaseStorage implements IStorage {
     return specialist;
   }
 
-  async createSpecialist(insertSpecialist: Omit<Specialist, "id" | "reviewCount" | "averageRating" | "validReviewCount">): Promise<Specialist> {
+  async createSpecialist(insertSpecialist: Omit<Specialist, "id" | "reviewCount" | "averageRating" | "trustedRating" | "validReviewCount">): Promise<Specialist> {
     const [specialist] = await db.insert(specialists).values(insertSpecialist).returning();
     return specialist;
   }
 
   async updateSpecialistRating(id: number): Promise<void> {
-    // Get all reviews for this specialist
+    // Get only FINALIZED reviews for this specialist (reviews past their 5-min edit window)
     const reviewsList = await db.select()
       .from(reviews)
-      .where(eq(reviews.specialistId, id));
+      .where(and(
+        eq(reviews.specialistId, id),
+        eq(reviews.isFinalized, true)
+      ));
     
-    // Total review count (for display - all visible reviews)
+    // Total review count (finalized reviews only)
     const totalCount = reviewsList.length;
     
-    // baseRating = average of ALL reviews (never 0 if there are reviews)
+    // baseRating = average of ALL finalized reviews (never 0 if there are reviews)
     const allTotal = reviewsList.reduce((acc, r) => acc + r.rating, 0);
     const baseRating = totalCount > 0 ? Math.round((allTotal / totalCount) * 10) : 0;
     
-    // Valid reviews = only those where isRatingLimited is false
+    // Valid reviews = only those where isRatingLimited is false (among finalized)
     const validReviews = reviewsList.filter(r => !r.isRatingLimited);
     const validCount = validReviews.length;
     
-    // trustedRating = average of ONLY valid (non-limited) reviews
+    // trustedRating = average of ONLY valid (non-limited) finalized reviews
     const validTotal = validReviews.reduce((acc, r) => acc + r.rating, 0);
     const trustedRating = validCount > 0 ? Math.round((validTotal / validCount) * 10) : 0;
 
-    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, BaseRating: ${baseRating/10}, TrustedRating: ${trustedRating/10}`);
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - Finalized: ${totalCount}, Valid: ${validCount}, BaseRating: ${baseRating/10}, TrustedRating: ${trustedRating/10}`);
 
     await db.update(specialists)
       .set({ 
         reviewCount: totalCount, 
-        averageRating: baseRating,  // baseRating = all reviews
-        trustedRating: trustedRating,  // trustedRating = valid reviews only
+        averageRating: baseRating,  // baseRating = all finalized reviews
+        trustedRating: trustedRating,  // trustedRating = valid finalized reviews only
         validReviewCount: validCount 
       })
       .where(eq(specialists.id, id));

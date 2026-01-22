@@ -302,9 +302,8 @@ export async function registerRoutes(
       // Mark booking as reviewed
       await storage.markBookingReviewed(booking.id);
       
-      // Update specialist rating immediately (includes non-finalized reviews for real-time feedback)
-      // Rating will be recalculated on finalization too, using only finalized reviews
-      await storage.updateSpecialistRatingIncludingPending(input.specialistId);
+      // NOTE: Rating is NOT updated here - it will be recalculated only after
+      // the review is finalized (5 minutes after creation) to allow edits
 
       // Return review with showNewAccountPopup flag for UI
       res.status(201).json({
