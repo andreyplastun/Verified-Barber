@@ -22,8 +22,12 @@ export const specialists = pgTable("specialists", {
   imageUrl: text("image_url").notNull(),
   rating: text("rating").default("0").notNull(),
   reviewCount: integer("review_count").default(0).notNull(),
-  averageRating: integer("average_rating").default(0).notNull(), // Stored as (rating * 10) to keep precision e.g. 4.5 -> 45
-  validReviewCount: integer("valid_review_count").default(0).notNull(), // Count of non-limited reviews for "Сформированный рейтинг" status
+  // baseRating = average of ALL reviews (never 0 if there are reviews)
+  averageRating: integer("average_rating").default(0).notNull(), // Stored as (rating * 10) e.g. 4.5 -> 45
+  // trustedRating = average of ONLY valid (non-limited) reviews
+  trustedRating: integer("trusted_rating").default(0).notNull(), // Stored as (rating * 10) e.g. 4.5 -> 45
+  // validReviewCount >= 10 → "Сформированный рейтинг"
+  validReviewCount: integer("valid_review_count").default(0).notNull(),
 });
 
 export const bookings = pgTable("bookings", {
