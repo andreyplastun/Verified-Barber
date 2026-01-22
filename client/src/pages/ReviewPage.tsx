@@ -8,7 +8,6 @@ import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/contexts/AuthContext";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 
 export default function ReviewPage() {
@@ -414,45 +413,52 @@ export default function ReviewPage() {
         </div>
       </form>
 
-      {/* New account info popup */}
-      <Dialog open={showNewAccountPopup} onOpenChange={(open) => {
-        if (!open && pendingRedirectSpecialistId) {
-          setLocation(`/specialist/${pendingRedirectSpecialistId}`);
-        }
-        setShowNewAccountPopup(open);
-      }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold text-[#1F2933] pr-6">
+      {/* New account info popup - custom modal for iOS compatibility */}
+      {showNewAccountPopup && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+          onClick={() => {
+            setShowNewAccountPopup(false);
+            if (pendingRedirectSpecialistId) {
+              setLocation(`/specialist/${pendingRedirectSpecialistId}`);
+            }
+          }}
+        >
+          <div 
+            className="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-[#1F2933] mb-4">
               Почему этот отзыв может не влиять на рейтинг?
-            </DialogTitle>
-          </DialogHeader>
-          <div className="text-sm text-[#6B7280] space-y-3">
-            <p>
-              Мы показываем все отзывы.
-              Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.
-            </p>
-            <p>
-              Ваш отзыв будет виден другим пользователям и поможет мастеру,
-              а в рейтинг он начнёт влиять чуть позже.
-            </p>
+            </h3>
+            <div className="text-sm text-[#6B7280] space-y-3">
+              <p>
+                Мы показываем все отзывы.
+                Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.
+              </p>
+              <p>
+                Ваш отзыв будет виден другим пользователям и поможет мастеру,
+                а в рейтинг он начнёт влиять чуть позже.
+              </p>
+            </div>
+            <div className="mt-4">
+              <Button 
+                onClick={() => {
+                  setShowNewAccountPopup(false);
+                  if (pendingRedirectSpecialistId) {
+                    setLocation(`/specialist/${pendingRedirectSpecialistId}`);
+                  }
+                }}
+                className="w-full"
+                data-testid="button-popup-understand"
+              >
+                Понятно
+              </Button>
+            </div>
           </div>
-          <div className="mt-4">
-            <Button 
-              onClick={() => {
-                setShowNewAccountPopup(false);
-                if (pendingRedirectSpecialistId) {
-                  setLocation(`/specialist/${pendingRedirectSpecialistId}`);
-                }
-              }}
-              className="w-full"
-              data-testid="button-popup-understand"
-            >
-              Понятно
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }
