@@ -107,7 +107,7 @@ export default function SpecialistReviews() {
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <RatingStars rating={review.rating} size={14} />
-                    {review.isRatingLimited ? (
+                    {review.isRatingLimited && (
                       <Popover>
                         <PopoverTrigger asChild>
                           <button 
@@ -121,14 +121,10 @@ export default function SpecialistReviews() {
                         <PopoverContent side="left" className="max-w-xs text-sm p-3">
                           <p className="font-medium mb-1">Отзыв учитывается ограниченно</p>
                           <p className="text-muted-foreground text-xs">
-                            Он виден другим пользователям, но не участвует в формировании рейтинга.
+                            Он виден другим пользователям, но не полностью влияет на формирование рейтинга.
                           </p>
                         </PopoverContent>
                       </Popover>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full bg-green-500/10 text-green-500 text-[9px] font-bold border border-green-500/20">
-                        Проверен
-                      </span>
                     )}
                   </div>
                 </div>
