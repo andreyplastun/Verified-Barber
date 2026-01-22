@@ -225,22 +225,26 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSpecialistRating(id: number): Promise<void> {
-    // Always include ALL reviews (finalized and pending) for consistent rating display
+    // Get all reviews for this specialist
     const reviewsList = await db.select()
       .from(reviews)
       .where(eq(reviews.specialistId, id));
     
-    const newCount = reviewsList.length;
-    const newTotal = reviewsList.reduce((acc, r) => acc + r.rating, 0);
-    const newAvg = newCount > 0 ? Math.round((newTotal / newCount) * 10) : 0;
+    // Total review count (for display - all visible reviews)
+    const totalCount = reviewsList.length;
     
-    // Count only non-limited reviews for "Сформированный рейтинг" status
-    const validCount = reviewsList.filter(r => !r.isRatingLimited).length;
+    // Valid reviews = only those where isRatingLimited is false
+    const validReviews = reviewsList.filter(r => !r.isRatingLimited);
+    const validCount = validReviews.length;
+    
+    // Average rating is calculated ONLY from valid reviews
+    const validTotal = validReviews.reduce((acc, r) => acc + r.rating, 0);
+    const newAvg = validCount > 0 ? Math.round((validTotal / validCount) * 10) : 0;
 
-    console.log(`[STORAGE] updateSpecialistRating(${id}) - All reviews: ${newCount}, Valid: ${validCount}, Total: ${newTotal}, New avg (x10): ${newAvg}`);
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total reviews: ${totalCount}, Valid: ${validCount}, Valid sum: ${validTotal}, Avg (x10): ${newAvg}`);
 
     await db.update(specialists)
-      .set({ reviewCount: newCount, averageRating: newAvg, validReviewCount: validCount })
+      .set({ reviewCount: totalCount, averageRating: newAvg, validReviewCount: validCount })
       .where(eq(specialists.id, id));
   }
 
