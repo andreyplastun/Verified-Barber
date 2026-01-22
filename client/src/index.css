@@ -44,6 +44,10 @@
   * {
     @apply border-border;
   }
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+  }
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/30;
     font-family: var(--font-body);
