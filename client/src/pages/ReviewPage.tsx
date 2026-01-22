@@ -421,13 +421,13 @@ export default function ReviewPage() {
         }
         setShowNewAccountPopup(open);
       }}>
-        <DialogContent className="w-[calc(100%-2rem)] max-w-md mx-4">
+        <DialogContent className="w-[90vw] max-w-sm sm:max-w-md rounded-xl">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-[#1F2933]">
+            <DialogTitle className="text-base font-semibold text-[#1F2933] pr-6">
               Почему этот отзыв может не влиять на рейтинг?
             </DialogTitle>
           </DialogHeader>
-          <DialogDescription className="text-sm text-[#6B7280] space-y-3">
+          <div className="text-sm text-[#6B7280] space-y-3">
             <p>
               Мы показываем все отзывы.
               Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.
@@ -436,7 +436,7 @@ export default function ReviewPage() {
               Ваш отзыв будет виден другим пользователям и поможет мастеру,
               а в рейтинг он начнёт влиять чуть позже.
             </p>
-          </DialogDescription>
+          </div>
           <div className="mt-4">
             <Button 
               onClick={() => {
