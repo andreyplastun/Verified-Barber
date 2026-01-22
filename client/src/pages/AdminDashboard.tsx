@@ -182,18 +182,15 @@ export default function AdminDashboard() {
                   <Label htmlFor="customerEmail">Email клиента</Label>
                   <Input
                     id="customerEmail"
-                    type="email"
+                    type="text"
                     inputMode="email"
                     autoComplete="off"
                     autoCorrect="off"
                     autoCapitalize="off"
+                    spellCheck={false}
                     placeholder="client@example.com"
                     value={formData.customerEmail}
                     onChange={(e) => setFormData({ ...formData, customerEmail: e.target.value })}
-                    onFocus={(e) => {
-                      // Prevent mobile browser auto-scroll
-                      e.target.scrollIntoView({ behavior: "instant", block: "center" });
-                    }}
                     required
                     data-testid="input-customer-email"
                   />
