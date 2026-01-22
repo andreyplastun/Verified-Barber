@@ -187,9 +187,9 @@ export async function registerRoutes(
     const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
     
     // Calculate counts from actual reviews (not from cached DB values)
-    // reviewCount = ALL finalized reviews (for display next to rating)
+    // reviewCount = ALL finalized + published reviews (for display next to rating)
     // validReviewCount = only non-limited reviews (for "formed rating" badge)
-    const finalizedReviews = reviews.filter(r => r.isFinalized);
+    const finalizedReviews = reviews.filter(r => r.isFinalized && r.publishReview);
     const validReviews = finalizedReviews.filter(r => !r.isRatingLimited);
     
     // Calculate average rating from ALL finalized reviews
