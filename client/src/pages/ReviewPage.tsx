@@ -421,7 +421,7 @@ export default function ReviewPage() {
         }
         setShowNewAccountPopup(open);
       }}>
-        <DialogContent className="w-[90vw] max-w-sm sm:max-w-md rounded-xl">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold text-[#1F2933] pr-6">
               Почему этот отзыв может не влиять на рейтинг?
