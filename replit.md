@@ -58,6 +58,26 @@ Language: Russian (Русский) - all UI text is in Russian.
   - `GET /api/specialists/:id/photos` - Get specialist's photos
   - `DELETE /api/specialist-photos/:id` - Delete photo
 
+### Dual Rating System
+- **baseRating (averageRating)**: Average of ALL reviews - never falls to 0 if there are reviews
+- **trustedRating**: Average of only VALID reviews (where isRatingLimited = false)
+- **validReviewCount**: Count of valid (non-limited) reviews
+- **Rating Status Badge**: 
+  - "Формируется" when validReviewCount < 10
+  - "Сформированный рейтинг" when validReviewCount >= 10
+
+### Anti-Fraud System
+Located in `server/antifraud.ts`. Soft system that marks reviews as "limited" but still publishes them.
+
+**Conditions that trigger isRatingLimited:**
+1. Account age < 7 days (shows new account popup)
+2. Review submitted > 7 days after visit completion
+3. More than 2 reviews to same specialist in 24 hours
+4. Exact duplicate review text (within 30 days)
+5. Similar text (Jaccard similarity >= 80%, within 30 days)
+
+**Test Mode**: Set `ANTI_FRAUD_TEST_MODE=true` to speed up time limits (7 days → 1 minute)
+
 ### Application Flow
 1. Users browse specialists on the home page (or login via bottom nav)
 2. Clicking a specialist shows their profile with reviews and ratings
