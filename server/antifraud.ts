@@ -113,17 +113,20 @@ export async function checkAntifraudConditions(
     }
   }
 
-  // Check 3: More than 3 reviews TO SAME SPECIALIST from any clients TODAY (calendar day)
+  // Check 3: More than 3 reviews TO SAME SPECIALIST from any clients TODAY (calendar day in Almaty)
   // 4th+ review gets limited (when there are already 3+ existing today)
-  const today = new Date();
-  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 1); // 00:00:01
+  // Use Almaty timezone (UTC+6) for calendar day calculation
+  const nowUtc = Date.now();
+  const almatyOffset = 6 * 60 * 60 * 1000; // UTC+6
+  const almatyNow = new Date(nowUtc + almatyOffset);
+  const startOfDayAlmaty = new Date(Date.UTC(almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(), 0, 0, 1) - almatyOffset);
   
   const todaysReviewsToSpecialist = await db.select()
     .from(reviews)
     .where(
       and(
         eq(reviews.specialistId, specialistId),
-        gte(reviews.createdAt, startOfDay)
+        gte(reviews.createdAt, startOfDayAlmaty)
       )
     );
   
