@@ -113,21 +113,22 @@ export async function checkAntifraudConditions(
     }
   }
 
-  // Check 3: More than 2 reviews to same specialist in 24 hours
+  // Check 3: More than 2 reviews FROM SAME CLIENT to same specialist in 24 hours
   const frequencyWindow = new Date(Date.now() - TWENTY_FOUR_HOURS);
-  const recentReviews = await db.select()
+  const recentReviewsFromClient = await db.select()
     .from(reviews)
     .where(
       and(
         eq(reviews.specialistId, specialistId),
+        eq(reviews.clientId, clientId),
         gte(reviews.createdAt, frequencyWindow)
       )
     );
   
-  if (recentReviews.length > FREQUENCY_LIMIT) {
+  if (recentReviewsFromClient.length > FREQUENCY_LIMIT) {
     result.isLimited = true;
     result.reason = "frequency";
-    console.log(`[ANTIFRAUD] Limited: frequency (${recentReviews.length} reviews in window)`);
+    console.log(`[ANTIFRAUD] Limited: frequency (${recentReviewsFromClient.length} reviews from same client in window)`);
     return result;
   }
 
