@@ -125,10 +125,11 @@ export async function checkAntifraudConditions(
       )
     );
   
-  if (recentReviewsFromClient.length > FREQUENCY_LIMIT) {
+  // If client already has 2+ reviews to this specialist in 24h, limit the new one (3rd+)
+  if (recentReviewsFromClient.length >= FREQUENCY_LIMIT) {
     result.isLimited = true;
     result.reason = "frequency";
-    console.log(`[ANTIFRAUD] Limited: frequency (${recentReviewsFromClient.length} reviews from same client in window)`);
+    console.log(`[ANTIFRAUD] Limited: frequency (already ${recentReviewsFromClient.length} reviews, this is #${recentReviewsFromClient.length + 1})`);
     return result;
   }
 
