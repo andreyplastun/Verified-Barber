@@ -766,10 +766,19 @@ export async function registerRoutes(
     // Run automatic sync (non-blocking, low priority)
     if (process.env.NODE_ENV === "production") {
       console.log("[STARTUP] Deferring specialist mapping sync for faster cold-start...");
-      setTimeout(() => {
-        storage.syncSpecialistMappings().catch(err => {
-          console.error("[STARTUP] Failed to sync specialist mappings:", err);
-        });
+      setTimeout(async () => {
+        try {
+          await storage.syncSpecialistMappings();
+          // Auto-recalculate all ratings on startup
+          console.log("[STARTUP] Recalculating all specialist ratings...");
+          const allSpecialists = await storage.getSpecialists();
+          for (const specialist of allSpecialists) {
+            await storage.updateSpecialistRating(specialist.id);
+          }
+          console.log(`[STARTUP] Recalculated ratings for ${allSpecialists.length} specialists`);
+        } catch (err) {
+          console.error("[STARTUP] Failed to sync/recalculate:", err);
+        }
       }, 5000); // Run sync 5 seconds after startup
     } else {
       console.log("[STARTUP] Running automatic specialist mapping sync...");
