@@ -234,28 +234,24 @@ export class DatabaseStorage implements IStorage {
         eq(reviews.publishReview, true)
       ));
     
-    // Total review count (finalized + published reviews - including limited)
+    // Total review count (finalized + published reviews - INCLUDING limited for display)
     const totalCount = reviewsList.length;
     
-    // baseRating = average of ALL finalized reviews (never 0 if there are reviews)
-    const allTotal = reviewsList.reduce((acc, r) => acc + r.rating, 0);
-    const baseRating = totalCount > 0 ? Math.round((allTotal / totalCount) * 10) : 0;
-    
-    // Valid reviews = only those where isRatingLimited is false (among finalized)
+    // Valid reviews = only those where isRatingLimited is false
     const validReviews = reviewsList.filter(r => !r.isRatingLimited);
     const validCount = validReviews.length;
     
-    // trustedRating = average of ONLY valid (non-limited) finalized reviews
+    // averageRating = average of ONLY non-limited reviews (limited reviews don't affect rating!)
     const validTotal = validReviews.reduce((acc, r) => acc + r.rating, 0);
-    const trustedRating = validCount > 0 ? Math.round((validTotal / validCount) * 10) : 0;
+    const averageRating = validCount > 0 ? Math.round((validTotal / validCount) * 10) : 0;
 
-    console.log(`[STORAGE] updateSpecialistRating(${id}) - Finalized: ${totalCount}, Valid: ${validCount}, BaseRating: ${baseRating/10}, TrustedRating: ${trustedRating/10}`);
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, AvgRating: ${averageRating/10}`);
 
     await db.update(specialists)
       .set({ 
-        reviewCount: totalCount, 
-        averageRating: baseRating,  // baseRating = all finalized reviews
-        trustedRating: trustedRating,  // trustedRating = valid finalized reviews only
+        reviewCount: totalCount,  // includes limited reviews for counter
+        averageRating: averageRating,  // only non-limited reviews affect rating
+        trustedRating: averageRating,  // same as averageRating now
         validReviewCount: validCount 
       })
       .where(eq(specialists.id, id));

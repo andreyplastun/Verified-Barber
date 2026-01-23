@@ -187,24 +187,24 @@ export async function registerRoutes(
     const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
     
     // Calculate counts from actual reviews (not from cached DB values)
-    // reviewCount = ALL finalized + published reviews (for display next to rating)
+    // reviewCount = ALL finalized + published reviews (INCLUDING limited - for display)
     // validReviewCount = only non-limited reviews (for "formed rating" badge)
     const finalizedReviews = reviews.filter(r => r.isFinalized && r.publishReview);
     const validReviews = finalizedReviews.filter(r => !r.isRatingLimited);
     
-    // Calculate average rating from ALL finalized reviews
-    const allTotal = finalizedReviews.reduce((acc, r) => acc + r.rating, 0);
-    const calculatedRating = finalizedReviews.length > 0 
-      ? Math.round((allTotal / finalizedReviews.length) * 10) 
+    // Calculate average rating from ONLY non-limited reviews (limited don't affect rating!)
+    const validTotal = validReviews.reduce((acc, r) => acc + r.rating, 0);
+    const calculatedRating = validReviews.length > 0 
+      ? Math.round((validTotal / validReviews.length) * 10) 
       : 0;
     
     res.json({ 
       ...specialist, 
       reviews: maskedReviews,
       // Override with calculated values for consistency
-      reviewCount: finalizedReviews.length,
+      reviewCount: finalizedReviews.length,  // includes limited for counter
       validReviewCount: validReviews.length,
-      averageRating: calculatedRating
+      averageRating: calculatedRating  // only non-limited affect rating
     });
   });
 
