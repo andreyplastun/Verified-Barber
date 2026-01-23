@@ -225,15 +225,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSpecialistRating(id: number): Promise<void> {
-    // Get only FINALIZED reviews for this specialist (reviews past their 5-min edit window)
+    // Get only FINALIZED + PUBLISHED reviews for this specialist
     const reviewsList = await db.select()
       .from(reviews)
       .where(and(
         eq(reviews.specialistId, id),
-        eq(reviews.isFinalized, true)
+        eq(reviews.isFinalized, true),
+        eq(reviews.publishReview, true)
       ));
     
-    // Total review count (finalized reviews only)
+    // Total review count (finalized + published reviews - including limited)
     const totalCount = reviewsList.length;
     
     // baseRating = average of ALL finalized reviews (never 0 if there are reviews)

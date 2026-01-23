@@ -6,7 +6,8 @@ import { eq, and, gte, sql } from "drizzle-orm";
 const TEST_MODE = process.env.ANTI_FRAUD_TEST_MODE === 'true';
 
 // Time constants (in milliseconds)
-const SEVEN_DAYS = TEST_MODE ? 60 * 1000 : 7 * 24 * 60 * 60 * 1000; // 7 days or 1 minute in test mode
+const NEW_ACCOUNT_THRESHOLD = TEST_MODE ? 60 * 1000 : 3 * 24 * 60 * 60 * 1000; // 3 days or 1 minute in test mode
+const SEVEN_DAYS = TEST_MODE ? 60 * 1000 : 7 * 24 * 60 * 60 * 1000; // 7 days for review expiry
 const TWENTY_FOUR_HOURS = TEST_MODE ? 60 * 1000 : 24 * 60 * 60 * 1000; // 24 hours or 1 minute in test mode
 const THIRTY_DAYS = TEST_MODE ? 2 * 60 * 1000 : 30 * 24 * 60 * 60 * 1000; // 30 days or 2 minutes in test mode
 const FREQUENCY_LIMIT = TEST_MODE ? 2 : 2; // Max reviews before limiting (more than this = limited)
@@ -50,9 +51,9 @@ export function calculateJaccardSimilarity(a: string, b: string): number {
   if (wordsA.size === 0 || wordsB.size === 0) return 0;
   
   let intersection = 0;
-  for (const word of wordsA) {
+  Array.from(wordsA).forEach(word => {
     if (wordsB.has(word)) intersection++;
-  }
+  });
   
   const union = wordsA.size + wordsB.size - intersection;
   return union > 0 ? intersection / union : 0;
@@ -90,10 +91,10 @@ export async function checkAntifraudConditions(
     return result;
   }
 
-  // Check 1: Account age < 7 days
+  // Check 1: Account age < 3 days
   const accountAgeMs = user.createdAt ? Date.now() - new Date(user.createdAt).getTime() : Infinity;
   
-  if (accountAgeMs < SEVEN_DAYS) {
+  if (accountAgeMs < NEW_ACCOUNT_THRESHOLD) {
     result.isLimited = true;
     result.reason = "new_account";
     result.showNewAccountPopup = true;
