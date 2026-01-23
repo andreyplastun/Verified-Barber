@@ -113,23 +113,25 @@ export async function checkAntifraudConditions(
     }
   }
 
-  // Check 3: More than 3 reviews TO SAME SPECIALIST from any clients in 24 hours
-  // 4th+ review gets limited (when there are already 3+ existing)
-  const frequencyWindow = new Date(Date.now() - TWENTY_FOUR_HOURS);
-  const recentReviewsToSpecialist = await db.select()
+  // Check 3: More than 3 reviews TO SAME SPECIALIST from any clients TODAY (calendar day)
+  // 4th+ review gets limited (when there are already 3+ existing today)
+  const today = new Date();
+  const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 1); // 00:00:01
+  
+  const todaysReviewsToSpecialist = await db.select()
     .from(reviews)
     .where(
       and(
         eq(reviews.specialistId, specialistId),
-        gte(reviews.createdAt, frequencyWindow)
+        gte(reviews.createdAt, startOfDay)
       )
     );
   
-  // If specialist already has 3+ reviews in 24h, limit the new one (4th+)
-  if (recentReviewsToSpecialist.length >= 3) {
+  // If specialist already has 3+ reviews today, limit the new one (4th+)
+  if (todaysReviewsToSpecialist.length >= 3) {
     result.isLimited = true;
     result.reason = "frequency";
-    console.log(`[ANTIFRAUD] Limited: frequency (already ${recentReviewsToSpecialist.length} reviews to specialist, this is #${recentReviewsToSpecialist.length + 1})`);
+    console.log(`[ANTIFRAUD] Limited: frequency (already ${todaysReviewsToSpecialist.length} reviews today, this is #${todaysReviewsToSpecialist.length + 1})`);
     return result;
   }
 
