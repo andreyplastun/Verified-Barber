@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Specialist, User } from "@shared/schema";
 
 type BookingWithDetails = {
@@ -28,6 +29,13 @@ export default function AdminDashboard() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [whatsappDialog, setWhatsappDialog] = useState<{ open: boolean; bookingId: number | null; whatsappText: string; magicLink: string }>({
+    open: false,
+    bookingId: null,
+    whatsappText: "",
+    magicLink: "",
+  });
+  const [copied, setCopied] = useState(false);
   
   const [formData, setFormData] = useState({
     specialistId: "",
@@ -105,6 +113,38 @@ export default function AdminDashboard() {
       toast({ title: "Ошибка", description: err.message, variant: "destructive" });
     },
   });
+
+  const createMagicLinkMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      const res = await fetch(`/api/admin/bookings/${bookingId}/create-magic-link`, {
+        method: "POST",
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: (data, bookingId) => {
+      setWhatsappDialog({
+        open: true,
+        bookingId,
+        whatsappText: data.whatsappText,
+        magicLink: data.magicLink,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleCopyWhatsapp = async () => {
+    await navigator.clipboard.writeText(whatsappDialog.whatsappText);
+    setCopied(true);
+    toast({ title: "Скопировано!" });
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -319,17 +359,31 @@ export default function AdminDashboard() {
                           ID: {booking.id} • Тел: {booking.customerPhone}
                         </div>
                       </div>
-                      {booking.status === "pending" && (
-                        <Button
-                          size="sm"
-                          onClick={() => completeBookingMutation.mutate(booking.id)}
-                          disabled={completeBookingMutation.isPending}
-                          data-testid={`button-complete-${booking.id}`}
-                        >
-                          <CheckCircle className="h-4 w-4 mr-1" />
-                          Завершить
-                        </Button>
-                      )}
+                      <div className="flex gap-2">
+                        {booking.status === "pending" && (
+                          <Button
+                            size="sm"
+                            onClick={() => completeBookingMutation.mutate(booking.id)}
+                            disabled={completeBookingMutation.isPending}
+                            data-testid={`button-complete-${booking.id}`}
+                          >
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Завершить
+                          </Button>
+                        )}
+                        {booking.status === "completed" && !booking.hasReview && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => createMagicLinkMutation.mutate(booking.id)}
+                            disabled={createMagicLinkMutation.isPending}
+                            data-testid={`button-whatsapp-${booking.id}`}
+                          >
+                            <MessageCircle className="h-4 w-4 mr-1" />
+                            WhatsApp
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   ))
                 )}
@@ -338,6 +392,48 @@ export default function AdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={whatsappDialog.open} onOpenChange={(open) => setWhatsappDialog(prev => ({ ...prev, open }))}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-green-500" />
+              Отправить в WhatsApp
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-muted p-4 rounded-lg whitespace-pre-wrap text-sm">
+              {whatsappDialog.whatsappText}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={handleCopyWhatsapp}
+                data-testid="button-copy-whatsapp"
+              >
+                {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+                {copied ? "Скопировано" : "Копировать текст"}
+              </Button>
+              <Button
+                className="flex-1 bg-green-500 hover:bg-green-600"
+                onClick={() => {
+                  const booking = bookings.find(b => b.id === whatsappDialog.bookingId);
+                  if (booking?.customerPhone) {
+                    const phone = booking.customerPhone.replace(/\D/g, '');
+                    const encodedText = encodeURIComponent(whatsappDialog.whatsappText);
+                    window.open(`https://wa.me/${phone}?text=${encodedText}`, '_blank');
+                  }
+                }}
+                data-testid="button-open-whatsapp"
+              >
+                <MessageCircle className="h-4 w-4 mr-2" />
+                Открыть WhatsApp
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

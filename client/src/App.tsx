@@ -11,6 +11,7 @@ import SpecialistProfile from "@/pages/SpecialistProfile";
 import SpecialistReviews from "@/pages/SpecialistReviews";
 import BookingPage from "@/pages/BookingPage";
 import ReviewPage from "@/pages/ReviewPage";
+import MagicReviewPage from "@/pages/MagicReviewPage";
 import AdminDashboard from "@/pages/AdminDashboard";
 import SpecialistDashboard from "@/pages/SpecialistDashboard";
 import LoginPage from "@/pages/LoginPage";
@@ -101,6 +102,7 @@ function Router() {
           <ReviewPage />
         </ProtectedRoute>
       </Route>
+      <Route path="/magic-review/:token" component={MagicReviewPage} />
       <Route path="/reviews" component={ReviewPage} />
       <Route path="/specialist/:id/reviews" component={SpecialistReviews} />
       <Route path="/specialists/:id/reviews" component={SpecialistReviews} />
