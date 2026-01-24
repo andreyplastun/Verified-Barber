@@ -1,4 +1,5 @@
-import { specialists, bookings, reviews, users, specialistPhotos, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
+import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, asc } from "drizzle-orm";
 
@@ -48,6 +49,14 @@ export interface IStorage {
   deleteSpecialistPhoto(id: number): Promise<SpecialistPhoto | undefined>;
   updateSpecialistAvatar(specialistId: number, imageUrl: string): Promise<void>;
   updateSpecialistBio(specialistId: number, bio: string): Promise<void>;
+  
+  // Magic Links
+  createMagicLink(userId: string, bookingId: number, specialistId: number): Promise<MagicLink>;
+  getMagicLinkByToken(token: string): Promise<MagicLink | undefined>;
+  markMagicLinkOpened(id: number): Promise<void>;
+  markMagicLinkUsed(id: number): Promise<void>;
+  markMagicLinkReviewSubmitted(id: number): Promise<void>;
+  getMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -460,6 +469,61 @@ export class DatabaseStorage implements IStorage {
     await db.update(specialists)
       .set({ bio })
       .where(eq(specialists.id, specialistId));
+  }
+
+  // Magic Links
+  async createMagicLink(userId: string, bookingId: number, specialistId: number): Promise<MagicLink> {
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+    
+    const [link] = await db.insert(magicLinks).values({
+      token,
+      userId,
+      bookingId,
+      specialistId,
+      expiresAt,
+    }).returning();
+    
+    console.log(`[MAGIC_LINK] Created for booking ${bookingId}, user ${userId}, expires ${expiresAt.toISOString()}`);
+    return link;
+  }
+
+  async getMagicLinkByToken(token: string): Promise<MagicLink | undefined> {
+    const [link] = await db.select()
+      .from(magicLinks)
+      .where(eq(magicLinks.token, token))
+      .limit(1);
+    return link;
+  }
+
+  async markMagicLinkOpened(id: number): Promise<void> {
+    await db.update(magicLinks)
+      .set({ openedAt: new Date() })
+      .where(eq(magicLinks.id, id));
+    console.log(`[MAGIC_LINK] Link ${id} opened`);
+  }
+
+  async markMagicLinkUsed(id: number): Promise<void> {
+    await db.update(magicLinks)
+      .set({ usedAt: new Date() })
+      .where(eq(magicLinks.id, id));
+    console.log(`[MAGIC_LINK] Link ${id} marked as used`);
+  }
+
+  async markMagicLinkReviewSubmitted(id: number): Promise<void> {
+    await db.update(magicLinks)
+      .set({ reviewSubmittedAt: new Date() })
+      .where(eq(magicLinks.id, id));
+    console.log(`[MAGIC_LINK] Link ${id} review submitted`);
+  }
+
+  async getMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined> {
+    const [link] = await db.select()
+      .from(magicLinks)
+      .where(eq(magicLinks.bookingId, bookingId))
+      .orderBy(desc(magicLinks.createdAt))
+      .limit(1);
+    return link;
   }
 }
 

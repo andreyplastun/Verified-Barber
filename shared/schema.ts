@@ -78,6 +78,20 @@ export const specialistPhotos = pgTable("specialist_photos", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Magic links for passwordless review access via WhatsApp
+export const magicLinks = pgTable("magic_links", {
+  id: serial("id").primaryKey(),
+  token: text("token").notNull().unique(), // Random secure token
+  userId: uuid("user_id").notNull(), // References users.id
+  bookingId: integer("booking_id").notNull(), // References bookings.id
+  specialistId: integer("specialist_id").notNull(), // References specialists.id
+  expiresAt: timestamp("expires_at").notNull(), // Valid for 24 hours
+  usedAt: timestamp("used_at"), // Null until used
+  createdAt: timestamp("created_at").defaultNow(),
+  openedAt: timestamp("opened_at"), // For metrics: when link was first opened
+  reviewSubmittedAt: timestamp("review_submitted_at"), // For metrics: when review was submitted
+});
+
 // === RELATIONS ===
 export const usersRelations = relations(users, ({ one }) => ({
   specialist: one(specialists, {
@@ -96,6 +110,21 @@ export const specialistsRelations = relations(specialists, ({ many, one }) => ({
 export const specialistPhotosRelations = relations(specialistPhotos, ({ one }) => ({
   specialist: one(specialists, {
     fields: [specialistPhotos.specialistId],
+    references: [specialists.id],
+  }),
+}));
+
+export const magicLinksRelations = relations(magicLinks, ({ one }) => ({
+  user: one(users, {
+    fields: [magicLinks.userId],
+    references: [users.id],
+  }),
+  booking: one(bookings, {
+    fields: [magicLinks.bookingId],
+    references: [bookings.id],
+  }),
+  specialist: one(specialists, {
+    fields: [magicLinks.specialistId],
     references: [specialists.id],
   }),
 }));
@@ -169,6 +198,7 @@ export type Specialist = typeof specialists.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
 export type Review = typeof reviews.$inferSelect;
 export type SpecialistPhoto = typeof specialistPhotos.$inferSelect;
+export type MagicLink = typeof magicLinks.$inferSelect;
 
 export type CreateBookingRequest = z.infer<typeof insertBookingSchema>;
 export type CreateReviewRequest = z.infer<typeof insertReviewSchema>;
