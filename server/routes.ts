@@ -569,6 +569,196 @@ export async function registerRoutes(
   });
 
   // =====================
+  // MAGIC LINK ENDPOINTS
+  // =====================
+
+  // Create magic link after payment (admin creates when marking complete)
+  app.post("/api/admin/bookings/:id/create-magic-link", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      
+      const bookingId = Number(req.params.id);
+      const booking = await storage.getBooking(bookingId);
+      
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      
+      if (!booking.clientId) {
+        return res.status(400).json({ message: "Booking has no associated client" });
+      }
+      
+      // Check if magic link already exists
+      const existingLink = await storage.getMagicLinkByBookingId(bookingId);
+      if (existingLink && !existingLink.usedAt && new Date(existingLink.expiresAt) > new Date()) {
+        // Return existing valid link
+        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://trustwho.app' : `${req.protocol}://${req.get('host')}`;
+        return res.json({
+          magicLink: `${baseUrl}/magic-review/${existingLink.token}`,
+          whatsappText: generateWhatsAppText(`${baseUrl}/magic-review/${existingLink.token}`),
+          expiresAt: existingLink.expiresAt,
+        });
+      }
+      
+      // Create new magic link
+      const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
+      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://trustwho.app' : `${req.protocol}://${req.get('host')}`;
+      const fullLink = `${baseUrl}/magic-review/${magicLink.token}`;
+      
+      res.json({
+        magicLink: fullLink,
+        whatsappText: generateWhatsAppText(fullLink),
+        expiresAt: magicLink.expiresAt,
+      });
+    } catch (err: any) {
+      console.error("Error creating magic link:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Validate magic link token (for frontend)
+  app.get("/api/magic-link/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const link = await storage.getMagicLinkByToken(token);
+      
+      if (!link) {
+        return res.status(404).json({ valid: false, reason: "not_found" });
+      }
+      
+      // Check if expired
+      if (new Date(link.expiresAt) < new Date()) {
+        return res.status(410).json({ valid: false, reason: "expired" });
+      }
+      
+      // Check if already used
+      if (link.usedAt) {
+        return res.status(410).json({ valid: false, reason: "used" });
+      }
+      
+      // Mark as opened (for metrics)
+      if (!link.openedAt) {
+        await storage.markMagicLinkOpened(link.id);
+      }
+      
+      // Get booking and specialist info
+      const booking = await storage.getBooking(link.bookingId);
+      const specialist = await storage.getSpecialist(link.specialistId);
+      
+      if (!booking || !specialist) {
+        return res.status(404).json({ valid: false, reason: "data_not_found" });
+      }
+      
+      // Check if review already exists
+      if (booking.hasReview) {
+        await storage.markMagicLinkUsed(link.id);
+        return res.status(410).json({ valid: false, reason: "review_exists" });
+      }
+      
+      res.json({
+        valid: true,
+        userId: link.userId,
+        bookingId: link.bookingId,
+        specialistId: link.specialistId,
+        specialistName: specialist.name,
+        customerName: booking.customerName,
+      });
+    } catch (err: any) {
+      console.error("Error validating magic link:", err);
+      res.status(500).json({ valid: false, reason: "error" });
+    }
+  });
+
+  // Submit review via magic link (no auth required)
+  app.post("/api/magic-review/:token", async (req, res) => {
+    try {
+      const { token } = req.params;
+      const link = await storage.getMagicLinkByToken(token);
+      
+      if (!link) {
+        return res.status(404).json({ message: "Ссылка не найдена" });
+      }
+      
+      if (new Date(link.expiresAt) < new Date()) {
+        return res.status(410).json({ message: "Ссылка истекла" });
+      }
+      
+      if (link.usedAt) {
+        return res.status(410).json({ message: "Ссылка уже использована" });
+      }
+      
+      const booking = await storage.getBooking(link.bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Визит не найден" });
+      }
+      
+      if (booking.hasReview) {
+        await storage.markMagicLinkUsed(link.id);
+        return res.status(409).json({ message: "Отзыв уже оставлен" });
+      }
+      
+      const { rating, comment, triggers, showName } = req.body;
+      
+      if (!rating || rating < 1 || rating > 5) {
+        return res.status(400).json({ message: "Укажите оценку от 1 до 5" });
+      }
+      
+      // Check antifraud conditions
+      const { checkAntifraudConditions, normalizeReviewText } = await import("./antifraud");
+      const antifraudResult = await checkAntifraudConditions(
+        link.userId,
+        link.specialistId,
+        comment,
+        booking.createdAt
+      );
+      
+      const normalizedText = normalizeReviewText(comment);
+      
+      // Create review
+      const review = await storage.createReview({
+        bookingId: link.bookingId,
+        specialistId: link.specialistId,
+        clientId: link.userId,
+        rating,
+        comment: comment || null,
+        triggers: triggers || null,
+        customerName: booking.customerName,
+        showName: showName ?? true,
+        normalizedText: normalizedText || null,
+        isRatingLimited: antifraudResult.isLimited,
+        ratingLimitReason: antifraudResult.reason,
+      });
+      
+      // Mark booking as reviewed
+      await storage.markBookingReviewed(link.bookingId);
+      
+      // Mark magic link as used and review submitted
+      await storage.markMagicLinkUsed(link.id);
+      await storage.markMagicLinkReviewSubmitted(link.id);
+      
+      res.status(201).json({
+        ...review,
+        showNewAccountPopup: antifraudResult.showNewAccountPopup,
+      });
+    } catch (err: any) {
+      console.error("Error submitting magic review:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Helper function to generate WhatsApp text
+  function generateWhatsAppText(magicLink: string): string {
+    return `👋 Спасибо за визит!
+
+Оставьте отзыв о специалисте — это займёт меньше минуты:
+
+👉 ${magicLink}
+
+Ваш отзыв поможет другим выбрать надёжного специалиста.`;
+  }
+
+  // =====================
   // SPECIALIST PHOTO ENDPOINTS
   // =====================
 
