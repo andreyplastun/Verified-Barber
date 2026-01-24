@@ -172,7 +172,7 @@ export default function MagicReviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
+    <div className="min-h-screen bg-background p-6 pb-24">
       <header className="flex items-center gap-4 mb-8">
         <div className="w-10 h-10" />
         <h1 className="text-xl font-bold">Оставить отзыв</h1>
