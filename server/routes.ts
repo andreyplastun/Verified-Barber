@@ -715,7 +715,7 @@ export async function registerRoutes(
       
       const normalizedText = normalizeReviewText(comment);
       
-      // Create review
+      // Create review (magic link = no special privileges, same antifraud rules)
       const review = await storage.createReview({
         bookingId: link.bookingId,
         specialistId: link.specialistId,
@@ -728,6 +728,7 @@ export async function registerRoutes(
         normalizedText: normalizedText || null,
         isRatingLimited: antifraudResult.isLimited,
         ratingLimitReason: antifraudResult.reason,
+        source: "magic_link", // Track submission method (no special privileges)
       });
       
       // Mark booking as reviewed
