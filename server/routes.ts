@@ -704,13 +704,14 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Укажите оценку от 1 до 5" });
       }
       
-      // Check antifraud conditions
+      // Check antifraud conditions (skip account age check for magic links)
       const { checkAntifraudConditions, normalizeReviewText } = await import("./antifraud");
       const antifraudResult = await checkAntifraudConditions(
         link.userId,
         link.specialistId,
         comment,
-        booking.createdAt
+        booking.createdAt,
+        { skipAccountAgeCheck: true } // Magic link = trusted access, skip new account check
       );
       
       const normalizedText = normalizeReviewText(comment);

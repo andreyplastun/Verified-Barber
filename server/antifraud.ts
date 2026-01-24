@@ -70,11 +70,16 @@ export interface AntifraudResult {
   showNewAccountPopup: boolean;
 }
 
+export interface AntifraudOptions {
+  skipAccountAgeCheck?: boolean; // For magic links - account age rule not applied
+}
+
 export async function checkAntifraudConditions(
   clientId: string | null,
   specialistId: number,
   comment: string | null | undefined,
-  bookingCompletedAt: Date | null
+  bookingCompletedAt: Date | null,
+  options: AntifraudOptions = {}
 ): Promise<AntifraudResult> {
   const result: AntifraudResult = {
     isLimited: false,
@@ -91,15 +96,19 @@ export async function checkAntifraudConditions(
     return result;
   }
 
-  // Check 1: Account age < 3 days
-  const accountAgeMs = user.createdAt ? Date.now() - new Date(user.createdAt).getTime() : Infinity;
-  
-  if (accountAgeMs < NEW_ACCOUNT_THRESHOLD) {
-    result.isLimited = true;
-    result.reason = "new_account";
-    result.showNewAccountPopup = true;
-    console.log(`[ANTIFRAUD] Limited: new_account (age: ${Math.round(accountAgeMs / 60000)} min)`);
-    return result;
+  // Check 1: Account age < 3 days (skipped for magic links)
+  if (!options.skipAccountAgeCheck) {
+    const accountAgeMs = user.createdAt ? Date.now() - new Date(user.createdAt).getTime() : Infinity;
+    
+    if (accountAgeMs < NEW_ACCOUNT_THRESHOLD) {
+      result.isLimited = true;
+      result.reason = "new_account";
+      result.showNewAccountPopup = true;
+      console.log(`[ANTIFRAUD] Limited: new_account (age: ${Math.round(accountAgeMs / 60000)} min)`);
+      return result;
+    }
+  } else {
+    console.log(`[ANTIFRAUD] Skipping account age check (magic link)`);
   }
 
   // Check 2: Review submitted > 7 days after visit
