@@ -78,14 +78,33 @@ Located in `server/antifraud.ts`. Soft system that marks reviews as "limited" bu
 
 **Test Mode**: Set `ANTI_FRAUD_TEST_MODE=true` to speed up time limits (7 days → 1 minute)
 
+### Magic Link System (Passwordless Reviews)
+- **Purpose**: Allows customers to submit reviews via WhatsApp without logging in
+- **Token**: 64-character cryptographic hex token (crypto.randomBytes(32))
+- **Expiry**: 24 hours from creation, one-time use only
+- **Table**: `magic_links` in schema.ts
+- **Flow**:
+  1. Admin completes a booking in dashboard
+  2. Admin clicks "WhatsApp" button → generates magic link
+  3. Copy message or open WhatsApp with pre-filled text
+  4. Customer clicks link → /magic-review/:token
+  5. Customer submits review (anti-fraud rules still apply)
+  6. Link marked as used, review created
+- **Endpoints**:
+  - `POST /api/admin/bookings/:id/create-magic-link` - Generate link
+  - `GET /api/magic-link/:token` - Validate link
+  - `POST /api/magic-link/:token/submit-review` - Submit review
+- **Files**: `client/src/pages/MagicReviewPage.tsx`, `server/routes.ts`
+
 ### Application Flow
 1. Users browse specialists on the home page (or login via bottom nav)
 2. Clicking a specialist shows their profile with reviews and ratings
 3. Users can book appointments via a form
 4. Admin dashboard allows marking bookings as "completed"
 5. Completed bookings unlock the ability to submit a verified review
-6. Reviews update the specialist's average rating (only after 5-min finalization)
-7. Specialists can upload avatar and work photos from their dashboard
+6. Alternative: Admin sends magic link via WhatsApp for passwordless review
+7. Reviews update the specialist's average rating (only after 5-min finalization)
+8. Specialists can upload avatar and work photos from their dashboard
 
 ## External Dependencies
 
