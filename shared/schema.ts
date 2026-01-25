@@ -28,6 +28,8 @@ export const specialists = pgTable("specialists", {
   trustedRating: integer("trusted_rating").default(0).notNull(), // Stored as (rating * 10) e.g. 4.5 -> 45
   // validReviewCount >= 10 → "Сформированный рейтинг"
   validReviewCount: integer("valid_review_count").default(0).notNull(),
+  // If false, specialist is hidden from clients
+  isActive: boolean("is_active").default(true).notNull(),
 });
 
 export const bookings = pgTable("bookings", {

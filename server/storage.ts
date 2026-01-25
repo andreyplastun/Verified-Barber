@@ -215,7 +215,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSpecialists(): Promise<Specialist[]> {
-    return await db.select().from(specialists);
+    return await db.select().from(specialists).where(eq(specialists.isActive, true));
   }
 
   async getSpecialist(id: number): Promise<Specialist | undefined> {
