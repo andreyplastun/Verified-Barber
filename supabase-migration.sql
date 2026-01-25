@@ -66,3 +66,41 @@ SELECT id, name, review_count, average_rating, trusted_rating, valid_review_coun
 FROM specialists 
 WHERE review_count > 0
 ORDER BY review_count DESC;
+
+-- ============================================
+-- Migration 2025-01-25: Magic Links + Specialist Active Status
+-- ============================================
+
+-- 5. Add is_active column to specialists (for deactivating old specialists)
+ALTER TABLE specialists 
+ADD COLUMN IF NOT EXISTS is_active boolean DEFAULT true;
+
+-- 6. Add source column to reviews (to track app vs magic_link submissions)
+ALTER TABLE reviews 
+ADD COLUMN IF NOT EXISTS source text DEFAULT 'app';
+
+-- 7. Create magic_links table for passwordless review submission
+CREATE TABLE IF NOT EXISTS magic_links (
+  id serial PRIMARY KEY,
+  token text NOT NULL UNIQUE,
+  booking_id integer NOT NULL,
+  specialist_id integer NOT NULL,
+  user_id uuid NOT NULL,
+  expires_at timestamp NOT NULL,
+  used boolean DEFAULT false NOT NULL,
+  created_at timestamp DEFAULT now()
+);
+
+-- Create index for fast token lookup
+CREATE INDEX IF NOT EXISTS idx_magic_links_token ON magic_links(token);
+
+-- Verify new columns
+SELECT 'is_active column:' as info;
+SELECT column_name, data_type, column_default 
+FROM information_schema.columns 
+WHERE table_name = 'specialists' AND column_name = 'is_active';
+
+SELECT 'magic_links table:' as info;
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'magic_links';
