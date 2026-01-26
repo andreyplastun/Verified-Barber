@@ -596,7 +596,7 @@ export async function registerRoutes(
         const baseUrl = process.env.NODE_ENV === 'production' ? 'https://trustwho.app' : `${req.protocol}://${req.get('host')}`;
         return res.json({
           magicLink: `${baseUrl}/magic-review/${existingLink.token}`,
-          whatsappText: generateWhatsAppText(`${baseUrl}/magic-review/${existingLink.token}`),
+          whatsappText: generateWhatsAppText(`${baseUrl}/magic-review/${existingLink.token}`, booking.customerName),
           expiresAt: existingLink.expiresAt,
         });
       }
@@ -608,7 +608,7 @@ export async function registerRoutes(
       
       res.json({
         magicLink: fullLink,
-        whatsappText: generateWhatsAppText(fullLink),
+        whatsappText: generateWhatsAppText(fullLink, booking.customerName),
         expiresAt: magicLink.expiresAt,
       });
     } catch (err: any) {
@@ -750,12 +750,12 @@ export async function registerRoutes(
   });
 
   // Helper function to generate WhatsApp text
-  function generateWhatsAppText(magicLink: string): string {
-    return `👋 Спасибо за визит!
+  function generateWhatsAppText(magicLink: string, customerName: string): string {
+    return `${customerName}, спасибо за визит!
 
-Оставьте отзыв о барбере — это займёт меньше минуты:
+Оставьте, пожалуйста, отзыв о барбере — это займёт меньше минуты:
 
-👉 ${magicLink}
+${magicLink}
 
 Ваш отзыв поможет другим выбрать надёжного барбера.`;
   }
