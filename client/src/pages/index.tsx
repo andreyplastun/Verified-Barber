@@ -80,7 +80,7 @@ export default function SpecialistList() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-display font-bold text-[#1F2933]">
-              Специалисты
+              Барберы
             </h1>
             <p className="mt-1 text-[#6B7280] text-sm">
               Запишись к проверенным мастерам
@@ -257,12 +257,12 @@ export default function SpecialistList() {
           <div className="text-center py-16 px-4">
             <p className="text-[#6B7280]">
               {ratingFilter === 'formed' 
-                ? 'В этом районе пока нет специалистов со сформированным рейтингом'
+                ? 'В этом районе пока нет барберов со сформированным рейтингом'
                 : ratingFilter === 'forming'
-                ? 'По выбранным параметрам специалисты не найдены'
+                ? 'По выбранным параметрам барберы не найдены'
                 : specialists && specialists.length === 0
-                ? 'В этом районе пока нет специалистов'
-                : 'По выбранным параметрам специалисты не найдены'}
+                ? 'В этом районе пока нет барберов'
+                : 'По выбранным параметрам барберы не найдены'}
             </p>
           </div>
         )}

@@ -158,7 +158,7 @@ export default function MagicReviewPage() {
         </div>
         <h2 className="text-2xl font-bold mb-2">Спасибо за отзыв!</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          Ваш отзыв о специалисте {linkData.specialistName} опубликован.
+          Ваш отзыв о барбере {linkData.specialistName} опубликован.
         </p>
         <button 
           onClick={() => setLocation(`/specialist/${linkData.specialistId}`)}

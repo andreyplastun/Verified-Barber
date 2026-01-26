@@ -144,7 +144,7 @@ export default function SpecialistDashboard() {
   if (!specialistId) {
     return (
       <div className="p-6" data-testid="specialist-dashboard">
-        <p className="text-muted-foreground">К вашему аккаунту не привязан профиль специалиста.</p>
+        <p className="text-muted-foreground">К вашему аккаунту не привязан профиль барбера.</p>
       </div>
     );
   }
@@ -223,7 +223,7 @@ export default function SpecialistDashboard() {
 
       <Card>
         <CardHeader>
-          <CardTitle>О специалисте</CardTitle>
+          <CardTitle>О барбере</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-2">

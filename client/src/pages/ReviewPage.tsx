@@ -256,7 +256,7 @@ export default function ReviewPage() {
         </div>
         <h1 className="text-2xl font-bold mb-2">Визит не подтверждён</h1>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          Оставить отзыв можно только после того, как специалист подтвердит завершение визита.
+          Оставить отзыв можно только после того, как барбер подтвердит завершение визита.
         </p>
         <button 
           onClick={() => setLocation("/")}

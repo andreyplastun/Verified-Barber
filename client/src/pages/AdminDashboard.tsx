@@ -250,13 +250,13 @@ export default function AdminDashboard() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="specialist">Специалист</Label>
+                  <Label htmlFor="specialist">Барбер</Label>
                   <Select
                     value={formData.specialistId}
                     onValueChange={(value) => setFormData({ ...formData, specialistId: value })}
                   >
                     <SelectTrigger data-testid="select-specialist">
-                      <SelectValue placeholder="Выберите специалиста" />
+                      <SelectValue placeholder="Выберите барбера" />
                     </SelectTrigger>
                     <SelectContent>
                       {specialists.map((s) => (
