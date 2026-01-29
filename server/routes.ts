@@ -751,7 +751,7 @@ export async function registerRoutes(
 
   // Helper function to generate WhatsApp text
   function generateWhatsAppText(magicLink: string, customerName: string): string {
-    return `${customerName}, спасибо за визит!
+    return `${customerName}, спасибо за визит в CHOP-CHOP!
 
 Оставьте, пожалуйста, отзыв о барбере — это займёт меньше минуты:
 
