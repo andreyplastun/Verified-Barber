@@ -18,7 +18,7 @@ interface MagicLinkData {
 }
 
 export default function MagicReviewPage() {
-  const [, params] = useRoute("/magic-review/:token");
+  const [, params] = useRoute("/r/:token");
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -75,7 +75,7 @@ export default function MagicReviewPage() {
 
   const submitMutation = useMutation({
     mutationFn: async (data: { rating: number; comment: string; triggers: string[]; showName: boolean }) => {
-      const res = await fetch(`/api/magic-review/${token}`, {
+      const res = await fetch(`/api/r/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

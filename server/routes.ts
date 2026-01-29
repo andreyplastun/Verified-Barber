@@ -595,8 +595,8 @@ export async function registerRoutes(
         // Return existing valid link
         const baseUrl = process.env.NODE_ENV === 'production' ? 'https://trustwho.app' : `${req.protocol}://${req.get('host')}`;
         return res.json({
-          magicLink: `${baseUrl}/magic-review/${existingLink.token}`,
-          whatsappText: generateWhatsAppText(`${baseUrl}/magic-review/${existingLink.token}`, booking.customerName),
+          magicLink: `${baseUrl}/r/${existingLink.token}`,
+          whatsappText: generateWhatsAppText(`${baseUrl}/r/${existingLink.token}`, booking.customerName),
           expiresAt: existingLink.expiresAt,
         });
       }
@@ -604,7 +604,7 @@ export async function registerRoutes(
       // Create new magic link
       const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
       const baseUrl = process.env.NODE_ENV === 'production' ? 'https://trustwho.app' : `${req.protocol}://${req.get('host')}`;
-      const fullLink = `${baseUrl}/magic-review/${magicLink.token}`;
+      const fullLink = `${baseUrl}/r/${magicLink.token}`;
       
       res.json({
         magicLink: fullLink,
@@ -671,7 +671,7 @@ export async function registerRoutes(
   });
 
   // Submit review via magic link (no auth required)
-  app.post("/api/magic-review/:token", async (req, res) => {
+  app.post("/api/r/:token", async (req, res) => {
     try {
       const { token } = req.params;
       const link = await storage.getMagicLinkByToken(token);
