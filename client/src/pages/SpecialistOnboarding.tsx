@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLocation } from 'wouter';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -10,8 +9,7 @@ import { Banknote } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 export default function SpecialistOnboarding() {
-  const { currentUser, refetchUser } = useAuth();
-  const [, setLocation] = useLocation();
+  const { currentUser } = useAuth();
   const { toast } = useToast();
   
   const [tipsEnabled, setTipsEnabled] = useState(false);
@@ -40,14 +38,13 @@ export default function SpecialistOnboarding() {
         throw new Error(error.message || 'Failed to save');
       }
 
-      await refetchUser();
-      
       toast({
         title: 'Настройки сохранены',
         description: tipsEnabled && kaspiPhone.trim() ? 'Чаевые включены' : 'Вы можете включить чаевые позже в профиле',
       });
       
-      setLocation('/specialist-dashboard');
+      // Hard redirect to force full state refresh
+      window.location.href = '/specialist-dashboard';
     } catch (err: any) {
       toast({
         title: 'Ошибка',
@@ -82,8 +79,8 @@ export default function SpecialistOnboarding() {
         throw new Error(error.message || 'Failed to save');
       }
 
-      await refetchUser();
-      setLocation('/specialist-dashboard');
+      // Hard redirect to force full state refresh
+      window.location.href = '/specialist-dashboard';
     } catch (err: any) {
       toast({
         title: 'Ошибка',
