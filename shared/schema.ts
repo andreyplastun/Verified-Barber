@@ -34,6 +34,10 @@ export const specialists = pgTable("specialists", {
   // Kaspi tipping fields
   kaspiPhone: text("kaspi_phone"), // Phone number for Kaspi tips (nullable)
   tipsEnabled: boolean("tips_enabled").default(false).notNull(), // Whether tips are enabled
+  // Onboarding analytics timestamps
+  tipsEnabledAt: timestamp("tips_enabled_at"), // When tips were first enabled
+  tipsSkippedAt: timestamp("tips_skipped_at"), // When "Skip" was clicked during onboarding
+  tipsOnboardingCompletedAt: timestamp("tips_onboarding_completed_at"), // When tips onboarding was completed
 });
 
 export const bookings = pgTable("bookings", {

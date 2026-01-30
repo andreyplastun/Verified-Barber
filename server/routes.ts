@@ -163,12 +163,12 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
 
-      // If the user is a specialist with specialistId, save tips settings
+      // If the user is a specialist with specialistId, save tips settings with analytics
       if (user.role === "specialist" && user.specialistId) {
-        const { kaspiPhone, tipsEnabled } = req.body;
+        const { kaspiPhone, tipsEnabled, skipped } = req.body;
         const cleanPhone = kaspiPhone?.trim() || null;
         const effectiveTipsEnabled = cleanPhone ? (tipsEnabled || false) : false;
-        await storage.updateSpecialistTipsSettings(user.specialistId, cleanPhone, effectiveTipsEnabled);
+        await storage.saveOnboardingTipsSettings(user.specialistId, cleanPhone, effectiveTipsEnabled, skipped === true);
       }
 
       // Mark onboarding as complete

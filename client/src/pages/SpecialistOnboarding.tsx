@@ -73,6 +73,7 @@ export default function SpecialistOnboarding() {
         body: JSON.stringify({
           kaspiPhone: null,
           tipsEnabled: false,
+          skipped: true,
         }),
       });
 

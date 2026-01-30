@@ -51,6 +51,7 @@ export interface IStorage {
   updateSpecialistAvatar(specialistId: number, imageUrl: string): Promise<void>;
   updateSpecialistBio(specialistId: number, bio: string): Promise<void>;
   updateSpecialistTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean): Promise<void>;
+  saveOnboardingTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean, skipped: boolean): Promise<void>;
   
   // Magic Links
   createMagicLink(userId: string, bookingId: number, specialistId: number): Promise<MagicLink>;
@@ -484,6 +485,25 @@ export class DatabaseStorage implements IStorage {
   async updateSpecialistTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean): Promise<void> {
     await db.update(specialists)
       .set({ kaspiPhone, tipsEnabled })
+      .where(eq(specialists.id, specialistId));
+  }
+
+  async saveOnboardingTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean, skipped: boolean): Promise<void> {
+    const now = new Date();
+    const updateData: Record<string, any> = {
+      kaspiPhone,
+      tipsEnabled,
+      tipsOnboardingCompletedAt: now,
+    };
+    
+    if (skipped) {
+      updateData.tipsSkippedAt = now;
+    } else if (tipsEnabled) {
+      updateData.tipsEnabledAt = now;
+    }
+    
+    await db.update(specialists)
+      .set(updateData)
       .where(eq(specialists.id, specialistId));
   }
 
