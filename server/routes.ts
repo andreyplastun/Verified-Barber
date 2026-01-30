@@ -149,16 +149,20 @@ export async function registerRoutes(
 
   // Specialist onboarding completion (saves tips settings and marks onboarding complete)
   app.post("/api/users/:id/complete-onboarding", async (req, res) => {
+    console.log("[ONBOARDING API] Request received for user:", req.params.id);
     try {
       const userId = req.params.id;
       const authUserId = req.headers["x-user-id"] as string;
+      console.log("[ONBOARDING API] authUserId header:", authUserId);
       
       // Only the user themselves can complete their onboarding
       if (authUserId !== userId) {
+        console.log("[ONBOARDING API] Auth mismatch, returning 403");
         return res.status(403).json({ message: "Forbidden" });
       }
 
       const user = await storage.getUser(userId);
+      console.log("[ONBOARDING API] Found user:", user ? { id: user.id, role: user.role, specialistId: user.specialistId } : null);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -172,7 +176,9 @@ export async function registerRoutes(
       }
 
       // Mark onboarding as complete
+      console.log("[ONBOARDING API] Marking onboarding complete for:", userId);
       const updated = await storage.completeOnboarding(userId);
+      console.log("[ONBOARDING API] Updated user:", updated);
       res.json(updated);
     } catch (err: any) {
       console.error("Error completing onboarding:", err);

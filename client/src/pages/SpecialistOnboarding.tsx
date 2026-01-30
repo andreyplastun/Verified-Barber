@@ -17,10 +17,15 @@ export default function SpecialistOnboarding() {
   const [saving, setSaving] = useState(false);
 
   const handleSaveAndContinue = async () => {
-    if (!currentUser?.id) return;
+    console.log('[ONBOARDING] Save clicked, currentUser:', currentUser);
+    if (!currentUser?.id) {
+      console.error('[ONBOARDING] No currentUser.id, aborting');
+      return;
+    }
     
     setSaving(true);
     try {
+      console.log('[ONBOARDING] Calling API for user:', currentUser.id);
       const res = await fetch(`/api/users/${currentUser.id}/complete-onboarding`, {
         method: 'POST',
         headers: {
@@ -33,11 +38,15 @@ export default function SpecialistOnboarding() {
         }),
       });
 
+      console.log('[ONBOARDING] Response status:', res.status);
       if (!res.ok) {
         const error = await res.json();
+        console.error('[ONBOARDING] API error:', error);
         throw new Error(error.message || 'Failed to save');
       }
 
+      const result = await res.json();
+      console.log('[ONBOARDING] Success, result:', result);
       toast({
         title: 'Настройки сохранены',
         description: tipsEnabled && kaspiPhone.trim() ? 'Чаевые включены' : 'Вы можете включить чаевые позже в профиле',
