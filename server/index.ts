@@ -4,7 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-01-23-v15";
+const BUILD_VERSION = "2026-01-30-v16-onboarding";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();
