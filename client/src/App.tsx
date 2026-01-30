@@ -92,6 +92,8 @@ function HomeRoute() {
 function SpecialistDashboardRoute() {
   const { user, loading } = useAuth();
 
+  console.log("[DASHBOARD ROUTE]", { user, loading, onboardingCompleted: user?.onboardingCompleted });
+
   if (loading) {
     return <div className="min-h-screen bg-background flex items-center justify-center text-foreground">Loading...</div>;
   }
@@ -101,6 +103,7 @@ function SpecialistDashboardRoute() {
   }
 
   if (user.role === 'specialist' && !user.onboardingCompleted) {
+    console.log("[DASHBOARD ROUTE] Redirecting to onboarding because onboardingCompleted =", user.onboardingCompleted);
     return <Redirect to="/specialist-onboarding" />;
   }
 
