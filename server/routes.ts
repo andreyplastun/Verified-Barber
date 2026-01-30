@@ -589,6 +589,10 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Booking has no associated client" });
       }
       
+      // Get specialist name for the message
+      const specialist = await storage.getSpecialist(booking.specialistId);
+      const barberName = specialist?.name || 'барберу';
+      
       // Check if magic link already exists
       const existingLink = await storage.getMagicLinkByBookingId(bookingId);
       if (existingLink && !existingLink.usedAt && new Date(existingLink.expiresAt) > new Date()) {
@@ -596,7 +600,7 @@ export async function registerRoutes(
         const baseUrl = process.env.NODE_ENV === 'production' ? 'https://trustwho.app' : `${req.protocol}://${req.get('host')}`;
         return res.json({
           magicLink: `${baseUrl}/r/${existingLink.token}`,
-          whatsappText: generateWhatsAppText(`${baseUrl}/r/${existingLink.token}`, booking.customerName),
+          whatsappText: generateWhatsAppText(`${baseUrl}/r/${existingLink.token}`, booking.customerName, barberName),
           expiresAt: existingLink.expiresAt,
         });
       }
@@ -608,7 +612,7 @@ export async function registerRoutes(
       
       res.json({
         magicLink: fullLink,
-        whatsappText: generateWhatsAppText(fullLink, booking.customerName),
+        whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
         expiresAt: magicLink.expiresAt,
       });
     } catch (err: any) {
@@ -749,15 +753,46 @@ export async function registerRoutes(
     }
   });
 
-  // Helper function to generate WhatsApp text
-  function generateWhatsAppText(magicLink: string, customerName: string): string {
-    return `${customerName}, спасибо за визит в CHOP-CHOP!
+  // Helper function to convert Russian name to dative case (к кому?)
+  function toDativeCase(name: string): string {
+    // Common patterns for Russian names
+    const lastChar = name.slice(-1);
+    const lastTwoChars = name.slice(-2);
+    
+    // Names ending in -ия (Виктория → Виктории) - check BEFORE -я
+    if (lastTwoChars === 'ия') {
+      return name.slice(0, -1) + 'и';
+    }
+    // Feminine names ending in -а (Светлана → Светлане)
+    if (lastChar === 'а') {
+      return name.slice(0, -1) + 'е';
+    }
+    // Feminine names ending in -я (Мария → Марии... but we caught -ия above)
+    if (lastChar === 'я') {
+      return name.slice(0, -1) + 'е';
+    }
+    // Masculine names ending in -й (Евгений → Евгению)
+    if (lastChar === 'й') {
+      return name.slice(0, -1) + 'ю';
+    }
+    // Masculine names ending in -ь (Игорь → Игорю, Рафаэль → Рафаэлю)
+    if (lastChar === 'ь') {
+      return name.slice(0, -1) + 'ю';
+    }
+    // Default: add -у for consonant endings (Руслан → Руслану, Денис → Денису)
+    return name + 'у';
+  }
 
-Оставьте, пожалуйста, отзыв о барбере — это займёт меньше минуты:
+  // Helper function to generate WhatsApp text
+  function generateWhatsAppText(magicLink: string, customerName: string, barberName: string): string {
+    const barberDative = toDativeCase(barberName);
+    return `${customerName}, спасибо за визит к барберу ${barberDative}!
+
+Оставьте, пожалуйста, отзыв — это всего два клика:
 
 ${magicLink}
 
-Ваш отзыв поможет другим выбрать надёжного барбера.`;
+Ваш отзыв поможет улучшить работу барбера.`;
   }
 
   // =====================
