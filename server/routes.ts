@@ -788,7 +788,7 @@ export async function registerRoutes(
     const barberDative = toDativeCase(barberName);
     return `${customerName}, спасибо за визит к барберу ${barberDative}!
 
-Оставьте, пожалуйста, отзыв — это всего два клика:
+Анонимный отзыв всего два клика:
 
 ${magicLink}
 
