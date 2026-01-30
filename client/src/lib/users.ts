@@ -5,6 +5,7 @@ export interface AppUser {
   email: string
   role: UserRole
   specialistId: number | null
+  onboardingCompleted: boolean
   createdAt: string
 }
 
@@ -37,6 +38,7 @@ export async function getAppUser(userId: string): Promise<AppUser | null> {
       email: data.email,
       role: data.role as UserRole,
       specialistId: data.specialistId,
+      onboardingCompleted: data.onboardingCompleted ?? false,
       createdAt: data.createdAt,
     }
   } catch (err) {

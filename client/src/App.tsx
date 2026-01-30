@@ -14,6 +14,7 @@ import ReviewPage from "@/pages/ReviewPage";
 import MagicReviewPage from "@/pages/MagicReviewPage";
 import AdminDashboard from "@/pages/AdminDashboard";
 import SpecialistDashboard from "@/pages/SpecialistDashboard";
+import SpecialistOnboarding from "@/pages/SpecialistOnboarding";
 import LoginPage from "@/pages/LoginPage";
 import { Navigation } from "@/components/Navigation";
 
@@ -64,7 +65,7 @@ function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function HomeRoute() {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, user, loading } = useAuth();
 
   if (loading) {
     return <div className="min-h-screen bg-background flex items-center justify-center text-foreground">Loading...</div>;
@@ -79,10 +80,53 @@ function HomeRoute() {
   }
 
   if (currentUser?.role === 'specialist') {
+    if (!user?.onboardingCompleted) {
+      return <Redirect to="/specialist-onboarding" />;
+    }
     return <Redirect to="/specialist-dashboard" />;
   }
 
   return <SpecialistList />;
+}
+
+function SpecialistDashboardRoute() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div className="min-h-screen bg-background flex items-center justify-center text-foreground">Loading...</div>;
+  }
+
+  if (!user) {
+    return <Redirect to="/login" />;
+  }
+
+  if (user.role === 'specialist' && !user.onboardingCompleted) {
+    return <Redirect to="/specialist-onboarding" />;
+  }
+
+  return <SpecialistDashboard />;
+}
+
+function SpecialistOnboardingRoute() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div className="min-h-screen bg-background flex items-center justify-center text-foreground">Loading...</div>;
+  }
+
+  if (!user) {
+    return <Redirect to="/login" />;
+  }
+
+  if (user.role !== 'specialist') {
+    return <Redirect to="/" />;
+  }
+
+  if (user.onboardingCompleted) {
+    return <Redirect to="/specialist-dashboard" />;
+  }
+
+  return <SpecialistOnboarding />;
 }
 
 function Router() {
@@ -116,11 +160,8 @@ function Router() {
           <AdminDashboard />
         </AdminProtectedRoute>
       </Route>
-      <Route path="/specialist-dashboard">
-        <ProtectedRoute>
-          <SpecialistDashboard />
-        </ProtectedRoute>
-      </Route>
+      <Route path="/specialist-dashboard" component={SpecialistDashboardRoute} />
+      <Route path="/specialist-onboarding" component={SpecialistOnboardingRoute} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -58,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: userWithRole.email,
         role: userWithRole.role,
         specialistId: userWithRole.specialistId ?? null,
+        onboardingCompleted: userWithRole.onboardingCompleted ?? false,
         createdAt: userWithRole.createdAt ?? "",
       });
       return userWithRole;
@@ -75,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         email: userWithRole.email,
         role: userWithRole.role,
         specialistId: userWithRole.specialistId ?? null,
+        onboardingCompleted: userWithRole.onboardingCompleted ?? false,
         createdAt: userWithRole.createdAt ?? "",
       };
       setUser(userData);

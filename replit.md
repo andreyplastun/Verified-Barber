@@ -118,6 +118,20 @@ Located in `server/antifraud.ts`. Soft system that marks reviews as "limited" bu
 - **Kaspi Deep Link Format**: `https://kaspi.kz/pay/P2P?phone={phone}&amount={amount}&comment=Чаевые через WHO`
 - **Files**: `client/src/pages/MagicReviewPage.tsx`, `client/src/pages/SpecialistDashboard.tsx`
 
+### Specialist Onboarding
+- **Purpose**: Show tips setup on first login for specialists
+- **Database Field**: `onboarding_completed` boolean in users table
+- **Flow**:
+  1. Specialist logs in for the first time
+  2. Redirected to `/specialist-onboarding` if `onboardingCompleted = false`
+  3. Shows one screen with tips toggle and Kaspi phone input
+  4. "Сохранить и продолжить" saves settings and marks onboarding complete
+  5. "Пропустить" skips setup and marks onboarding complete
+  6. Specialist is redirected to dashboard
+- **Post-Onboarding**: Tips settings can be changed later in SpecialistDashboard
+- **Endpoint**: `POST /api/users/:id/complete-onboarding`
+- **Files**: `client/src/pages/SpecialistOnboarding.tsx`, `client/src/App.tsx`
+
 ### Application Flow
 1. Users browse specialists on the home page (or login via bottom nav)
 2. Clicking a specialist shows their profile with reviews and ratings
