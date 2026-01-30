@@ -98,6 +98,18 @@ export const magicLinks = pgTable("magic_links", {
   reviewSubmittedAt: timestamp("review_submitted_at"), // For metrics: when review was submitted
 });
 
+// Tips events for analytics and statistics
+export const tipsEvents = pgTable("tips_events", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  reviewId: integer("review_id"), // References reviews.id (nullable - tip can be shown before review created)
+  specialistId: integer("specialist_id").notNull(), // References specialists.id
+  tipsShownAt: timestamp("tips_shown_at"), // When tips screen was shown
+  tipsConfirmedAt: timestamp("tips_confirmed_at"), // When user clicked "I transferred"
+  tipsSkipped: boolean("tips_skipped").default(false), // If user skipped tips
+  tipsAmountSelected: integer("tips_amount_selected"), // Amount selected by user
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // === RELATIONS ===
 export const usersRelations = relations(users, ({ one }) => ({
   specialist: one(specialists, {
@@ -161,6 +173,17 @@ export const reviewsRelations = relations(reviews, ({ one }) => ({
   }),
 }));
 
+export const tipsEventsRelations = relations(tipsEvents, ({ one }) => ({
+  review: one(reviews, {
+    fields: [tipsEvents.reviewId],
+    references: [reviews.id],
+  }),
+  specialist: one(specialists, {
+    fields: [tipsEvents.specialistId],
+    references: [specialists.id],
+  }),
+}));
+
 // === SCHEMAS ===
 
 export const insertSpecialistSchema = createInsertSchema(specialists).omit({ 
@@ -205,6 +228,7 @@ export type Booking = typeof bookings.$inferSelect;
 export type Review = typeof reviews.$inferSelect;
 export type SpecialistPhoto = typeof specialistPhotos.$inferSelect;
 export type MagicLink = typeof magicLinks.$inferSelect;
+export type TipsEvent = typeof tipsEvents.$inferSelect;
 
 export type CreateBookingRequest = z.infer<typeof insertBookingSchema>;
 export type CreateReviewRequest = z.infer<typeof insertReviewSchema>;
