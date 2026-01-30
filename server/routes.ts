@@ -147,6 +147,39 @@ export async function registerRoutes(
     }
   });
 
+  // Specialist onboarding completion (saves tips settings and marks onboarding complete)
+  app.post("/api/users/:id/complete-onboarding", async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const authUserId = req.headers["x-user-id"] as string;
+      
+      // Only the user themselves can complete their onboarding
+      if (authUserId !== userId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // If the user is a specialist with specialistId, save tips settings
+      if (user.role === "specialist" && user.specialistId) {
+        const { kaspiPhone, tipsEnabled } = req.body;
+        const cleanPhone = kaspiPhone?.trim() || null;
+        const effectiveTipsEnabled = cleanPhone ? (tipsEnabled || false) : false;
+        await storage.updateSpecialistTipsSettings(user.specialistId, cleanPhone, effectiveTipsEnabled);
+      }
+
+      // Mark onboarding as complete
+      const updated = await storage.completeOnboarding(userId);
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error completing onboarding:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Specialists
   app.get(api.specialists.list.path, async (req, res) => {
     // Lazy finalization: finalize any expired reviews on-demand (autoscale-friendly)
