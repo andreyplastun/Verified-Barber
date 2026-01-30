@@ -30,6 +30,9 @@ export const specialists = pgTable("specialists", {
   validReviewCount: integer("valid_review_count").default(0).notNull(),
   // If false, specialist is hidden from clients
   isActive: boolean("is_active").default(true).notNull(),
+  // Kaspi tipping fields
+  kaspiPhone: text("kaspi_phone"), // Phone number for Kaspi tips (nullable)
+  tipsEnabled: boolean("tips_enabled").default(false).notNull(), // Whether tips are enabled
 });
 
 export const bookings = pgTable("bookings", {

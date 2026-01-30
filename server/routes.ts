@@ -667,6 +667,8 @@ export async function registerRoutes(
         specialistId: link.specialistId,
         specialistName: specialist.name,
         customerName: booking.customerName,
+        tipsEnabled: specialist.tipsEnabled || false,
+        kaspiPhone: specialist.kaspiPhone || null,
       });
     } catch (err: any) {
       console.error("Error validating magic link:", err);
@@ -848,6 +850,43 @@ ${magicLink}
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error updating bio:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Update specialist tips settings (Kaspi)
+  app.patch("/api/specialists/:id/tips-settings", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      const specialistId = Number(req.params.id);
+      const { kaspiPhone, tipsEnabled } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      if (isNaN(specialistId)) {
+        return res.status(400).json({ message: "Invalid specialist ID" });
+      }
+
+      const canEdit = await checkSpecialistOwner(userId, specialistId);
+      if (!canEdit) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      // Validate phone number format (basic check)
+      const cleanPhone = kaspiPhone?.trim() || null;
+      if (cleanPhone && cleanPhone.length > 20) {
+        return res.status(400).json({ message: "Phone number too long" });
+      }
+
+      // Cannot enable tips without a phone number
+      const effectiveTipsEnabled = cleanPhone ? (tipsEnabled || false) : false;
+
+      await storage.updateSpecialistTipsSettings(specialistId, cleanPhone, effectiveTipsEnabled);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error updating tips settings:", err);
       res.status(500).json({ message: err.message });
     }
   });

@@ -4,7 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload } from 'lucide-react';
+import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { useRef, useState, useEffect } from 'react';
 import { queryClient } from '@/lib/queryClient';
@@ -22,6 +24,9 @@ export default function SpecialistDashboard() {
   const [uploading, setUploading] = useState<'avatar' | 'work' | null>(null);
   const [bio, setBio] = useState('');
   const [savingBio, setSavingBio] = useState(false);
+  const [kaspiPhone, setKaspiPhone] = useState('');
+  const [tipsEnabled, setTipsEnabled] = useState(false);
+  const [savingTips, setSavingTips] = useState(false);
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -166,6 +171,13 @@ export default function SpecialistDashboard() {
     }
   }, [specialist?.bio]);
 
+  useEffect(() => {
+    if (specialist) {
+      setKaspiPhone(specialist.kaspiPhone || '');
+      setTipsEnabled(specialist.tipsEnabled || false);
+    }
+  }, [specialist]);
+
   const handleSaveBio = async () => {
     if (!specialistId || !currentUser?.id) return;
     setSavingBio(true);
@@ -190,6 +202,35 @@ export default function SpecialistDashboard() {
       setSavingBio(false);
     }
   };
+
+  const handleSaveTipsSettings = async () => {
+    if (!specialistId || !currentUser?.id) return;
+    setSavingTips(true);
+    try {
+      const res = await fetch(`/api/specialists/${specialistId}/tips-settings`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({ kaspiPhone, tipsEnabled }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to save');
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      toast({ title: 'Настройки чаевых сохранены' });
+    } catch (err: any) {
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    } finally {
+      setSavingTips(false);
+    }
+  };
+
+  const tipsSettingsChanged = 
+    kaspiPhone !== (specialist?.kaspiPhone || '') || 
+    tipsEnabled !== (specialist?.tipsEnabled || false);
 
   return (
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
@@ -250,6 +291,58 @@ export default function SpecialistDashboard() {
                 {savingBio ? 'Сохранение...' : 'Сохранить'}
               </Button>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <Banknote className="w-5 h-5" />
+          <CardTitle>Чаевые через Kaspi</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Клиенты смогут оставить вам чаевые напрямую в Kaspi после отзыва. 
+            Деньги поступают сразу вам, платформа не участвует в переводе.
+          </p>
+          
+          <div className="space-y-2">
+            <Label htmlFor="kaspiPhone">Номер телефона Kaspi</Label>
+            <Input
+              id="kaspiPhone"
+              type="tel"
+              value={kaspiPhone}
+              onChange={(e) => setKaspiPhone(e.target.value)}
+              placeholder="+7 (___) ___-__-__"
+              data-testid="input-kaspi-phone"
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label htmlFor="tipsEnabled">Принимать чаевые через Kaspi</Label>
+              <p className="text-xs text-muted-foreground">
+                После отзыва клиент увидит кнопку чаевых
+              </p>
+            </div>
+            <Switch
+              id="tipsEnabled"
+              checked={tipsEnabled}
+              onCheckedChange={setTipsEnabled}
+              disabled={!kaspiPhone.trim()}
+              data-testid="switch-tips-enabled"
+            />
+          </div>
+
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={handleSaveTipsSettings}
+              disabled={savingTips || !tipsSettingsChanged}
+              data-testid="button-save-tips"
+            >
+              {savingTips ? 'Сохранение...' : 'Сохранить'}
+            </Button>
           </div>
         </CardContent>
       </Card>

@@ -80,21 +80,43 @@ Located in `server/antifraud.ts`. Soft system that marks reviews as "limited" bu
 
 ### Magic Link System (Passwordless Reviews)
 - **Purpose**: Allows customers to submit reviews via WhatsApp without logging in
-- **Token**: 64-character cryptographic hex token (crypto.randomBytes(32))
-- **Expiry**: 24 hours from creation, one-time use only
+- **Token**: 16-character base64url token (crypto.randomBytes(12))
+- **Expiry**: 48 hours from creation, one-time use only
+- **Short URL**: `/r/:token` format for compact WhatsApp messages
 - **Table**: `magic_links` in schema.ts
 - **Flow**:
   1. Admin completes a booking in dashboard
   2. Admin clicks "WhatsApp" button → generates magic link
-  3. Copy message or open WhatsApp with pre-filled text
-  4. Customer clicks link → /magic-review/:token
-  5. Customer submits review (anti-fraud rules still apply)
+  3. Copy message or open WhatsApp with pre-filled text (includes customer name and barber name in dative case)
+  4. Customer clicks link → /r/:token
+  5. Customer submits review (anti-fraud rules still apply, except account age check)
   6. Link marked as used, review created
+  7. If tips enabled → show tipping screen
 - **Endpoints**:
   - `POST /api/admin/bookings/:id/create-magic-link` - Generate link
   - `GET /api/magic-link/:token` - Validate link
-  - `POST /api/magic-link/:token/submit-review` - Submit review
+  - `POST /api/r/:token` - Submit review
 - **Files**: `client/src/pages/MagicReviewPage.tsx`, `server/routes.ts`
+
+### Kaspi Tipping System (P2P)
+- **Purpose**: Allow clients to leave tips directly to specialist via Kaspi after review
+- **Platform Role**: WHO does not participate in payment, no commission, P2P only
+- **Database Fields** (in specialists table):
+  - `kaspi_phone` (text, nullable) - Kaspi phone number
+  - `tips_enabled` (boolean, default false) - Whether to show tips screen
+- **Specialist Setup**:
+  - SpecialistDashboard has "Чаевые через Kaspi" card
+  - Enter phone number, toggle to enable
+  - Endpoint: `PATCH /api/specialists/:id/tips-settings`
+- **Client Flow**:
+  1. After review submission via magic link
+  2. If tipsEnabled && kaspiPhone → show tips screen
+  3. Amount buttons: 500 ₸, 1 000 ₸, 2 000 ₸, or custom
+  4. Click opens Kaspi deep link in new tab
+  5. Thank you screen after returning
+  6. "Skip" button to bypass
+- **Kaspi Deep Link Format**: `https://kaspi.kz/pay/P2P?phone={phone}&amount={amount}&comment=Чаевые через WHO`
+- **Files**: `client/src/pages/MagicReviewPage.tsx`, `client/src/pages/SpecialistDashboard.tsx`
 
 ### Application Flow
 1. Users browse specialists on the home page (or login via bottom nav)

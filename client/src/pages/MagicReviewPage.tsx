@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Star, ChevronLeft, AlertCircle, Info, CheckCircle } from "lucide-react";
+import { Star, ChevronLeft, AlertCircle, Info, CheckCircle, Banknote, Heart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface MagicLinkData {
   valid: boolean;
@@ -15,6 +16,8 @@ interface MagicLinkData {
   specialistName: string;
   customerName: string;
   reason?: string;
+  tipsEnabled?: boolean;
+  kaspiPhone?: string | null;
 }
 
 export default function MagicReviewPage() {
@@ -45,6 +48,9 @@ export default function MagicReviewPage() {
   const [hiddenName, setHiddenName] = useState(false);
   const [showNewAccountPopup, setShowNewAccountPopup] = useState(false);
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
+  const [showTipsScreen, setShowTipsScreen] = useState(false);
+  const [showThankYouScreen, setShowThankYouScreen] = useState(false);
+  const [customTipAmount, setCustomTipAmount] = useState('');
 
   const triggersByRating: Record<number, string[]> = {
     5: ["Понравилась стрижка", "Аккуратно", "Вежливый", "Профессионал", "Хочу прийти ещё"],
@@ -90,6 +96,8 @@ export default function MagicReviewPage() {
       
       if (result.showNewAccountPopup) {
         setShowNewAccountPopup(true);
+      } else if (linkData?.tipsEnabled && linkData?.kaspiPhone) {
+        setShowTipsScreen(true);
       } else {
         setShowSuccessScreen(true);
       }
@@ -110,6 +118,34 @@ export default function MagicReviewPage() {
       return;
     }
     submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName });
+  };
+
+  const generateKaspiDeepLink = (amount: number) => {
+    if (!linkData?.kaspiPhone) return '';
+    const phone = linkData.kaspiPhone.replace(/\D/g, '');
+    return `https://kaspi.kz/pay/P2P?phone=${phone}&amount=${amount}&comment=${encodeURIComponent('Чаевые через WHO')}`;
+  };
+
+  const [kaspiOpened, setKaspiOpened] = useState(false);
+
+  const handleTipClick = (amount: number) => {
+    const deepLink = generateKaspiDeepLink(amount);
+    if (deepLink) {
+      window.open(deepLink, '_blank');
+      setKaspiOpened(true);
+    }
+  };
+
+  const handleCustomTip = () => {
+    const amount = parseInt(customTipAmount);
+    if (amount > 0) {
+      handleTipClick(amount);
+    }
+  };
+
+  const skipTips = () => {
+    setShowTipsScreen(false);
+    setShowSuccessScreen(true);
   };
 
   if (isLoading) {
@@ -150,6 +186,125 @@ export default function MagicReviewPage() {
     );
   }
 
+  if (showThankYouScreen) {
+    return (
+      <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
+        <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-6">
+          <Heart className="w-8 h-8 text-green-600" />
+        </div>
+        <h2 className="text-2xl font-bold mb-2">Спасибо!</h2>
+        <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
+          Если вы оставили чаевые — мастеру будет приятно
+        </p>
+        <button 
+          onClick={() => setLocation(`/specialist/${linkData?.specialistId}`)}
+          className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-opacity"
+          data-testid="button-return-after-tips"
+        >
+          Вернуться
+        </button>
+      </div>
+    );
+  }
+
+  if (showTipsScreen && linkData) {
+    return (
+      <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
+        <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-6">
+          <Banknote className="w-8 h-8 text-amber-600" />
+        </div>
+        <h2 className="text-2xl font-bold mb-2">Хотите оставить чаевые?</h2>
+        <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
+          Это необязательно. Деньги поступят напрямую мастеру через Kaspi.
+        </p>
+        
+        {!kaspiOpened ? (
+          <>
+            <div className="flex flex-wrap justify-center gap-3 mb-6 max-w-sm">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => handleTipClick(500)}
+                className="min-w-[100px]"
+                data-testid="button-tip-500"
+              >
+                500 ₸
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => handleTipClick(1000)}
+                className="min-w-[100px]"
+                data-testid="button-tip-1000"
+              >
+                1 000 ₸
+              </Button>
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => handleTipClick(2000)}
+                className="min-w-[100px]"
+                data-testid="button-tip-2000"
+              >
+                2 000 ₸
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2 mb-8 max-w-xs w-full">
+              <Input
+                type="number"
+                placeholder="Другая сумма"
+                value={customTipAmount}
+                onChange={(e) => setCustomTipAmount(e.target.value)}
+                className="text-center"
+                data-testid="input-custom-tip"
+              />
+              <Button
+                onClick={handleCustomTip}
+                disabled={!customTipAmount || parseInt(customTipAmount) <= 0}
+                data-testid="button-send-custom-tip"
+              >
+                ₸
+              </Button>
+            </div>
+
+            <button 
+              onClick={skipTips}
+              className="text-muted-foreground text-sm hover:underline"
+              data-testid="button-skip-tips"
+            >
+              Пропустить
+            </button>
+          </>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Kaspi открыт. После завершения перевода нажмите кнопку ниже.
+            </p>
+            <Button
+              size="lg"
+              onClick={() => {
+                setShowTipsScreen(false);
+                setShowThankYouScreen(true);
+              }}
+              className="w-full max-w-xs"
+              data-testid="button-completed-payment"
+            >
+              Я перевёл чаевые
+            </Button>
+            <button 
+              onClick={skipTips}
+              className="text-muted-foreground text-sm hover:underline block mx-auto"
+              data-testid="button-skip-after-open"
+            >
+              Не получилось / Пропустить
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (showSuccessScreen) {
     return (
       <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
@@ -158,10 +313,10 @@ export default function MagicReviewPage() {
         </div>
         <h2 className="text-2xl font-bold mb-2">Спасибо за отзыв!</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          Ваш отзыв о барбере {linkData.specialistName} опубликован.
+          Ваш отзыв о барбере {linkData?.specialistName} опубликован.
         </p>
         <button 
-          onClick={() => setLocation(`/specialist/${linkData.specialistId}`)}
+          onClick={() => setLocation(`/specialist/${linkData?.specialistId}`)}
           className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-opacity"
           data-testid="button-view-specialist"
         >
