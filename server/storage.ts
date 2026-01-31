@@ -217,12 +217,39 @@ export class DatabaseStorage implements IStorage {
   async getBookingsWithDetails(): Promise<any[]> {
     const allBookings = await db.select().from(bookings).orderBy(desc(bookings.createdAt));
     const allSpecialists = await db.select().from(specialists);
+    const allMagicLinks = await db.select().from(magicLinks);
+    
+    // Test mode: 1 minute instead of 20 hours
+    const FOLLOWUP_WAIT_MS = process.env.ANTI_FRAUD_TEST_MODE === 'true' 
+      ? 60 * 1000  // 1 minute
+      : 20 * 60 * 60 * 1000; // 20 hours
     
     return allBookings.map(booking => {
       const specialist = allSpecialists.find(s => s.id === booking.specialistId);
+      const bookingMagicLinks = allMagicLinks.filter(ml => ml.bookingId === booking.id);
+      
+      // Find first (non-followup) magic link
+      const firstLink = bookingMagicLinks.find(ml => !ml.isFollowup);
+      // Check if followup already sent
+      const followupSent = bookingMagicLinks.some(ml => ml.isFollowup);
+      
+      // Calculate if followup is available
+      let canSendFollowup = false;
+      let magicLinkSentAt: Date | null = null;
+      
+      if (firstLink && firstLink.createdAt) {
+        magicLinkSentAt = firstLink.createdAt;
+        const timeSinceFirst = Date.now() - new Date(firstLink.createdAt).getTime();
+        canSendFollowup = timeSinceFirst >= FOLLOWUP_WAIT_MS && !followupSent;
+      }
+      
       return {
         ...booking,
         specialistName: specialist?.name || 'Unknown',
+        magicLinkSent: !!firstLink,
+        magicLinkSentAt,
+        followupSent,
+        canSendFollowup,
       };
     });
   }

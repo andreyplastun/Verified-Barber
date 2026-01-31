@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, RefreshCw } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Specialist, User } from "@shared/schema";
@@ -24,6 +24,10 @@ type BookingWithDetails = {
   hasReview: boolean;
   specialistName: string;
   createdAt: string;
+  magicLinkSent: boolean;
+  magicLinkSentAt: string | null;
+  followupSent: boolean;
+  canSendFollowup: boolean;
 };
 
 export default function AdminDashboard() {
@@ -401,29 +405,35 @@ export default function AdminDashboard() {
                           </Button>
                         )}
                         {booking.status === "completed" && !booking.hasReview && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => createMagicLinkMutation.mutate(booking.id)}
-                              disabled={createMagicLinkMutation.isPending}
-                              data-testid={`button-whatsapp-${booking.id}`}
-                            >
-                              <MessageCircle className="h-4 w-4 mr-1" />
-                              WhatsApp
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => createFollowupMutation.mutate(booking.id)}
-                              disabled={createFollowupMutation.isPending}
-                              data-testid={`button-followup-${booking.id}`}
-                              title="Повторное сообщение (доступно через 20ч)"
-                            >
-                              <RefreshCw className="h-4 w-4 mr-1" />
-                              Повтор
-                            </Button>
-                          </>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              if (!booking.magicLinkSent) {
+                                createMagicLinkMutation.mutate(booking.id);
+                              } else if (booking.canSendFollowup) {
+                                createFollowupMutation.mutate(booking.id);
+                              } else {
+                                toast({ 
+                                  title: booking.followupSent 
+                                    ? "Повторное сообщение уже отправлено" 
+                                    : "Подождите 20 часов для повторной отправки",
+                                  variant: "destructive" 
+                                });
+                              }
+                            }}
+                            disabled={createMagicLinkMutation.isPending || createFollowupMutation.isPending || (booking.magicLinkSent && !booking.canSendFollowup)}
+                            data-testid={`button-whatsapp-${booking.id}`}
+                            title={booking.magicLinkSent && !booking.canSendFollowup ? (booking.followupSent ? "Повторное уже отправлено" : "Повторная отправка через 20ч") : undefined}
+                          >
+                            <MessageCircle className="h-4 w-4 mr-1" />
+                            WhatsApp
+                            {booking.canSendFollowup && (
+                              <Badge variant="secondary" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                                2
+                              </Badge>
+                            )}
+                          </Button>
                         )}
                       </div>
                     </div>
@@ -443,8 +453,7 @@ export default function AdminDashboard() {
               Отправить в WhatsApp
               {whatsappDialog.isFollowup && (
                 <Badge variant="secondary" className="ml-2">
-                  <RefreshCw className="h-3 w-3 mr-1" />
-                  Повторное
+                  2
                 </Badge>
               )}
             </DialogTitle>
