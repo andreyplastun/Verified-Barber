@@ -28,6 +28,7 @@ type BookingWithDetails = {
   magicLinkSentAt: string | null;
   followupSent: boolean;
   canSendFollowup: boolean;
+  isExpired: boolean;
 };
 
 export default function AdminDashboard() {
@@ -413,6 +414,11 @@ export default function AdminDashboard() {
                                 createMagicLinkMutation.mutate(booking.id);
                               } else if (booking.canSendFollowup) {
                                 createFollowupMutation.mutate(booking.id);
+                              } else if (booking.isExpired) {
+                                toast({ 
+                                  title: "Время для отзыва истекло (48ч)",
+                                  variant: "destructive" 
+                                });
                               } else {
                                 toast({ 
                                   title: booking.followupSent 
@@ -424,7 +430,13 @@ export default function AdminDashboard() {
                             }}
                             disabled={createMagicLinkMutation.isPending || createFollowupMutation.isPending || (booking.magicLinkSent && !booking.canSendFollowup)}
                             data-testid={`button-whatsapp-${booking.id}`}
-                            title={booking.magicLinkSent && !booking.canSendFollowup ? (booking.followupSent ? "Повторное уже отправлено" : "Повторная отправка через 20ч") : undefined}
+                            title={
+                              booking.isExpired 
+                                ? "Время истекло (48ч)" 
+                                : booking.magicLinkSent && !booking.canSendFollowup 
+                                  ? (booking.followupSent ? "Повторное уже отправлено" : "Повторная отправка через 20ч") 
+                                  : undefined
+                            }
                           >
                             <MessageCircle className="h-4 w-4 mr-1" />
                             WhatsApp

@@ -219,10 +219,14 @@ export class DatabaseStorage implements IStorage {
     const allSpecialists = await db.select().from(specialists);
     const allMagicLinks = await db.select().from(magicLinks);
     
-    // Test mode: 1 minute instead of 20 hours
+    // Test mode: 1 minute instead of 20 hours, 2 minutes instead of 48 hours
     const FOLLOWUP_WAIT_MS = process.env.ANTI_FRAUD_TEST_MODE === 'true' 
       ? 60 * 1000  // 1 minute
       : 20 * 60 * 60 * 1000; // 20 hours
+    
+    const LINK_EXPIRY_MS = process.env.ANTI_FRAUD_TEST_MODE === 'true'
+      ? 2 * 60 * 1000  // 2 minutes
+      : 48 * 60 * 60 * 1000; // 48 hours
     
     return allBookings.map(booking => {
       const specialist = allSpecialists.find(s => s.id === booking.specialistId);
@@ -233,14 +237,20 @@ export class DatabaseStorage implements IStorage {
       // Check if followup already sent
       const followupSent = bookingMagicLinks.some(ml => ml.isFollowup);
       
-      // Calculate if followup is available
+      // Calculate states
       let canSendFollowup = false;
       let magicLinkSentAt: Date | null = null;
+      let isExpired = false;
       
       if (firstLink && firstLink.createdAt) {
         magicLinkSentAt = firstLink.createdAt;
         const timeSinceFirst = Date.now() - new Date(firstLink.createdAt).getTime();
-        canSendFollowup = timeSinceFirst >= FOLLOWUP_WAIT_MS && !followupSent;
+        
+        // Check if 48 hours expired (links no longer valid)
+        isExpired = timeSinceFirst >= LINK_EXPIRY_MS;
+        
+        // Can send followup only if: 20h passed, not expired, followup not sent yet
+        canSendFollowup = timeSinceFirst >= FOLLOWUP_WAIT_MS && !isExpired && !followupSent;
       }
       
       return {
@@ -250,6 +260,7 @@ export class DatabaseStorage implements IStorage {
         magicLinkSentAt,
         followupSent,
         canSendFollowup,
+        isExpired,
       };
     });
   }
