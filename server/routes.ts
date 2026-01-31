@@ -705,6 +705,7 @@ export async function registerRoutes(
         bookingId: link.bookingId,
         specialistId: link.specialistId,
         specialistName: specialist.name,
+        specialistImageUrl: specialist.imageUrl || null,
         customerName: booking.customerName,
         tipsEnabled: specialist.tipsEnabled || false,
         kaspiPhone: specialist.kaspiPhone || null,

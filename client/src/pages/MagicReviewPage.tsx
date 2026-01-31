@@ -14,6 +14,7 @@ interface MagicLinkData {
   bookingId: number;
   specialistId: number;
   specialistName: string;
+  specialistImageUrl?: string | null;
   customerName: string;
   reason?: string;
   tipsEnabled?: boolean;
@@ -334,6 +335,16 @@ export default function MagicReviewPage() {
       </header>
 
       <div className="mb-8 text-center">
+        {linkData.specialistImageUrl && (
+          <div className="flex justify-center mb-4">
+            <img 
+              src={linkData.specialistImageUrl} 
+              alt={linkData.specialistName}
+              className="w-16 h-16 rounded-full object-cover border-2 border-background shadow-md"
+              data-testid="img-specialist-avatar"
+            />
+          </div>
+        )}
         <h2 className="text-lg font-medium">Как прошёл визит к {linkData.specialistName}?</h2>
         <p className="text-sm text-muted-foreground mt-1">
           {linkData.customerName}, поделитесь впечатлениями

@@ -77,6 +77,17 @@ export default function ReviewPage() {
     staleTime: 0
   });
 
+  // Fetch specialist data for avatar
+  const { data: specialist } = useQuery({
+    queryKey: ['/api/specialists', booking?.specialistId],
+    queryFn: async () => {
+      const res = await fetch(`/api/specialists/${booking?.specialistId}`);
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!booking?.specialistId,
+  });
+
   const { toast } = useToast();
   const { mutate: createReview, isPending } = useCreateReview();
 
@@ -300,7 +311,17 @@ export default function ReviewPage() {
         <h1 className="text-xl font-bold">{isEditMode ? "Редактировать отзыв" : "Написать отзыв"}</h1>
       </header>
 
-      <div className="mb-8">
+      <div className="mb-8 text-center">
+        {specialist?.imageUrl && (
+          <div className="flex justify-center mb-4">
+            <img 
+              src={specialist.imageUrl} 
+              alt={specialist.name}
+              className="w-16 h-16 rounded-full object-cover border-2 border-background shadow-md"
+              data-testid="img-specialist-avatar"
+            />
+          </div>
+        )}
         <h2 className="text-lg font-medium">{isEditMode ? "Обновите ваш отзыв" : "Как прошёл визит?"}</h2>
         <p className="text-sm text-muted-foreground">
           Запись #{booking.id} • {new Date(booking.appointmentTime).toLocaleDateString()}
