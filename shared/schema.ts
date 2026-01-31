@@ -96,11 +96,12 @@ export const magicLinks = pgTable("magic_links", {
   userId: uuid("user_id").notNull(), // References users.id
   bookingId: integer("booking_id").notNull(), // References bookings.id
   specialistId: integer("specialist_id").notNull(), // References specialists.id
-  expiresAt: timestamp("expires_at").notNull(), // Valid for 24 hours
+  expiresAt: timestamp("expires_at").notNull(), // Valid for 48 hours
   usedAt: timestamp("used_at"), // Null until used
   createdAt: timestamp("created_at").defaultNow(),
   openedAt: timestamp("opened_at"), // For metrics: when link was first opened
   reviewSubmittedAt: timestamp("review_submitted_at"), // For metrics: when review was submitted
+  isFollowup: boolean("is_followup").default(false).notNull(), // True if this is a follow-up (second) message
 });
 
 // Tips events for analytics and statistics

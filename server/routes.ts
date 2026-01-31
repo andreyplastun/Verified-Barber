@@ -660,6 +660,81 @@ export async function registerRoutes(
     }
   });
 
+  // Create follow-up magic link (after 20 hours, if no review submitted)
+  app.post("/api/admin/bookings/:id/create-followup-magic-link", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      
+      const bookingId = Number(req.params.id);
+      const booking = await storage.getBooking(bookingId);
+      
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      
+      if (!booking.clientId) {
+        return res.status(400).json({ message: "Booking has no associated client" });
+      }
+      
+      // Check if review already exists for this booking
+      const hasReview = await storage.hasReviewForBooking(bookingId);
+      if (hasReview) {
+        return res.status(400).json({ message: "Review already submitted for this booking" });
+      }
+      
+      // Check if first magic link exists and was created at least 20 hours ago
+      const firstLink = await storage.getFirstMagicLinkByBookingId(bookingId);
+      if (!firstLink) {
+        return res.status(400).json({ message: "No initial magic link found. Create the first link first." });
+      }
+      
+      const FOLLOWUP_HOURS = process.env.ANTI_FRAUD_TEST_MODE === 'true' ? 0.017 : 20; // 1 min for test, 20h for prod
+      const hoursSinceFirstLink = (Date.now() - new Date(firstLink.createdAt!).getTime()) / (1000 * 60 * 60);
+      
+      if (hoursSinceFirstLink < FOLLOWUP_HOURS) {
+        const remainingHours = Math.ceil(FOLLOWUP_HOURS - hoursSinceFirstLink);
+        return res.status(400).json({ 
+          message: `Too early for follow-up. Wait ${remainingHours} more hour(s).`,
+          remainingHours 
+        });
+      }
+      
+      // Check if follow-up already exists
+      const existingFollowup = await storage.getMagicLinkByBookingId(bookingId);
+      if (existingFollowup && existingFollowup.isFollowup && !existingFollowup.usedAt && new Date(existingFollowup.expiresAt) > new Date()) {
+        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://rateus.kz' : `${req.protocol}://${req.get('host')}`;
+        const specialist = await storage.getSpecialist(booking.specialistId);
+        const barberName = specialist?.name || 'барберу';
+        return res.json({
+          magicLink: `${baseUrl}/r/${existingFollowup.token}`,
+          whatsappText: generateFollowupWhatsAppText(`${baseUrl}/r/${existingFollowup.token}`, booking.customerName),
+          expiresAt: existingFollowup.expiresAt,
+          isFollowup: true,
+        });
+      }
+      
+      // Get specialist name
+      const specialist = await storage.getSpecialist(booking.specialistId);
+      const barberName = specialist?.name || 'барберу';
+      
+      // Create follow-up magic link
+      const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId, true);
+      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://rateus.kz' : `${req.protocol}://${req.get('host')}`;
+      const fullLink = `${baseUrl}/r/${magicLink.token}`;
+      
+      res.json({
+        magicLink: fullLink,
+        whatsappText: generateFollowupWhatsAppText(fullLink, booking.customerName),
+        expiresAt: magicLink.expiresAt,
+        isFollowup: true,
+      });
+    } catch (err: any) {
+      console.error("Error creating follow-up magic link:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Validate magic link token (for frontend)
   app.get("/api/magic-link/:token", async (req, res) => {
     try {
@@ -835,6 +910,16 @@ export async function registerRoutes(
 ${magicLink}
 
 Ваш отзыв поможет улучшить работу барбера.`;
+  }
+
+  // Helper function to generate follow-up WhatsApp text
+  function generateFollowupWhatsAppText(magicLink: string, customerName: string): string {
+    return `${customerName}, барберу все еще нужно ваше мнение о его услуге.
+
+Оставить короткий отзыв, в том числе анонимно, можно здесь:
+${magicLink}
+
+Это финальное сообщение, больше писать не будем.`;
   }
 
   // =====================

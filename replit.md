@@ -93,9 +93,17 @@ Located in `server/antifraud.ts`. Soft system that marks reviews as "limited" bu
   6. Link marked as used, review created
   7. If tips enabled → show tipping screen
 - **Endpoints**:
-  - `POST /api/admin/bookings/:id/create-magic-link` - Generate link
+  - `POST /api/admin/bookings/:id/create-magic-link` - Generate initial link
+  - `POST /api/admin/bookings/:id/create-followup-magic-link` - Generate follow-up link (after 20h)
   - `GET /api/magic-link/:token` - Validate link
   - `POST /api/r/:token` - Submit review
+- **Follow-up System**:
+  - After 20 hours from initial magic link, admin can send a follow-up message
+  - Only available if no review was submitted yet
+  - Uses different, more direct message text
+  - Marked with "Повторное" badge in admin dashboard
+  - Database field: `is_followup` boolean in magic_links table
+  - Test mode: ANTI_FRAUD_TEST_MODE=true reduces wait time to 1 minute
 - **Files**: `client/src/pages/MagicReviewPage.tsx`, `server/routes.ts`
 
 ### Kaspi Tipping System (P2P)

@@ -54,12 +54,14 @@ export interface IStorage {
   saveOnboardingTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean, skipped: boolean): Promise<void>;
   
   // Magic Links
-  createMagicLink(userId: string, bookingId: number, specialistId: number): Promise<MagicLink>;
+  createMagicLink(userId: string, bookingId: number, specialistId: number, isFollowup?: boolean): Promise<MagicLink>;
   getMagicLinkByToken(token: string): Promise<MagicLink | undefined>;
   markMagicLinkOpened(id: number): Promise<void>;
   markMagicLinkUsed(id: number): Promise<void>;
   markMagicLinkReviewSubmitted(id: number): Promise<void>;
   getMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined>;
+  getFirstMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined>;
+  hasReviewForBooking(bookingId: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -508,7 +510,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Magic Links
-  async createMagicLink(userId: string, bookingId: number, specialistId: number): Promise<MagicLink> {
+  async createMagicLink(userId: string, bookingId: number, specialistId: number, isFollowup: boolean = false): Promise<MagicLink> {
     const token = crypto.randomBytes(12).toString('base64url'); // 16 chars, URL-safe
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
     
@@ -518,9 +520,10 @@ export class DatabaseStorage implements IStorage {
       bookingId,
       specialistId,
       expiresAt,
+      isFollowup,
     }).returning();
     
-    console.log(`[MAGIC_LINK] Created for booking ${bookingId}, user ${userId}, expires ${expiresAt.toISOString()}`);
+    console.log(`[MAGIC_LINK] Created ${isFollowup ? 'FOLLOWUP ' : ''}for booking ${bookingId}, user ${userId}, expires ${expiresAt.toISOString()}`);
     return link;
   }
 
@@ -560,6 +563,26 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(magicLinks.createdAt))
       .limit(1);
     return link;
+  }
+
+  async getFirstMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined> {
+    const [link] = await db.select()
+      .from(magicLinks)
+      .where(and(
+        eq(magicLinks.bookingId, bookingId),
+        eq(magicLinks.isFollowup, false)
+      ))
+      .orderBy(asc(magicLinks.createdAt))
+      .limit(1);
+    return link;
+  }
+
+  async hasReviewForBooking(bookingId: number): Promise<boolean> {
+    const [review] = await db.select()
+      .from(reviews)
+      .where(eq(reviews.bookingId, bookingId))
+      .limit(1);
+    return !!review;
   }
 }
 

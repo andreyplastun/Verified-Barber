@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, RefreshCw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Specialist, User } from "@shared/schema";
 
@@ -29,11 +30,12 @@ export default function AdminDashboard() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [whatsappDialog, setWhatsappDialog] = useState<{ open: boolean; bookingId: number | null; whatsappText: string; magicLink: string }>({
+  const [whatsappDialog, setWhatsappDialog] = useState<{ open: boolean; bookingId: number | null; whatsappText: string; magicLink: string; isFollowup: boolean }>({
     open: false,
     bookingId: null,
     whatsappText: "",
     magicLink: "",
+    isFollowup: false,
   });
   const [copied, setCopied] = useState(false);
   
@@ -132,6 +134,33 @@ export default function AdminDashboard() {
         bookingId,
         whatsappText: data.whatsappText,
         magicLink: data.magicLink,
+        isFollowup: false,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const createFollowupMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      const res = await fetch(`/api/admin/bookings/${bookingId}/create-followup-magic-link`, {
+        method: "POST",
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: (data, bookingId) => {
+      setWhatsappDialog({
+        open: true,
+        bookingId,
+        whatsappText: data.whatsappText,
+        magicLink: data.magicLink,
+        isFollowup: true,
       });
     },
     onError: (err: Error) => {
@@ -372,16 +401,29 @@ export default function AdminDashboard() {
                           </Button>
                         )}
                         {booking.status === "completed" && !booking.hasReview && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => createMagicLinkMutation.mutate(booking.id)}
-                            disabled={createMagicLinkMutation.isPending}
-                            data-testid={`button-whatsapp-${booking.id}`}
-                          >
-                            <MessageCircle className="h-4 w-4 mr-1" />
-                            WhatsApp
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => createMagicLinkMutation.mutate(booking.id)}
+                              disabled={createMagicLinkMutation.isPending}
+                              data-testid={`button-whatsapp-${booking.id}`}
+                            >
+                              <MessageCircle className="h-4 w-4 mr-1" />
+                              WhatsApp
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => createFollowupMutation.mutate(booking.id)}
+                              disabled={createFollowupMutation.isPending}
+                              data-testid={`button-followup-${booking.id}`}
+                              title="Повторное сообщение (доступно через 20ч)"
+                            >
+                              <RefreshCw className="h-4 w-4 mr-1" />
+                              Повтор
+                            </Button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -399,6 +441,12 @@ export default function AdminDashboard() {
             <DialogTitle className="flex items-center gap-2">
               <MessageCircle className="h-5 w-5 text-green-500" />
               Отправить в WhatsApp
+              {whatsappDialog.isFollowup && (
+                <Badge variant="secondary" className="ml-2">
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Повторное
+                </Badge>
+              )}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
