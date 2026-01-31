@@ -408,7 +408,7 @@ export default function ReviewPage() {
             className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             data-testid="button-submit-review"
           >
-            {isSubmitting || isPending ? "Сохранение..." : isEditMode ? "Обновить отзыв" : "Опубликовать"}
+            {isSubmitting || isPending ? "Сохранение..." : isEditMode ? "Обновить отзыв" : "Оставить отзыв"}
           </button>
         </div>
       </form>

@@ -433,7 +433,7 @@ export default function MagicReviewPage() {
             className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             data-testid="button-submit-review"
           >
-            {submitMutation.isPending ? "Отправка..." : "Опубликовать"}
+            {submitMutation.isPending ? "Отправка..." : "Оставить отзыв"}
           </button>
         </div>
       </form>
