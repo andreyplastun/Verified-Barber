@@ -914,9 +914,9 @@ ${magicLink}
 
   // Helper function to generate follow-up WhatsApp text
   function generateFollowupWhatsAppText(magicLink: string, customerName: string): string {
-    return `${customerName}, барберу все еще нужно ваше мнение о его услуге.
+    return `${customerName}, небольшое напоминание 🙂
 
-Оставить короткий отзыв, в том числе анонимно, можно здесь:
+Если будет удобно, вы можете оставить любой отзыв (в том числе анонимно) по ссылке:
 ${magicLink}
 
 Это финальное сообщение, больше писать не будем.`;
