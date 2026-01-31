@@ -636,7 +636,7 @@ export async function registerRoutes(
       const existingLink = await storage.getMagicLinkByBookingId(bookingId);
       if (existingLink && !existingLink.usedAt && new Date(existingLink.expiresAt) > new Date()) {
         // Return existing valid link
-        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://rateus.kz' : `${req.protocol}://${req.get('host')}`;
+        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
         return res.json({
           magicLink: `${baseUrl}/r/${existingLink.token}`,
           whatsappText: generateWhatsAppText(`${baseUrl}/r/${existingLink.token}`, booking.customerName, barberName),
@@ -646,7 +646,7 @@ export async function registerRoutes(
       
       // Create new magic link
       const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
-      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://rateus.kz' : `${req.protocol}://${req.get('host')}`;
+      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
       const fullLink = `${baseUrl}/r/${magicLink.token}`;
       
       res.json({
@@ -703,7 +703,7 @@ export async function registerRoutes(
       // Check if follow-up already exists
       const existingFollowup = await storage.getMagicLinkByBookingId(bookingId);
       if (existingFollowup && existingFollowup.isFollowup && !existingFollowup.usedAt && new Date(existingFollowup.expiresAt) > new Date()) {
-        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://rateus.kz' : `${req.protocol}://${req.get('host')}`;
+        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
         const specialist = await storage.getSpecialist(booking.specialistId);
         const barberName = specialist?.name || 'барберу';
         return res.json({
@@ -720,7 +720,7 @@ export async function registerRoutes(
       
       // Create follow-up magic link
       const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId, true);
-      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://rateus.kz' : `${req.protocol}://${req.get('host')}`;
+      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
       const fullLink = `${baseUrl}/r/${magicLink.token}`;
       
       res.json({
