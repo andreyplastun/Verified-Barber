@@ -708,7 +708,7 @@ export async function registerRoutes(
         const barberName = specialist?.name || 'барберу';
         return res.json({
           magicLink: `${baseUrl}/r/${existingFollowup.token}`,
-          whatsappText: generateFollowupWhatsAppText(`${baseUrl}/r/${existingFollowup.token}`, booking.customerName),
+          whatsappText: generateFollowupWhatsAppText(`${baseUrl}/r/${existingFollowup.token}`, booking.customerName, barberName),
           expiresAt: existingFollowup.expiresAt,
           isFollowup: true,
         });
@@ -725,7 +725,7 @@ export async function registerRoutes(
       
       res.json({
         magicLink: fullLink,
-        whatsappText: generateFollowupWhatsAppText(fullLink, booking.customerName),
+        whatsappText: generateFollowupWhatsAppText(fullLink, booking.customerName, barberName),
         expiresAt: magicLink.expiresAt,
         isFollowup: true,
       });
@@ -958,13 +958,12 @@ ${magicLink}
   }
 
   // Helper function to generate follow-up WhatsApp text
-  function generateFollowupWhatsAppText(magicLink: string, customerName: string): string {
-    return `${customerName}, небольшое напоминание 🙂
+  function generateFollowupWhatsAppText(magicLink: string, customerName: string, barberName: string): string {
+    const barberDative = toDativeCase(barberName);
+    return `${customerName}, оценка визита к ${barberDative} ещё не завершена.
 
-Если будет удобно, вы можете оставить любой отзыв (в том числе анонимно) по ссылке:
-${magicLink}
-
-Это финальное сообщение, больше писать не будем.`;
+Завершить или пропустить:
+${magicLink}`;
   }
 
   // =====================
