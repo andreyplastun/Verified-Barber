@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Star, ChevronLeft, AlertCircle, Info, CheckCircle, Banknote, Heart } from "lucide-react";
@@ -83,6 +83,48 @@ export default function MagicReviewPage() {
   const [showTipsScreen, setShowTipsScreen] = useState(false);
   const [showThankYouScreen, setShowThankYouScreen] = useState(false);
   const [customTipAmount, setCustomTipAmount] = useState('');
+  
+  const openedTrackedRef = useRef(false);
+  const screenLoadedTrackedRef = useRef(false);
+
+  const trackEvent = async (eventType: string, extraData?: Record<string, any>) => {
+    try {
+      await fetch('/api/analytics/event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventType,
+          bookingId: linkData?.bookingId,
+          specialistId: linkData?.specialistId,
+          userAgent: navigator.userAgent,
+          source: 'whatsapp',
+          ...extraData,
+        }),
+      });
+    } catch (e) {
+      // Ignore analytics errors - don't disrupt user experience
+    }
+  };
+
+  // Track magic_link_opened when page loads and we have valid link data
+  useEffect(() => {
+    if (linkData?.valid && !openedTrackedRef.current) {
+      openedTrackedRef.current = true;
+      trackEvent('magic_link_opened');
+    }
+  }, [linkData]);
+
+  // Track review_screen_loaded when form is fully rendered
+  useEffect(() => {
+    if (linkData?.valid && !isLoading && !error && !screenLoadedTrackedRef.current) {
+      screenLoadedTrackedRef.current = true;
+      // Small delay to ensure DOM is fully rendered
+      const timer = setTimeout(() => {
+        trackEvent('review_screen_loaded');
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [linkData, isLoading, error]);
 
   const triggersByRating: Record<number, string[]> = {
     5: ["Понравилась стрижка", "Аккуратно", "Вежливый", "Профессионал", "Хочу прийти ещё"],
