@@ -2,9 +2,10 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { storage } from "./storage";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-01-31-v23-48h-expiry";
+const BUILD_VERSION = "2026-02-01-v24-instant-finalize";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();
@@ -65,6 +66,15 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+  
+  // Finalize any pending reviews at startup (fixes reviews that missed lazy finalization)
+  try {
+    console.log("[STARTUP] Running pending reviews finalization...");
+    await storage.checkAndFinalizeReviews();
+    console.log("[STARTUP] Pending reviews finalization complete");
+  } catch (err) {
+    console.error("[STARTUP] Error finalizing pending reviews:", err);
+  }
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

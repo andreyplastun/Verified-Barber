@@ -853,6 +853,10 @@ export async function registerRoutes(
         source: "magic_link", // Track submission method (no special privileges)
       });
       
+      // Magic link reviews are finalized immediately (no edit window)
+      await storage.finalizeReview(review.id);
+      console.log(`[MAGIC LINK] Immediately finalized review ${review.id} for specialist ${link.specialistId}`);
+      
       // Mark booking as reviewed
       await storage.markBookingReviewed(link.bookingId);
       
