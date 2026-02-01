@@ -41,6 +41,7 @@ function toDativeCase(name: string): string {
 
 interface MagicLinkData {
   valid: boolean;
+  magicLinkId: number;
   userId: string;
   bookingId: number;
   specialistId: number;
@@ -50,6 +51,7 @@ interface MagicLinkData {
   reason?: string;
   tipsEnabled?: boolean;
   kaspiPhone?: string | null;
+  sentAt?: string;
 }
 
 export default function MagicReviewPage() {
@@ -94,8 +96,10 @@ export default function MagicReviewPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventType,
+          magicLinkId: linkData?.magicLinkId,
           bookingId: linkData?.bookingId,
           specialistId: linkData?.specialistId,
+          sentAt: linkData?.sentAt,
           userAgent: navigator.userAgent,
           source: 'whatsapp',
           ...extraData,

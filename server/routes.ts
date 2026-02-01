@@ -776,6 +776,7 @@ export async function registerRoutes(
       
       res.json({
         valid: true,
+        magicLinkId: link.id,
         userId: link.userId,
         bookingId: link.bookingId,
         specialistId: link.specialistId,
@@ -784,6 +785,7 @@ export async function registerRoutes(
         customerName: booking.customerName,
         tipsEnabled: specialist.tipsEnabled || false,
         kaspiPhone: specialist.kaspiPhone || null,
+        sentAt: link.createdAt,
       });
     } catch (err: any) {
       console.error("Error validating magic link:", err);
@@ -796,8 +798,10 @@ export async function registerRoutes(
     try {
       const { eventType, magicLinkId, bookingId, specialistId, sentAt, userAgent, source } = req.body;
       
-      if (!eventType) {
-        return res.status(400).json({ message: "eventType is required" });
+      // Validate eventType is one of allowed values
+      const allowedEventTypes = ['magic_link_opened', 'review_screen_loaded'];
+      if (!eventType || !allowedEventTypes.includes(eventType)) {
+        return res.status(400).json({ message: "Invalid eventType" });
       }
       
       // Determine device type from user agent
