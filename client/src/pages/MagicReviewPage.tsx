@@ -8,6 +8,37 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+function toDativeCase(name: string): string {
+  const n = name.trim();
+  if (!n) return n;
+  
+  const lastChar = n.slice(-1).toLowerCase();
+  const lastTwoChars = n.slice(-2).toLowerCase();
+  
+  if (lastTwoChars === 'ий' || lastTwoChars === 'ей') {
+    return n.slice(0, -2) + 'ию';
+  }
+  if (lastTwoChars === 'ия' || lastTwoChars === 'ья') {
+    return n.slice(0, -1) + 'е';
+  }
+  if (lastChar === 'а') {
+    return n.slice(0, -1) + 'е';
+  }
+  if (lastChar === 'я') {
+    return n.slice(0, -1) + 'е';
+  }
+  if (lastChar === 'ь') {
+    return n.slice(0, -1) + 'ю';
+  }
+  if (lastChar === 'й') {
+    return n.slice(0, -1) + 'ю';
+  }
+  if (/[бвгджзклмнпрстфхцчшщ]$/i.test(n)) {
+    return n + 'у';
+  }
+  return n;
+}
+
 interface MagicLinkData {
   valid: boolean;
   userId: string;
@@ -345,7 +376,7 @@ export default function MagicReviewPage() {
             />
           </div>
         )}
-        <h2 className="text-lg font-medium">Как прошёл визит к {linkData.specialistName}?</h2>
+        <h2 className="text-lg font-medium">Как прошёл визит к {toDativeCase(linkData.specialistName)}?</h2>
         <p className="text-sm text-muted-foreground mt-1">
           {linkData.customerName}, поделитесь впечатлениями
         </p>
