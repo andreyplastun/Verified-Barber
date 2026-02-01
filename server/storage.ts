@@ -1,4 +1,4 @@
-import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, asc } from "drizzle-orm";
@@ -62,6 +62,18 @@ export interface IStorage {
   getMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined>;
   getFirstMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined>;
   hasReviewForBooking(bookingId: number): Promise<boolean>;
+  
+  // Analytics
+  trackAnalyticsEvent(event: {
+    eventType: string;
+    magicLinkId?: number;
+    bookingId?: number;
+    specialistId?: number;
+    sentAt?: Date;
+    userAgent?: string;
+    deviceType?: string;
+    source?: string;
+  }): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -621,6 +633,30 @@ export class DatabaseStorage implements IStorage {
       .where(eq(reviews.bookingId, bookingId))
       .limit(1);
     return !!review;
+  }
+
+  // Analytics
+  async trackAnalyticsEvent(event: {
+    eventType: string;
+    magicLinkId?: number;
+    bookingId?: number;
+    specialistId?: number;
+    sentAt?: Date;
+    userAgent?: string;
+    deviceType?: string;
+    source?: string;
+  }): Promise<void> {
+    await db.insert(analyticsEvents).values({
+      eventType: event.eventType,
+      magicLinkId: event.magicLinkId,
+      bookingId: event.bookingId,
+      specialistId: event.specialistId,
+      sentAt: event.sentAt,
+      userAgent: event.userAgent,
+      deviceType: event.deviceType,
+      source: event.source || 'whatsapp',
+    });
+    console.log(`[ANALYTICS] Event tracked: ${event.eventType} for specialist ${event.specialistId}, booking ${event.bookingId}`);
   }
 }
 
