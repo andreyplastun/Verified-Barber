@@ -104,6 +104,20 @@ export const magicLinks = pgTable("magic_links", {
   isFollowup: boolean("is_followup").default(false).notNull(), // True if this is a follow-up (second) message
 });
 
+// Analytics events for magic links tracking
+export const analyticsEvents = pgTable("analytics_events", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  eventType: text("event_type").notNull(), // 'magic_link_opened', 'review_screen_loaded'
+  magicLinkId: integer("magic_link_id"), // References magic_links.id
+  bookingId: integer("booking_id"), // References bookings.id
+  specialistId: integer("specialist_id"), // References specialists.id
+  sentAt: timestamp("sent_at"), // When magic link was sent
+  userAgent: text("user_agent"), // Full user agent string
+  deviceType: text("device_type"), // 'mobile' or 'desktop'
+  source: text("source").default("whatsapp"), // Source of the link
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Tips events for analytics and statistics
 export const tipsEvents = pgTable("tips_events", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -190,6 +204,21 @@ export const tipsEventsRelations = relations(tipsEvents, ({ one }) => ({
   }),
 }));
 
+export const analyticsEventsRelations = relations(analyticsEvents, ({ one }) => ({
+  magicLink: one(magicLinks, {
+    fields: [analyticsEvents.magicLinkId],
+    references: [magicLinks.id],
+  }),
+  booking: one(bookings, {
+    fields: [analyticsEvents.bookingId],
+    references: [bookings.id],
+  }),
+  specialist: one(specialists, {
+    fields: [analyticsEvents.specialistId],
+    references: [specialists.id],
+  }),
+}));
+
 // === SCHEMAS ===
 
 export const insertSpecialistSchema = createInsertSchema(specialists).omit({ 
@@ -235,6 +264,7 @@ export type Review = typeof reviews.$inferSelect;
 export type SpecialistPhoto = typeof specialistPhotos.$inferSelect;
 export type MagicLink = typeof magicLinks.$inferSelect;
 export type TipsEvent = typeof tipsEvents.$inferSelect;
+export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
 
 export type CreateBookingRequest = z.infer<typeof insertBookingSchema>;
 export type CreateReviewRequest = z.infer<typeof insertReviewSchema>;
