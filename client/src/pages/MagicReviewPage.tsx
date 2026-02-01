@@ -400,7 +400,7 @@ export default function MagicReviewPage() {
         <div className="flex items-center justify-center gap-3 py-2">
           <div className="flex items-center gap-2">
             <label htmlFor="hidden-name-toggle" className="text-sm font-medium cursor-pointer">
-              Скрыть моё имя
+              Показывать отзыв анонимно
             </label>
             <Popover>
               <PopoverTrigger asChild>
@@ -413,7 +413,7 @@ export default function MagicReviewPage() {
                 </button>
               </PopoverTrigger>
               <PopoverContent side="top" className="max-w-xs text-sm p-3">
-                <p>Если включено — отзыв будет анонимным. Мастер и другие клиенты не увидят ваше имя.</p>
+                <p>Мастер увидит отзыв, но без вашего имени</p>
               </PopoverContent>
             </Popover>
           </div>
