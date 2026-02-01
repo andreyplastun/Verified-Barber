@@ -791,6 +791,43 @@ export async function registerRoutes(
     }
   });
 
+  // Track analytics event (no auth required - fire and forget from client)
+  app.post("/api/analytics/event", async (req, res) => {
+    try {
+      const { eventType, magicLinkId, bookingId, specialistId, sentAt, userAgent, source } = req.body;
+      
+      if (!eventType) {
+        return res.status(400).json({ message: "eventType is required" });
+      }
+      
+      // Determine device type from user agent
+      let deviceType = 'desktop';
+      if (userAgent) {
+        const ua = userAgent.toLowerCase();
+        if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone') || ua.includes('ipad')) {
+          deviceType = 'mobile';
+        }
+      }
+      
+      await storage.trackAnalyticsEvent({
+        eventType,
+        magicLinkId,
+        bookingId,
+        specialistId,
+        sentAt: sentAt ? new Date(sentAt) : undefined,
+        userAgent,
+        deviceType,
+        source: source || 'whatsapp',
+      });
+      
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error tracking analytics event:", err);
+      // Don't fail the request - analytics shouldn't break the user experience
+      res.json({ success: false });
+    }
+  });
+
   // Submit review via magic link (no auth required)
   app.post("/api/r/:token", async (req, res) => {
     try {
