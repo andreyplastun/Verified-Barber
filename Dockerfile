@@ -21,4 +21,4 @@ ENV NODE_ENV=production
 
 EXPOSE 5000
 
-CMD ["node", "dist/index.cjs"]
+CMD ["sh", "-c", "npm run db:push && node dist/index.cjs"]
