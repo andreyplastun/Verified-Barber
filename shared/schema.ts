@@ -1,8 +1,29 @@
-import { pgTable, text, serial, integer, boolean, timestamp, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, uuid, pgEnum } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
 import { sql } from "drizzle-orm";
+
+// === ENUMS ===
+
+export const specialistCategoryEnum = pgEnum("specialist_category", [
+  "barber",
+  "manicure", 
+  "cosmetology",
+  "doctor",
+  "trainer",
+  "auto_service"
+]);
+
+// Category labels for UI display (Russian)
+export const categoryLabels: Record<string, string> = {
+  barber: "Барбер",
+  manicure: "Маникюр",
+  cosmetology: "Косметология",
+  doctor: "Врач",
+  trainer: "Тренер",
+  auto_service: "Автосервис"
+};
 
 // === TABLE DEFINITIONS ===
 
@@ -31,6 +52,13 @@ export const specialists = pgTable("specialists", {
   validReviewCount: integer("valid_review_count").default(0).notNull(),
   // If false, specialist is hidden from clients
   isActive: boolean("is_active").default(true).notNull(),
+  // Category & Subcategory
+  category: specialistCategoryEnum("category").default("barber").notNull(),
+  subcategory: text("subcategory"), // Optional, e.g. "dermatology", "fitness"
+  // Location fields
+  city: text("city").default("Алматы").notNull(),
+  district: text("district"), // Optional, e.g. "Бостандыкский район"
+  locationNote: text("location_note"), // Private note, not public address
   // Kaspi tipping fields
   kaspiPhone: text("kaspi_phone"), // Phone number for Kaspi tips (nullable)
   tipsEnabled: boolean("tips_enabled").default(false).notNull(), // Whether tips are enabled
@@ -225,8 +253,11 @@ export const insertSpecialistSchema = createInsertSchema(specialists).omit({
   id: true, 
   reviewCount: true, 
   averageRating: true,
-  validReviewCount: true
+  validReviewCount: true,
+  trustedRating: true
 });
+
+export type CreateSpecialistRequest = z.infer<typeof insertSpecialistSchema>;
 
 export const insertBookingSchema = createInsertSchema(bookings).omit({ 
   id: true, 

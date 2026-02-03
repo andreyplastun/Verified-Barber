@@ -186,7 +186,7 @@ export async function registerRoutes(
     }
   });
 
-  // Specialists
+  // Specialists with filtering and sorting
   app.get(api.specialists.list.path, async (req, res) => {
     // Lazy finalization: finalize any expired reviews on-demand (autoscale-friendly)
     try {
@@ -195,8 +195,61 @@ export async function registerRoutes(
       console.error("Error finalizing reviews:", err);
     }
     
-    const specialists = await storage.getSpecialists();
+    // Parse query parameters for filtering
+    const { category, city, district, minRating, ratingStatus } = req.query;
+    
+    let specialists = await storage.getSpecialists();
+    
+    // Apply filters
+    if (category && typeof category === 'string') {
+      specialists = specialists.filter(s => s.category === category);
+    }
+    if (city && typeof city === 'string') {
+      specialists = specialists.filter(s => s.city === city);
+    }
+    if (district && typeof district === 'string') {
+      specialists = specialists.filter(s => s.district === district);
+    }
+    if (minRating && typeof minRating === 'string') {
+      const minRatingValue = parseFloat(minRating) * 10; // Convert 4.5 -> 45
+      specialists = specialists.filter(s => s.trustedRating >= minRatingValue);
+    }
+    if (ratingStatus && typeof ratingStatus === 'string') {
+      if (ratingStatus === 'formed') {
+        specialists = specialists.filter(s => s.validReviewCount >= 10);
+      } else if (ratingStatus === 'forming') {
+        specialists = specialists.filter(s => s.validReviewCount < 10);
+      }
+    }
+    
+    // Default sorting: formed rating first, then by rating (desc), then by review count (desc)
+    specialists.sort((a, b) => {
+      // 1. Formed rating first (validReviewCount >= 10)
+      const aFormed = a.validReviewCount >= 10 ? 1 : 0;
+      const bFormed = b.validReviewCount >= 10 ? 1 : 0;
+      if (bFormed !== aFormed) return bFormed - aFormed;
+      
+      // 2. By trusted rating (desc)
+      if (b.trustedRating !== a.trustedRating) return b.trustedRating - a.trustedRating;
+      
+      // 3. By review count (desc)
+      return b.reviewCount - a.reviewCount;
+    });
+    
     res.json(specialists);
+  });
+
+  // Get filter options (unique cities and districts)
+  app.get("/api/filter-options", async (_req, res) => {
+    try {
+      const allSpecialists = await storage.getSpecialists();
+      const cities = Array.from(new Set(allSpecialists.map(s => s.city).filter(Boolean)));
+      const districts = Array.from(new Set(allSpecialists.map(s => s.district).filter((d): d is string => d !== null)));
+      const categories = Array.from(new Set(allSpecialists.map(s => s.category).filter(Boolean)));
+      res.json({ cities, districts, categories });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   app.get(api.specialists.get.path, async (req, res) => {
@@ -1221,37 +1274,18 @@ ${magicLink}`;
         console.error("[STARTUP] Failed to sync specialist mappings:", err);
       });
       
-      // Seed Data (development only)
+      // Seed Data (development only) - only if no specialists exist
       const existing = await storage.getSpecialists();
       if (existing.length === 0) {
         console.log("Seeding specialists...");
         await storage.createSpecialist({
-          name: "James 'The Blade' Wilson",
-          specialty: "Master Barber",
-          bio: "Specializing in classic cuts and hot towel shaves with over 15 years of experience.",
+          name: "Владимир",
+          specialty: "Барбер",
+          bio: "Мастер классических стрижек и укладок с опытом более 10 лет.",
           imageUrl: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
           rating: "0",
-        });
-        await storage.createSpecialist({
-          name: "Sarah Jenkins",
-          specialty: "Stylist & Colorist",
-          bio: "Creative stylist known for modern fades and beard sculpting.",
-          imageUrl: "https://images.unsplash.com/photo-1622286342621-4bd786c2447c?w=800&q=80",
-          rating: "0",
-        });
-        await storage.createSpecialist({
-          name: "Marcus Thorne",
-          specialty: "Beard Specialist",
-          bio: "The go-to expert for beard grooming and maintenance.",
-          imageUrl: "https://images.unsplash.com/photo-1621605815971-fbc98d665033?w=800&q=80",
-          rating: "0",
-        });
-        await storage.createSpecialist({
-          name: "Elena Rodriguez",
-          specialty: "Hair Artist",
-          bio: "Fusion of traditional techniques with modern styling trends.",
-          imageUrl: "https://images.unsplash.com/photo-1605497788044-5a32c7078486?w=800&q=80",
-          rating: "0",
+          isActive: true,
+          tipsEnabled: false,
         });
       }
     }

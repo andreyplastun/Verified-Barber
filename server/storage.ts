@@ -1,4 +1,4 @@
-import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type CreateBookingRequest, type CreateReviewRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, asc } from "drizzle-orm";
@@ -22,7 +22,7 @@ export interface IStorage {
   getSpecialists(): Promise<Specialist[]>;
   getSpecialist(id: number): Promise<Specialist | undefined>;
   getFirstSpecialist(): Promise<Specialist | undefined>;
-  createSpecialist(specialist: Omit<Specialist, "id" | "reviewCount" | "averageRating" | "trustedRating" | "validReviewCount">): Promise<Specialist>;
+  createSpecialist(specialist: Partial<CreateSpecialistRequest> & { name: string; specialty: string; bio: string; imageUrl: string }): Promise<Specialist>;
   updateSpecialistRating(id: number): Promise<void>;
   updateSpecialistRatingIncludingPending(id: number): Promise<void>;
 
@@ -291,8 +291,8 @@ export class DatabaseStorage implements IStorage {
     return specialist;
   }
 
-  async createSpecialist(insertSpecialist: Omit<Specialist, "id" | "reviewCount" | "averageRating" | "trustedRating" | "validReviewCount">): Promise<Specialist> {
-    const [specialist] = await db.insert(specialists).values(insertSpecialist).returning();
+  async createSpecialist(insertSpecialist: Partial<CreateSpecialistRequest> & { name: string; specialty: string; bio: string; imageUrl: string }): Promise<Specialist> {
+    const [specialist] = await db.insert(specialists).values(insertSpecialist as any).returning();
     return specialist;
   }
 

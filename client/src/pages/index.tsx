@@ -5,14 +5,32 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { useQuery } from "@tanstack/react-query";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 type SortOption = 'default' | 'rating' | 'visits';
 type RatingFilter = 'all' | 'formed' | 'forming';
+
+// Category labels in Russian
+const categoryLabels: Record<string, string> = {
+  barber: "Барбер",
+  manicure: "Маникюр",
+  cosmetology: "Косметология",
+  doctor: "Врач",
+  trainer: "Тренер",
+  auto_service: "Автосервис"
+};
 
 export default function SpecialistList() {
   const { data: specialists, isLoading } = useSpecialists();
@@ -22,6 +40,14 @@ export default function SpecialistList() {
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('default');
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [cityFilter, setCityFilter] = useState<string>('all');
+  const [districtFilter, setDistrictFilter] = useState<string>('all');
+  
+  // Fetch filter options
+  const { data: filterOptions } = useQuery<{ cities: string[]; districts: string[]; categories: string[] }>({
+    queryKey: ['/api/filter-options'],
+  });
 
   useEffect(() => {
     if (!loading && role === 'specialist') {
@@ -34,6 +60,21 @@ export default function SpecialistList() {
     
     let result = [...specialists];
     
+    // Apply category filter
+    if (categoryFilter !== 'all') {
+      result = result.filter(s => (s as any).category === categoryFilter);
+    }
+    
+    // Apply city filter
+    if (cityFilter !== 'all') {
+      result = result.filter(s => (s as any).city === cityFilter);
+    }
+    
+    // Apply district filter
+    if (districtFilter !== 'all') {
+      result = result.filter(s => (s as any).district === districtFilter);
+    }
+    
     // Apply rating filter (using validReviewCount for "Сформированный рейтинг" status)
     if (ratingFilter === 'formed') {
       result = result.filter(s => ((s as any).validReviewCount || 0) >= 10);
@@ -41,23 +82,31 @@ export default function SpecialistList() {
       result = result.filter(s => ((s as any).validReviewCount || 0) < 10);
     }
     
-    // Apply sorting
+    // Apply sorting - matches backend logic exactly
     if (sortBy === 'default') {
-      // Default: formed rating first, then by rating
+      // Default: formed rating first, then by trustedRating, then by reviewCount
       result.sort((a, b) => {
+        // 1. Formed rating first (validReviewCount >= 10)
         const aFormed = ((a as any).validReviewCount || 0) >= 10 ? 1 : 0;
         const bFormed = ((b as any).validReviewCount || 0) >= 10 ? 1 : 0;
         if (bFormed !== aFormed) return bFormed - aFormed;
-        return (b.averageRating || 0) - (a.averageRating || 0);
+        
+        // 2. By trustedRating (desc)
+        const aTrusted = (a as any).trustedRating || 0;
+        const bTrusted = (b as any).trustedRating || 0;
+        if (bTrusted !== aTrusted) return bTrusted - aTrusted;
+        
+        // 3. By reviewCount (desc)
+        return (b.reviewCount || 0) - (a.reviewCount || 0);
       });
     } else if (sortBy === 'rating') {
-      result.sort((a, b) => (b.averageRating || 0) - (a.averageRating || 0));
+      result.sort((a, b) => ((b as any).trustedRating || 0) - ((a as any).trustedRating || 0));
     } else if (sortBy === 'visits') {
       result.sort((a, b) => (b.reviewCount || 0) - (a.reviewCount || 0));
     }
     
     return result;
-  }, [specialists, sortBy, ratingFilter]);
+  }, [specialists, sortBy, ratingFilter, categoryFilter, cityFilter, districtFilter]);
 
   if (loading) {
     return <div className="p-5 text-[#6B7280]">Загрузка...</div>;
@@ -80,7 +129,7 @@ export default function SpecialistList() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-display font-bold text-[#1F2933]">
-              Барберы
+              {categoryFilter !== 'all' ? categoryLabels[categoryFilter] || 'Специалисты' : 'Специалисты'}
             </h1>
             <p className="mt-1 text-[#6B7280] text-sm">
               Запишись к проверенным мастерам
@@ -101,10 +150,62 @@ export default function SpecialistList() {
         
         {/* Filters panel */}
         {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+          <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+            {/* Category filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#6B7280] w-20">Категория:</span>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-category">
+                  <SelectValue placeholder="Все категории" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все категории</SelectItem>
+                  {(filterOptions?.categories || []).map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {categoryLabels[cat] || cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* City filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#6B7280] w-20">Город:</span>
+              <Select value={cityFilter} onValueChange={(v) => { setCityFilter(v); setDistrictFilter('all'); }}>
+                <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-city">
+                  <SelectValue placeholder="Все города" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все города</SelectItem>
+                  {(filterOptions?.cities || []).map((city) => (
+                    <SelectItem key={city} value={city}>{city}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* District filter */}
+            {filterOptions?.districts && filterOptions.districts.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#6B7280] w-20">Район:</span>
+                <Select value={districtFilter} onValueChange={setDistrictFilter}>
+                  <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-district">
+                    <SelectValue placeholder="Все районы" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Все районы</SelectItem>
+                    {(filterOptions?.districts || []).map((district) => (
+                      <SelectItem key={district} value={district}>{district}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            
             {/* Rating filter */}
             <div className="flex flex-wrap gap-2">
-              <span className="text-xs text-[#6B7280] mr-2 self-center">Рейтинг:</span>
+              <span className="text-xs text-[#6B7280] mr-2 self-center">Статус:</span>
               {[
                 { value: 'all', label: 'Все' },
                 { value: 'formed', label: 'Сформированный' },
@@ -173,17 +274,22 @@ export default function SpecialistList() {
                     />
                   </div>
 
-                  {/* Basic Info */}
+                  {/* Block 1 - Identification */}
                   <div className="flex-1 min-w-0">
                     <h3 className="text-base font-semibold text-[#1F2933] truncate">
                       {specialist.name}
                     </h3>
                     <p className="text-sm text-[#6B7280]">
-                      {specialist.specialty}
+                      {categoryLabels[(specialist as any).category] || specialist.specialty}
+                      {(specialist as any).subcategory && ` · ${(specialist as any).subcategory}`}
                     </p>
+                    {/* Block 3 - Location */}
                     <div className="flex items-center text-xs text-[#9CA3AF] mt-1">
                       <MapPin size={11} className="mr-1" />
-                      <span>Алматы</span>
+                      <span>
+                        {(specialist as any).city || 'Алматы'}
+                        {(specialist as any).district && ` · ${(specialist as any).district}`}
+                      </span>
                     </div>
                   </div>
 
@@ -257,13 +363,16 @@ export default function SpecialistList() {
           <div className="text-center py-16 px-4">
             <p className="text-[#6B7280]">
               {ratingFilter === 'formed' 
-                ? 'В этом районе пока нет барберов со сформированным рейтингом'
-                : ratingFilter === 'forming'
-                ? 'По выбранным параметрам барберы не найдены'
+                ? 'В этом районе пока нет специалистов со сформированным рейтингом'
                 : specialists && specialists.length === 0
-                ? 'В этом районе пока нет барберов'
-                : 'По выбранным параметрам барберы не найдены'}
+                ? 'Специалисты не найдены'
+                : 'По выбранным параметрам специалисты не найдены'}
             </p>
+            {ratingFilter === 'formed' && specialists && specialists.length > 0 && (
+              <p className="text-sm text-[#9CA3AF] mt-2">
+                Показаны специалисты, у которых рейтинг формируется
+              </p>
+            )}
           </div>
         )}
       </main>

@@ -58,6 +58,19 @@ Language: Russian (Русский) - all UI text is in Russian.
   - `GET /api/specialists/:id/photos` - Get specialist's photos
   - `DELETE /api/specialist-photos/:id` - Delete photo
 
+### Specialist Categories & Location (Added 2026-02-03)
+- **Categories**: barber, manicure, cosmetology, doctor, trainer, auto_service
+- **Category Labels (Russian)**: Барбер, Маникюр, Косметология, Врач, Тренер, Автосервис
+- **Subcategory**: Optional text field (e.g., "dermatology", "fitness", "injections")
+- **Location Fields**:
+  - `city` (required, default: "Алматы")
+  - `district` (optional, e.g., "Бостандыкский район")
+  - `locationNote` (private, not shown to clients)
+- **No GPS/Maps**: Location is for filtering/context only, not navigation
+- **Filtering**: `/api/filter-options` returns unique cities, districts, categories
+- **Query Params**: `?category=barber&city=Алматы&district=...&minRating=4&ratingStatus=formed`
+- **Default Sort**: Formed rating first → trustedRating (desc) → reviewCount (desc)
+
 ### Dual Rating System
 - **baseRating (averageRating)**: Average of ALL reviews - never falls to 0 if there are reviews
 - **trustedRating**: Average of only VALID reviews (where isRatingLimited = false)
