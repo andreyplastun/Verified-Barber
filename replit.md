@@ -79,6 +79,25 @@ Language: Russian (Русский) - all UI text is in Russian.
   - "Формируется" when validReviewCount < 10
   - "Сформированный рейтинг" when validReviewCount >= 10
 
+### Specialist Self-Signup System
+- **Purpose**: Allow specialists to register themselves without admin intervention
+- **Route**: `/specialist-signup`
+- **Status Flow**: 
+  - New signups created with `status='pending'`, `isActive=false`
+  - Not visible in public listings until activated
+- **Auto-Activation**: 
+  - After receiving first finalized review, specialist is automatically activated
+  - Threshold configurable via `AUTO_ACTIVATE_REVIEW_THRESHOLD` (default: 1)
+  - Only finalized reviews count toward activation
+- **Manual Activation**: Admin can activate/deactivate via AdminDashboard → Specialists tab
+- **Phone Uniqueness**: Phone numbers must be unique (enforced on signup)
+- **Files**: `client/src/pages/SpecialistSignup.tsx`, `server/routes.ts`
+- **Endpoints**:
+  - `POST /api/specialist-signup` - Create pending specialist
+  - `GET /api/admin/specialists` - Get all specialists (admin only)
+  - `PATCH /api/admin/specialists/:id` - Update specialist (admin only)
+  - `POST /api/admin/specialists` - Create specialist manually (admin only)
+
 ### Anti-Fraud System
 Located in `server/antifraud.ts`. Soft system that marks reviews as "limited" but still publishes them.
 

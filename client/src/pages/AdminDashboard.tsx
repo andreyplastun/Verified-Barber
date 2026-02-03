@@ -9,10 +9,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Specialist, User } from "@shared/schema";
+import { categoryLabels } from "@shared/schema";
 
 type BookingWithDetails = {
   id: number;
@@ -52,8 +53,29 @@ export default function AdminDashboard() {
     appointmentTime: "",
   });
 
-  const { data: specialists = [] } = useQuery<Specialist[]>({
-    queryKey: ["/api/specialists"],
+  const [activeTab, setActiveTab] = useState<"bookings" | "specialists">("bookings");
+  const [specialistFormOpen, setSpecialistFormOpen] = useState(false);
+  const [editingSpecialist, setEditingSpecialist] = useState<Specialist | null>(null);
+  const [specialistForm, setSpecialistForm] = useState({
+    name: "",
+    category: "barber",
+    subcategory: "",
+    city: "Алматы",
+    serviceLocation: "",
+    phone: "",
+    status: "active",
+  });
+
+  const { data: specialists = [], refetch: refetchSpecialists } = useQuery<Specialist[]>({
+    queryKey: ["/api/admin/specialists"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/specialists", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) throw new Error("Failed to fetch specialists");
+      return res.json();
+    },
+    enabled: !!currentUser,
   });
 
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
@@ -173,6 +195,63 @@ export default function AdminDashboard() {
     },
   });
 
+  const createSpecialistMutation = useMutation({
+    mutationFn: async (data: typeof specialistForm) => {
+      const res = await fetch("/api/admin/specialists", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUser?.id || "",
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Специалист создан" });
+      refetchSpecialists();
+      setSpecialistFormOpen(false);
+      setSpecialistForm({
+        name: "", category: "barber", subcategory: "", city: "Алматы",
+        serviceLocation: "", phone: "", status: "active",
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateSpecialistMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: Partial<Specialist> }) => {
+      const res = await fetch(`/api/admin/specialists/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUser?.id || "",
+        },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Специалист обновлён" });
+      refetchSpecialists();
+      setEditingSpecialist(null);
+      setSpecialistFormOpen(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    },
+  });
+
   const handleCopyWhatsapp = async () => {
     await navigator.clipboard.writeText(whatsappDialog.whatsappText);
     setCopied(true);
@@ -196,11 +275,28 @@ export default function AdminDashboard() {
   return (
     <div className="min-h-screen bg-background p-4 pb-24">
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-center gap-3">
-          <ShieldCheck className="h-8 w-8 text-primary" />
-          <h1 className="text-2xl font-bold" data-testid="text-admin-title">Панель администратора</h1>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <ShieldCheck className="h-8 w-8 text-primary" />
+            <h1 className="text-2xl font-bold" data-testid="text-admin-title">Панель администратора</h1>
+          </div>
         </div>
 
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists")}>
+          <TabsList className="grid w-full grid-cols-2 mb-4">
+            <TabsTrigger value="bookings" data-testid="tab-bookings-main">
+              <Calendar className="h-4 w-4 mr-2" />
+              Записи
+            </TabsTrigger>
+            <TabsTrigger value="specialists" data-testid="tab-specialists-main">
+              <Users className="h-4 w-4 mr-2" />
+              Специалисты ({specialists.length})
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        {activeTab === "bookings" && (
+          <>
         <div className="grid grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
@@ -455,7 +551,258 @@ export default function AdminDashboard() {
             </Tabs>
           </CardContent>
         </Card>
+          </>
+        )}
+
+        {activeTab === "specialists" && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2">
+                <Users size={20} />
+                Все специалисты
+              </CardTitle>
+              <Button
+                size="sm"
+                onClick={() => {
+                  setEditingSpecialist(null);
+                  setSpecialistForm({
+                    name: "", category: "barber", subcategory: "", city: "Алматы",
+                    serviceLocation: "", phone: "", status: "active",
+                  });
+                  setSpecialistFormOpen(true);
+                }}
+                data-testid="button-add-specialist"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Добавить
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {specialists.filter(s => s.status === 'pending').length > 0 && (
+                  <div className="mb-4">
+                    <h3 className="text-sm font-medium text-muted-foreground mb-2">
+                      Ожидают активации ({specialists.filter(s => s.status === 'pending').length})
+                    </h3>
+                    {specialists.filter(s => s.status === 'pending').map((s) => (
+                      <div key={s.id} className="flex items-center justify-between p-3 border rounded-lg mb-2 bg-yellow-50">
+                        <div className="flex items-center gap-3">
+                          <UserX className="h-5 w-5 text-yellow-500" />
+                          <div>
+                            <p className="font-medium">{s.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {categoryLabels[s.category as keyof typeof categoryLabels] || s.category} • {s.city}
+                              {s.phone && ` • ${s.phone}`}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingSpecialist(s);
+                              setSpecialistForm({
+                                name: s.name,
+                                category: s.category,
+                                subcategory: s.subcategory || "",
+                                city: s.city || "Алматы",
+                                serviceLocation: s.serviceLocation || "",
+                                phone: s.phone || "",
+                                status: s.status || "pending",
+                              });
+                              setSpecialistFormOpen(true);
+                            }}
+                            data-testid={`button-edit-specialist-${s.id}`}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              updateSpecialistMutation.mutate({
+                                id: s.id,
+                                data: { status: 'active', isActive: true }
+                              });
+                            }}
+                            data-testid={`button-activate-specialist-${s.id}`}
+                          >
+                            <UserCheck className="h-4 w-4 mr-1" />
+                            Активировать
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <h3 className="text-sm font-medium text-muted-foreground mb-2">
+                  Активные ({specialists.filter(s => s.status === 'active').length})
+                </h3>
+                {specialists.filter(s => s.status === 'active').map((s) => (
+                  <div key={s.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <UserCheck className="h-5 w-5 text-green-500" />
+                      <div>
+                        <p className="font-medium">{s.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {categoryLabels[s.category as keyof typeof categoryLabels] || s.category} • {s.city}
+                          {s.phone && ` • ${s.phone}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setEditingSpecialist(s);
+                          setSpecialistForm({
+                            name: s.name,
+                            category: s.category,
+                            subcategory: s.subcategory || "",
+                            city: s.city || "Алматы",
+                            serviceLocation: s.serviceLocation || "",
+                            phone: s.phone || "",
+                            status: s.status || "active",
+                          });
+                          setSpecialistFormOpen(true);
+                        }}
+                        data-testid={`button-edit-specialist-${s.id}`}
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          updateSpecialistMutation.mutate({
+                            id: s.id,
+                            data: { status: 'pending', isActive: false }
+                          });
+                        }}
+                        data-testid={`button-deactivate-specialist-${s.id}`}
+                      >
+                        <UserX className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
+
+      <Dialog open={specialistFormOpen} onOpenChange={setSpecialistFormOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {editingSpecialist ? "Редактировать специалиста" : "Добавить специалиста"}
+            </DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (editingSpecialist) {
+                updateSpecialistMutation.mutate({
+                  id: editingSpecialist.id,
+                  data: {
+                    name: specialistForm.name,
+                    category: specialistForm.category as "barber" | "manicure" | "cosmetology" | "doctor" | "trainer" | "auto_service",
+                    subcategory: specialistForm.subcategory || null,
+                    city: specialistForm.city,
+                    serviceLocation: specialistForm.serviceLocation || null,
+                    phone: specialistForm.phone || null,
+                    status: specialistForm.status as "pending" | "active",
+                    isActive: specialistForm.status === "active",
+                  },
+                });
+              } else {
+                createSpecialistMutation.mutate(specialistForm);
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label>Имя</Label>
+              <Input
+                value={specialistForm.name}
+                onChange={(e) => setSpecialistForm({ ...specialistForm, name: e.target.value })}
+                required
+                data-testid="input-specialist-name"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Категория</Label>
+                <Select
+                  value={specialistForm.category}
+                  onValueChange={(v) => setSpecialistForm({ ...specialistForm, category: v })}
+                >
+                  <SelectTrigger data-testid="select-specialist-category">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(categoryLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>{label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Город</Label>
+                <Select
+                  value={specialistForm.city}
+                  onValueChange={(v) => setSpecialistForm({ ...specialistForm, city: v })}
+                >
+                  <SelectTrigger data-testid="select-specialist-city">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Алматы">Алматы</SelectItem>
+                    <SelectItem value="Астана">Астана</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Телефон</Label>
+              <Input
+                value={specialistForm.phone}
+                onChange={(e) => setSpecialistForm({ ...specialistForm, phone: e.target.value })}
+                placeholder="+7 777 123 4567"
+                data-testid="input-specialist-phone"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Статус</Label>
+              <Select
+                value={specialistForm.status}
+                onValueChange={(v) => setSpecialistForm({ ...specialistForm, status: v })}
+              >
+                <SelectTrigger data-testid="select-specialist-status">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Активен</SelectItem>
+                  <SelectItem value="pending">Ожидает</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={createSpecialistMutation.isPending || updateSpecialistMutation.isPending}
+              data-testid="button-save-specialist"
+            >
+              {(createSpecialistMutation.isPending || updateSpecialistMutation.isPending)
+                ? "Сохранение..."
+                : editingSpecialist ? "Сохранить" : "Создать"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={whatsappDialog.open} onOpenChange={(open) => setWhatsappDialog(prev => ({ ...prev, open }))}>
         <DialogContent className="max-w-md">

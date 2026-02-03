@@ -19,18 +19,18 @@ async function checkAndAutoActivateSpecialist(specialistId: number): Promise<voi
     // Only auto-activate pending specialists
     if (specialist.status !== 'pending') return;
     
-    // Count all reviews for this specialist (finalized or not)
+    // Count only finalized reviews for this specialist
     const reviews = await storage.getReviewsBySpecialistId(specialistId);
-    const reviewCount = reviews.length;
+    const finalizedReviewCount = reviews.filter(r => r.isFinalized).length;
     
-    console.log(`[AUTO-ACTIVATE] Specialist ${specialistId}: ${reviewCount} reviews, status=${specialist.status}`);
+    console.log(`[AUTO-ACTIVATE] Specialist ${specialistId}: ${finalizedReviewCount} finalized reviews (total: ${reviews.length}), status=${specialist.status}`);
     
-    if (reviewCount >= AUTO_ACTIVATE_REVIEW_THRESHOLD) {
+    if (finalizedReviewCount >= AUTO_ACTIVATE_REVIEW_THRESHOLD) {
       await storage.updateSpecialist(specialistId, { 
         status: 'active',
         isActive: true 
       });
-      console.log(`[AUTO-ACTIVATE] Specialist ${specialistId} activated after ${reviewCount} review(s)`);
+      console.log(`[AUTO-ACTIVATE] Specialist ${specialistId} activated after ${finalizedReviewCount} finalized review(s)`);
     }
   } catch (err) {
     console.error(`[AUTO-ACTIVATE] Error checking specialist ${specialistId}:`, err);
