@@ -8,6 +8,35 @@ import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
 
+// Auto-activate specialist after receiving first review (configurable threshold)
+const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
+
+async function checkAndAutoActivateSpecialist(specialistId: number): Promise<void> {
+  try {
+    const specialist = await storage.getSpecialistById(specialistId);
+    if (!specialist) return;
+    
+    // Only auto-activate pending specialists
+    if (specialist.status !== 'pending') return;
+    
+    // Count all reviews for this specialist (finalized or not)
+    const reviews = await storage.getReviewsBySpecialistId(specialistId);
+    const reviewCount = reviews.length;
+    
+    console.log(`[AUTO-ACTIVATE] Specialist ${specialistId}: ${reviewCount} reviews, status=${specialist.status}`);
+    
+    if (reviewCount >= AUTO_ACTIVATE_REVIEW_THRESHOLD) {
+      await storage.updateSpecialist(specialistId, { 
+        status: 'active',
+        isActive: true 
+      });
+      console.log(`[AUTO-ACTIVATE] Specialist ${specialistId} activated after ${reviewCount} review(s)`);
+    }
+  } catch (err) {
+    console.error(`[AUTO-ACTIVATE] Error checking specialist ${specialistId}:`, err);
+  }
+}
+
 // Helper to mask reviewer names based on privacy settings and viewer role
 function maskReviewsForViewer(
   reviews: Review[],
@@ -538,6 +567,9 @@ export async function registerRoutes(
       
       // Mark booking as reviewed
       await storage.markBookingReviewed(booking.id);
+      
+      // Check if specialist should be auto-activated
+      await checkAndAutoActivateSpecialist(input.specialistId);
       
       // NOTE: Rating is NOT updated here - it will be recalculated only after
       // the review is finalized (5 minutes after creation) to allow edits
@@ -1086,6 +1118,9 @@ export async function registerRoutes(
       
       // Mark booking as reviewed
       await storage.markBookingReviewed(link.bookingId);
+      
+      // Check if specialist should be auto-activated
+      await checkAndAutoActivateSpecialist(link.specialistId);
       
       // Mark magic link as used and review submitted
       await storage.markMagicLinkUsed(link.id);
