@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { SignUpForm } from "@/components/auth/SignUpForm";
 import { getCurrentUserWithRole } from "@/lib/auth";
+import { UserPlus } from "lucide-react";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
@@ -42,6 +43,17 @@ export default function LoginPage() {
           ) : (
             <SignUpForm onSuccess={handleSuccess} onSwitchToLogin={() => setIsLogin(true)} />
           )}
+
+          <div className="pt-6 border-t">
+            <Link 
+              href="/specialist-signup" 
+              className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              data-testid="link-specialist-signup"
+            >
+              <UserPlus className="h-4 w-4" />
+              Добавить себя как специалиста
+            </Link>
+          </div>
         </div>
       </div>
     </div>

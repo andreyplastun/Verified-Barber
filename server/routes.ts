@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, type Review } from "@shared/schema";
+import { bookings, type Review, specialistSignupSchema } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
@@ -200,6 +200,9 @@ export async function registerRoutes(
     
     let specialists = await storage.getSpecialists();
     
+    // Filter to only show active specialists (status = 'active' AND isActive = true)
+    specialists = specialists.filter(s => s.status === 'active' && s.isActive);
+    
     // Apply filters
     if (category && typeof category === 'string') {
       specialists = specialists.filter(s => s.category === category);
@@ -248,6 +251,136 @@ export async function registerRoutes(
       const categories = Array.from(new Set(allSpecialists.map(s => s.category).filter(Boolean)));
       res.json({ cities, districts, categories });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Self-signup for specialists (public, no auth required)
+  app.post("/api/specialist-signup", async (req, res) => {
+    try {
+      const result = specialistSignupSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Ошибка валидации", 
+          errors: result.error.flatten().fieldErrors 
+        });
+      }
+
+      const { name, category, subcategory, city, serviceLocation, phone } = result.data;
+
+      // Check if phone already exists
+      const existingSpecialist = await storage.getSpecialistByPhone(phone);
+      if (existingSpecialist) {
+        return res.status(400).json({ message: "Специалист с таким номером телефона уже зарегистрирован" });
+      }
+
+      // Create specialist with pending status
+      const specialist = await storage.createSpecialist({
+        name,
+        category: category as any,
+        subcategory: subcategory || null,
+        city,
+        serviceLocation,
+        phone,
+        specialty: category, // Use category as specialty
+        bio: "",
+        imageUrl: "",
+        isActive: false,
+        status: "pending" as any,
+      });
+
+      console.log(`[SIGNUP] New specialist signup: ${name}, category: ${category}, phone: ${phone}`);
+
+      res.status(201).json({ 
+        message: "Заявка принята. Профиль станет доступен после первых отзывов.",
+        id: specialist.id 
+      });
+    } catch (err: any) {
+      console.error("[SIGNUP] Error:", err);
+      res.status(500).json({ message: "Ошибка сервера" });
+    }
+  });
+
+  // Admin: Get all specialists including pending (requires admin role)
+  app.get("/api/admin/specialists", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const specialists = await storage.getSpecialists();
+      res.json(specialists);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin: Update specialist (requires admin role)
+  app.patch("/api/admin/specialists/:id", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const specialistId = Number(req.params.id);
+      const updates = req.body;
+
+      await storage.updateSpecialist(specialistId, updates);
+      const updated = await storage.getSpecialist(specialistId);
+      
+      console.log(`[ADMIN] Updated specialist ${specialistId}:`, updates);
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[ADMIN] Update error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin: Create specialist manually (requires admin role)
+  app.post("/api/admin/specialists", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { name, category, subcategory, city, serviceLocation, phone, status } = req.body;
+
+      const specialist = await storage.createSpecialist({
+        name,
+        category: category || "barber",
+        subcategory: subcategory || null,
+        city: city || "Алматы",
+        serviceLocation: serviceLocation || null,
+        phone: phone || null,
+        specialty: category || "barber",
+        bio: "",
+        imageUrl: "",
+        isActive: status === 'active',
+        status: status || "active",
+      });
+
+      console.log(`[ADMIN] Created specialist: ${name}`);
+      res.status(201).json(specialist);
+    } catch (err: any) {
+      console.error("[ADMIN] Create error:", err);
       res.status(500).json({ message: err.message });
     }
   });

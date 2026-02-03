@@ -15,6 +15,11 @@ export const specialistCategoryEnum = pgEnum("specialist_category", [
   "auto_service"
 ]);
 
+export const specialistStatusEnum = pgEnum("specialist_status", [
+  "pending",  // Waiting for activation (new signup or manual review)
+  "active"    // Visible in public listings
+]);
+
 // Category labels for UI display (Russian)
 export const categoryLabels: Record<string, string> = {
   barber: "Барбер",
@@ -52,6 +57,12 @@ export const specialists = pgTable("specialists", {
   validReviewCount: integer("valid_review_count").default(0).notNull(),
   // If false, specialist is hidden from clients
   isActive: boolean("is_active").default(true).notNull(),
+  // Signup status: pending = waiting for activation, active = visible
+  status: specialistStatusEnum("status").default("active").notNull(),
+  // Phone number for contact (required for self-signup)
+  phone: text("phone"),
+  // Location / place of service (free text, e.g. "ТЦ Мега, 2 этаж")
+  serviceLocation: text("service_location"),
   // Category & Subcategory
   category: specialistCategoryEnum("category").default("barber").notNull(),
   subcategory: text("subcategory"), // Optional, e.g. "dermatology", "fitness"
@@ -258,6 +269,19 @@ export const insertSpecialistSchema = createInsertSchema(specialists).omit({
 });
 
 export type CreateSpecialistRequest = z.infer<typeof insertSpecialistSchema>;
+
+// Schema for specialist self-signup (minimal required fields)
+export const specialistSignupSchema = z.object({
+  name: z.string().min(2, "Имя должно быть не менее 2 символов"),
+  category: z.enum(["barber", "manicure", "cosmetology", "doctor", "trainer", "auto_service"]),
+  subcategory: z.string().optional(),
+  city: z.string().default("Алматы"),
+  serviceLocation: z.string().min(1, "Укажите место приёма"),
+  phone: z.string().min(10, "Введите корректный номер телефона"),
+  consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
+});
+
+export type SpecialistSignupRequest = z.infer<typeof specialistSignupSchema>;
 
 export const insertBookingSchema = createInsertSchema(bookings).omit({ 
   id: true, 

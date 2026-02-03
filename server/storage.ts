@@ -21,8 +21,10 @@ export interface IStorage {
   // Specialists
   getSpecialists(): Promise<Specialist[]>;
   getSpecialist(id: number): Promise<Specialist | undefined>;
+  getSpecialistByPhone(phone: string): Promise<Specialist | undefined>;
   getFirstSpecialist(): Promise<Specialist | undefined>;
   createSpecialist(specialist: Partial<CreateSpecialistRequest> & { name: string; specialty: string; bio: string; imageUrl: string }): Promise<Specialist>;
+  updateSpecialist(id: number, data: Partial<Specialist>): Promise<Specialist | undefined>;
   updateSpecialistRating(id: number): Promise<void>;
   updateSpecialistRatingIncludingPending(id: number): Promise<void>;
 
@@ -278,11 +280,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSpecialists(): Promise<Specialist[]> {
-    return await db.select().from(specialists).where(eq(specialists.isActive, true));
+    // Return all specialists - filtering by status/isActive is done in routes
+    return await db.select().from(specialists);
   }
 
   async getSpecialist(id: number): Promise<Specialist | undefined> {
     const [specialist] = await db.select().from(specialists).where(eq(specialists.id, id));
+    return specialist;
+  }
+
+  async getSpecialistByPhone(phone: string): Promise<Specialist | undefined> {
+    const [specialist] = await db.select().from(specialists).where(eq(specialists.phone, phone));
     return specialist;
   }
 
@@ -294,6 +302,11 @@ export class DatabaseStorage implements IStorage {
   async createSpecialist(insertSpecialist: Partial<CreateSpecialistRequest> & { name: string; specialty: string; bio: string; imageUrl: string }): Promise<Specialist> {
     const [specialist] = await db.insert(specialists).values(insertSpecialist as any).returning();
     return specialist;
+  }
+
+  async updateSpecialist(id: number, data: Partial<Specialist>): Promise<Specialist | undefined> {
+    const [updated] = await db.update(specialists).set(data as any).where(eq(specialists.id, id)).returning();
+    return updated;
   }
 
   async updateSpecialistRating(id: number): Promise<void> {

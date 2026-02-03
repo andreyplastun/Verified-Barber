@@ -15,6 +15,7 @@ import MagicReviewPage from "@/pages/MagicReviewPage";
 import AdminDashboard from "@/pages/AdminDashboard";
 import SpecialistDashboard from "@/pages/SpecialistDashboard";
 import SpecialistOnboarding from "@/pages/SpecialistOnboarding";
+import SpecialistSignup from "@/pages/SpecialistSignup";
 import LoginPage from "@/pages/LoginPage";
 import { Navigation } from "@/components/Navigation";
 
@@ -165,6 +166,7 @@ function Router() {
       </Route>
       <Route path="/specialist-dashboard" component={SpecialistDashboardRoute} />
       <Route path="/specialist-onboarding" component={SpecialistOnboardingRoute} />
+      <Route path="/specialist-signup" component={SpecialistSignup} />
       <Route component={NotFound} />
     </Switch>
   );
