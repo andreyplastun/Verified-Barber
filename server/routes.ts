@@ -377,6 +377,30 @@ export async function registerRoutes(
     }
   });
 
+  // Admin: Delete specialist (requires admin role)
+  app.delete("/api/admin/specialists/:id", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== 'admin') {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const specialistId = Number(req.params.id);
+      await storage.deleteSpecialist(specialistId);
+      
+      console.log(`[ADMIN] Deleted specialist ${specialistId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[ADMIN] Delete error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Admin: Create specialist manually (requires admin role)
   app.post("/api/admin/specialists", async (req, res) => {
     try {

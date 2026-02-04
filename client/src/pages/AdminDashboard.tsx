@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2 } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -244,6 +244,31 @@ export default function AdminDashboard() {
     },
     onSuccess: () => {
       toast({ title: "Специалист обновлён" });
+      refetchSpecialists();
+      setEditingSpecialist(null);
+      setSpecialistFormOpen(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteSpecialistMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/admin/specialists/${id}`, {
+        method: "DELETE",
+        headers: {
+          "x-user-id": currentUser?.id || "",
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Специалист удалён" });
       refetchSpecialists();
       setEditingSpecialist(null);
       setSpecialistFormOpen(false);
@@ -801,6 +826,23 @@ export default function AdminDashboard() {
                 ? "Сохранение..."
                 : editingSpecialist ? "Сохранить" : "Создать"}
             </Button>
+            {editingSpecialist && (
+              <Button
+                type="button"
+                variant="destructive"
+                className="w-full mt-2"
+                disabled={deleteSpecialistMutation.isPending}
+                onClick={() => {
+                  if (confirm("Удалить специалиста? Это действие нельзя отменить.")) {
+                    deleteSpecialistMutation.mutate(editingSpecialist.id);
+                  }
+                }}
+                data-testid="button-delete-specialist"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleteSpecialistMutation.isPending ? "Удаление..." : "Удалить специалиста"}
+              </Button>
+            )}
           </form>
         </SheetContent>
       </Sheet>

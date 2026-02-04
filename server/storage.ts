@@ -25,6 +25,7 @@ export interface IStorage {
   getFirstSpecialist(): Promise<Specialist | undefined>;
   createSpecialist(specialist: Partial<CreateSpecialistRequest> & { name: string; specialty: string; bio: string; imageUrl: string }): Promise<Specialist>;
   updateSpecialist(id: number, data: Partial<Specialist>): Promise<Specialist | undefined>;
+  deleteSpecialist(id: number): Promise<void>;
   updateSpecialistRating(id: number): Promise<void>;
   updateSpecialistRatingIncludingPending(id: number): Promise<void>;
 
@@ -307,6 +308,10 @@ export class DatabaseStorage implements IStorage {
   async updateSpecialist(id: number, data: Partial<Specialist>): Promise<Specialist | undefined> {
     const [updated] = await db.update(specialists).set(data as any).where(eq(specialists.id, id)).returning();
     return updated;
+  }
+
+  async deleteSpecialist(id: number): Promise<void> {
+    await db.delete(specialists).where(eq(specialists.id, id));
   }
 
   async updateSpecialistRating(id: number): Promise<void> {
