@@ -311,6 +311,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteSpecialist(id: number): Promise<void> {
+    // Delete related records first (cascade manually)
+    // 1. Delete magic links for bookings of this specialist
+    const specialistBookings = await db.select({ id: bookings.id }).from(bookings).where(eq(bookings.specialistId, id));
+    for (const booking of specialistBookings) {
+      await db.delete(magicLinks).where(eq(magicLinks.bookingId, booking.id));
+    }
+    // 2. Delete bookings
+    await db.delete(bookings).where(eq(bookings.specialistId, id));
+    // 3. Delete reviews
+    await db.delete(reviews).where(eq(reviews.specialistId, id));
+    // 4. Delete photos
+    await db.delete(specialistPhotos).where(eq(specialistPhotos.specialistId, id));
+    // 5. Finally delete specialist
     await db.delete(specialists).where(eq(specialists.id, id));
   }
 
