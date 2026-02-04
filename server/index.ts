@@ -5,7 +5,7 @@ import { createServer } from "http";
 import { storage } from "./storage";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-01-v24-instant-finalize";
+const BUILD_VERSION = "2026-02-04-v25-mobile-modal-fix";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();
