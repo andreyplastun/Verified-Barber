@@ -12,6 +12,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import type { Specialist, User } from "@shared/schema";
 import { categoryLabels } from "@shared/schema";
 
@@ -694,13 +695,13 @@ export default function AdminDashboard() {
         )}
       </div>
 
-      <Dialog open={specialistFormOpen} onOpenChange={setSpecialistFormOpen}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>
+      <Sheet open={specialistFormOpen} onOpenChange={setSpecialistFormOpen}>
+        <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto rounded-t-xl">
+          <SheetHeader>
+            <SheetTitle>
               {editingSpecialist ? "Редактировать специалиста" : "Добавить специалиста"}
-            </DialogTitle>
-          </DialogHeader>
+            </SheetTitle>
+          </SheetHeader>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -801,8 +802,8 @@ export default function AdminDashboard() {
                 : editingSpecialist ? "Сохранить" : "Создать"}
             </Button>
           </form>
-        </DialogContent>
-      </Dialog>
+        </SheetContent>
+      </Sheet>
 
       <Dialog open={whatsappDialog.open} onOpenChange={(open) => setWhatsappDialog(prev => ({ ...prev, open }))}>
         <DialogContent className="max-w-md">
