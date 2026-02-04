@@ -5,6 +5,7 @@ import { SignUpForm } from "@/components/auth/SignUpForm";
 import { getCurrentUserWithRole } from "@/lib/auth";
 import { UserPlus } from "lucide-react";
 
+
 export default function LoginPage() {
   const [, setLocation] = useLocation();
   const [isLogin, setIsLogin] = useState(true);
