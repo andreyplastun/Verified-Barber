@@ -375,6 +375,12 @@ export default function SpecialistList() {
             )}
           </div>
         )}
+
+        <footer className="text-center py-8 text-xs text-[#9CA3AF]">
+          <Link href="/privacy" className="hover:text-[#6B7280] underline">
+            Политика конфиденциальности
+          </Link>
+        </footer>
       </main>
     </div>
   );

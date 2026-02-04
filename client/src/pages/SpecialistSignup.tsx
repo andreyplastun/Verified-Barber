@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -271,6 +271,13 @@ export default function SpecialistSignup() {
             >
               {signupMutation.isPending ? "Отправка..." : "Отправить заявку"}
             </Button>
+
+            <p className="text-xs text-center text-muted-foreground">
+              Отправляя заявку, вы соглашаетесь с{" "}
+              <Link href="/privacy" className="underline hover:text-foreground">
+                Политикой конфиденциальности
+              </Link>
+            </p>
           </form>
         </Form>
       </div>
