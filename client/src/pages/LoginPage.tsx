@@ -55,6 +55,16 @@ export default function LoginPage() {
               Добавить себя как специалиста
             </Link>
           </div>
+
+          <div className="pt-4 text-center">
+            <Link 
+              href="/privacy" 
+              className="text-xs text-muted-foreground hover:text-foreground underline"
+              data-testid="link-privacy"
+            >
+              Политика конфиденциальности
+            </Link>
+          </div>
         </div>
       </div>
     </div>
