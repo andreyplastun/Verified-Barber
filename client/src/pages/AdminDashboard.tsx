@@ -695,7 +695,7 @@ export default function AdminDashboard() {
       </div>
 
       <Dialog open={specialistFormOpen} onOpenChange={setSpecialistFormOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingSpecialist ? "Редактировать специалиста" : "Добавить специалиста"}
@@ -733,7 +733,7 @@ export default function AdminDashboard() {
                 data-testid="input-specialist-name"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Категория</Label>
                 <Select
