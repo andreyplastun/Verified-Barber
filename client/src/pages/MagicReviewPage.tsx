@@ -155,6 +155,10 @@ export default function MagicReviewPage() {
       setTriggers([]);
     }
     setRating(newRating);
+    // Auto-enable anonymous mode for ratings 3 or less
+    if (newRating <= 3) {
+      setHiddenName(true);
+    }
   };
 
   const submitMutation = useMutation({
