@@ -9,7 +9,10 @@ channel = "stable-24_05"
 [env]
 
 [deployment]
+runtime = "nodejs22"        ← ЭТУ СТРОКУ ДОБАВИТЬ
 deploymentTarget = "autoscale"
+deploymentTarget = "autoscale"
+run = ["node", "./dist/index.cjs"]
 run = ["node", "./dist/index.cjs"]
 build = ["sh", "-c", "npm run db:push && npm run build"]
 
