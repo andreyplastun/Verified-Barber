@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote } from 'lucide-react';
+import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
@@ -344,6 +344,35 @@ export default function SpecialistDashboard() {
               {savingTips ? 'Сохранение...' : 'Сохранить'}
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex flex-row items-center gap-2">
+          <UserPlus className="w-5 h-5" />
+          <CardTitle>Пригласить коллегу</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Если у коллеги есть профиль в Rateus, клиентам проще ему доверять.
+          </p>
+          
+          <Button
+            variant="outline"
+            onClick={() => {
+              const inviteUrl = `${window.location.origin}/join?ref=${specialist?.id}`;
+              navigator.clipboard.writeText(inviteUrl).then(() => {
+                toast({ title: 'Ссылка скопирована' });
+              }).catch(() => {
+                toast({ title: 'Ошибка копирования', variant: 'destructive' });
+              });
+            }}
+            className="w-full"
+            data-testid="button-copy-invite-link"
+          >
+            <Copy className="w-4 h-4 mr-2" />
+            Скопировать ссылку
+          </Button>
         </CardContent>
       </Card>
 

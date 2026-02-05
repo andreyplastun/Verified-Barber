@@ -5,7 +5,7 @@ import { createServer } from "http";
 import { storage } from "./storage";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-05-v29-how-trust-works";
+const BUILD_VERSION = "2026-02-05-v30-invite-system";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();

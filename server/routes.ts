@@ -13,15 +13,15 @@ const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
 
 async function checkAndAutoActivateSpecialist(specialistId: number): Promise<void> {
   try {
-    const specialist = await storage.getSpecialistById(specialistId);
+    const specialist = await storage.getSpecialist(specialistId);
     if (!specialist) return;
     
     // Only auto-activate pending specialists
     if (specialist.status !== 'pending') return;
     
     // Count only finalized reviews for this specialist
-    const reviews = await storage.getReviewsBySpecialistId(specialistId);
-    const finalizedReviewCount = reviews.filter(r => r.isFinalized).length;
+    const reviews = await storage.getReviewsForSpecialist(specialistId);
+    const finalizedReviewCount = reviews.filter((r: Review) => r.isFinalized).length;
     
     console.log(`[AUTO-ACTIVATE] Specialist ${specialistId}: ${finalizedReviewCount} finalized reviews (total: ${reviews.length}), status=${specialist.status}`);
     
@@ -306,7 +306,7 @@ export async function registerRoutes(
       // Validate referrer if provided (silently ignore invalid)
       let validReferrerId: number | null = null;
       if (referredBySpecialistId) {
-        const referrer = await storage.getSpecialistById(referredBySpecialistId);
+        const referrer = await storage.getSpecialist(referredBySpecialistId);
         if (referrer) {
           validReferrerId = referredBySpecialistId;
         }
