@@ -11,7 +11,7 @@ channel = "stable-24_05"
 [deployment]
 deploymentTarget = "autoscale"
 run = ["node", "./dist/index.cjs"]
-build = ["npm", "run", "build"]
+build = ["sh", "-c", "npm run db:push && npm run build"]
 
 [workflows]
 runButton = "Project"
