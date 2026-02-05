@@ -77,6 +77,8 @@ export const specialists = pgTable("specialists", {
   tipsEnabledAt: timestamp("tips_enabled_at"), // When tips were first enabled
   tipsSkippedAt: timestamp("tips_skipped_at"), // When "Skip" was clicked during onboarding
   tipsOnboardingCompletedAt: timestamp("tips_onboarding_completed_at"), // When tips onboarding was completed
+  // Referral tracking (who invited this specialist)
+  referredBySpecialistId: integer("referred_by_specialist_id"), // ID of specialist who shared invite link
 });
 
 export const bookings = pgTable("bookings", {
