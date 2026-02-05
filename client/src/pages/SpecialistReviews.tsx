@@ -55,8 +55,13 @@ export default function SpecialistReviews() {
               <ChevronLeft size={24} />
             </button>
           </Link>
-          <div>
-            <h1 className="text-xl font-bold">Все отзывы</h1>
+          <div className="flex-1">
+            <div className="flex items-center justify-between">
+              <h1 className="text-xl font-bold">Все отзывы</h1>
+              <Link href="/how-trust-works" className="text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-how-trust-works">
+                Как формируется доверие
+              </Link>
+            </div>
             {specialist && (
               <p className="text-sm text-muted-foreground">{specialist.name}</p>
             )}

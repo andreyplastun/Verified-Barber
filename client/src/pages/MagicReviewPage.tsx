@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useLocation, useRoute, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Star, ChevronLeft, AlertCircle, Info, CheckCircle, Banknote, Heart } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -527,6 +527,11 @@ export default function MagicReviewPage() {
           >
             {submitMutation.isPending ? "Отправка..." : "Оставить отзыв"}
           </button>
+          <div className="text-center">
+            <Link href="/how-trust-works" className="text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-how-trust-works-magic">
+              Как формируется доверие в Rateus
+            </Link>
+          </div>
         </div>
       </form>
 

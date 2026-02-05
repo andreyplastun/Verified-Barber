@@ -118,6 +118,9 @@ export default function SpecialistProfile() {
               <div className="flex items-center gap-1">
                 <Star size={16} className="text-yellow-400 fill-yellow-400" />
                 <span className="text-lg font-semibold text-[#1F2933] dark:text-[#1F2933]">{rating.toFixed(1)}</span>
+                <Link href="/how-trust-works" title="Как формируется рейтинг">
+                  <Info size={14} className="text-[#9CA3AF] hover:text-[#6B7280] cursor-pointer" data-testid="link-how-rating-works" />
+                </Link>
               </div>
               <p className="mt-0.5 text-xs text-[#6B7280]">
                 {reviewCount} {(() => {
@@ -133,15 +136,14 @@ export default function SpecialistProfile() {
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.3, duration: 0.3 }}
-                className="group relative mt-1.5"
+                className="mt-1.5"
               >
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569] cursor-help">
-                  {ratingStatus.label}
-                  <Info size={10} className="opacity-60" />
-                </span>
-                <div className="absolute bottom-full right-0 mb-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-xs text-[#475569] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 shadow-lg pointer-events-none max-w-[200px] text-right">
-                  {ratingStatus.tooltip}
-                </div>
+                <Link href="/how-trust-works#rating-status">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] cursor-pointer transition-colors" data-testid="link-rating-status">
+                    {ratingStatus.label}
+                    <Info size={10} className="opacity-60" />
+                  </span>
+                </Link>
               </motion.div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import { useSpecialists } from "@/hooks/use-specialists";
-import { Link, useLocation } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { MapPin, ArrowRight, Filter, ChevronDown, Star, Info } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
@@ -301,6 +301,13 @@ export default function SpecialistList() {
                       <span className="text-sm font-semibold text-[#1F2933]">
                         {(specialist.averageRating / 10).toFixed(1)}
                       </span>
+                      <Link 
+                        href="/how-trust-works" 
+                        onClick={(e) => e.stopPropagation()}
+                        title="Как формируется рейтинг"
+                      >
+                        <Info size={12} className="text-[#9CA3AF] hover:text-[#6B7280]" data-testid="link-how-rating-works-card" />
+                      </Link>
                     </div>
                     
                     {/* Review count */}
@@ -316,25 +323,21 @@ export default function SpecialistList() {
                     </span>
                     
                     {/* Rating status badge */}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium ${
-                          ((specialist as any).validReviewCount || 0) >= 10
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-[#F1F5F9] text-[#475569]'
-                        }`}>
-                          <span>
-                            {((specialist as any).validReviewCount || 0) >= 10 ? 'Сформированный' : 'Формируется'}
-                          </span>
-                          <Info size={10} className="opacity-60" />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="max-w-[200px] text-xs">
-                        {((specialist as any).validReviewCount || 0) >= 10
-                          ? 'Рейтинг основан на достаточном количестве подтверждённых визитов'
-                          : 'Рейтинг станет точнее по мере увеличения количества отзывов'}
-                      </TooltipContent>
-                    </Tooltip>
+                    <Link 
+                      href="/how-trust-works#rating-status" 
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className={`flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium cursor-pointer hover:opacity-80 transition-opacity ${
+                        ((specialist as any).validReviewCount || 0) >= 10
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : 'bg-[#F1F5F9] text-[#475569]'
+                      }`} data-testid="link-rating-status-card">
+                        <span>
+                          {((specialist as any).validReviewCount || 0) >= 10 ? 'Сформированный' : 'Формируется'}
+                        </span>
+                        <Info size={10} className="opacity-60" />
+                      </div>
+                    </Link>
                   </div>
 
                   {/* Arrow */}
