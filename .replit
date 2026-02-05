@@ -5,16 +5,17 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 [nix]
 channel = "stable-24_05"
 
+[[ports]]
+localPort = 5000
+externalPort = 80
 
 [env]
+PORT = "5000"
 
 [deployment]
-runtime = "nodejs22"        ← ЭТУ СТРОКУ ДОБАВИТЬ
-deploymentTarget = "autoscale"
 deploymentTarget = "autoscale"
 run = ["node", "./dist/index.cjs"]
-run = ["node", "./dist/index.cjs"]
-build = ["sh", "-c", "npm run db:push && npm run build"]
+build = ["npm", "run", "build"]
 
 [workflows]
 runButton = "Project"
@@ -36,7 +37,3 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
-
-[[ports]]
-localPort = 5000
-externalPort = 80
