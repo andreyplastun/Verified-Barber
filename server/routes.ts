@@ -295,12 +295,21 @@ export async function registerRoutes(
         });
       }
 
-      const { name, category, subcategory, city, serviceLocation, phone } = result.data;
+      const { name, category, subcategory, city, serviceLocation, phone, referredBySpecialistId } = result.data;
 
       // Check if phone already exists
       const existingSpecialist = await storage.getSpecialistByPhone(phone);
       if (existingSpecialist) {
         return res.status(400).json({ message: "Специалист с таким номером телефона уже зарегистрирован" });
+      }
+
+      // Validate referrer if provided (silently ignore invalid)
+      let validReferrerId: number | null = null;
+      if (referredBySpecialistId) {
+        const referrer = await storage.getSpecialistById(referredBySpecialistId);
+        if (referrer) {
+          validReferrerId = referredBySpecialistId;
+        }
       }
 
       // Create specialist with pending status
@@ -316,9 +325,10 @@ export async function registerRoutes(
         imageUrl: "",
         isActive: false,
         status: "pending" as any,
+        referredBySpecialistId: validReferrerId,
       });
 
-      console.log(`[SIGNUP] New specialist signup: ${name}, category: ${category}, phone: ${phone}`);
+      console.log(`[SIGNUP] New specialist signup: ${name}, category: ${category}, phone: ${phone}${validReferrerId ? `, referred by: ${validReferrerId}` : ''}`);
 
       res.status(201).json({ 
         message: "Заявка принята. Профиль станет доступен после первых отзывов.",

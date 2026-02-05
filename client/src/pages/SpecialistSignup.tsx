@@ -69,7 +69,16 @@ export default function SpecialistSignup() {
   });
 
   const onSubmit = (data: SignupFormData) => {
-    signupMutation.mutate(data);
+    // Check for referrer from invite link
+    const referrerId = sessionStorage.getItem("referrer_specialist_id");
+    const submitData = referrerId 
+      ? { ...data, referredBySpecialistId: parseInt(referrerId, 10) }
+      : data;
+    
+    signupMutation.mutate(submitData as SignupFormData);
+    
+    // Clear referrer after submission
+    sessionStorage.removeItem("referrer_specialist_id");
   };
 
   if (isSuccess) {

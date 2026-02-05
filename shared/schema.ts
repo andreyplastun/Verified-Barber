@@ -281,6 +281,7 @@ export const specialistSignupSchema = z.object({
   serviceLocation: z.string().min(1, "Укажите место приёма"),
   phone: z.string().min(10, "Введите корректный номер телефона"),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
+  referredBySpecialistId: z.number().optional(), // ID of specialist who shared invite link
 });
 
 export type SpecialistSignupRequest = z.infer<typeof specialistSignupSchema>;
