@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation, useRoute } from "wouter";
+import { Link, useLocation, useRoute } from "wouter";
 import { useCreateReview } from "@/hooks/use-specialists";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl } from "@shared/routes";
@@ -138,6 +138,10 @@ export default function ReviewPage() {
       setTriggers([]);
     }
     setRating(newRating);
+    // Auto-enable anonymous mode for ratings 1-3
+    if (newRating <= 3) {
+      setHiddenName(true);
+    }
   };
 
   // Determine if we're in edit mode based on booking data
@@ -300,15 +304,17 @@ export default function ReviewPage() {
 
   return (
     <div className="min-h-screen bg-background p-6">
-      <header className="flex items-center gap-4 mb-8">
-        <button 
-          onClick={() => history.back()}
-          className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80"
-          data-testid="button-back"
-        >
-          <ChevronLeft size={24} />
-        </button>
-        <h1 className="text-xl font-bold">{isEditMode ? "Редактировать отзыв" : "Написать отзыв"}</h1>
+      <header className="mb-8">
+        <div className="flex items-center mb-4">
+          <button 
+            onClick={() => history.back()}
+            className="w-10 h-10 rounded-full bg-secondary flex items-center justify-center hover:bg-secondary/80"
+            data-testid="button-back"
+          >
+            <ChevronLeft size={24} />
+          </button>
+        </div>
+        <h1 className="text-xl font-bold text-center">{isEditMode ? "Редактировать отзыв" : "Оставить отзыв"}</h1>
       </header>
 
       <div className="mb-8 text-center">
@@ -356,6 +362,11 @@ export default function ReviewPage() {
             </button>
           ))}
         </div>
+        <div className="text-center mt-2">
+          <Link href="/how-trust-works" className="text-xs text-muted-foreground hover:text-primary underline" data-testid="link-how-trust-works">
+            Как работает рейтинг
+          </Link>
+        </div>
 
         {/* Trigger Chips */}
         {rating > 0 && availableTriggers.length > 0 && (
@@ -385,7 +396,7 @@ export default function ReviewPage() {
         <div className="flex items-center justify-center gap-3 py-2">
           <div className="flex items-center gap-2">
             <label htmlFor="hidden-name-toggle" className="text-sm font-medium cursor-pointer">
-              Скрыть моё имя
+              Показывать отзыв анонимно
             </label>
             <Popover>
               <PopoverTrigger asChild>
