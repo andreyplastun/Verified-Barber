@@ -18,6 +18,7 @@ import SpecialistOnboarding from "@/pages/SpecialistOnboarding";
 import SpecialistSignup from "@/pages/SpecialistSignup";
 import LoginPage from "@/pages/LoginPage";
 import PrivacyPage from "@/pages/PrivacyPage";
+import HowTrustWorksPage from "@/pages/HowTrustWorksPage";
 import { Navigation } from "@/components/Navigation";
 
 function LoginRoute() {
@@ -169,6 +170,7 @@ function Router() {
       <Route path="/specialist-onboarding" component={SpecialistOnboardingRoute} />
       <Route path="/specialist-signup" component={SpecialistSignup} />
       <Route path="/privacy" component={PrivacyPage} />
+      <Route path="/how-trust-works" component={HowTrustWorksPage} />
       <Route component={NotFound} />
     </Switch>
   );
