@@ -12,7 +12,7 @@ cmds = ["rm -rf node_modules/.cache && npm ci --include=dev"]
 
 [phases.build]
 dependsOn = ["install"]
-cmds = ["npm run build"]
+cmds = ["npm run db:push", "npm run build"]
 cacheDirectories = []
 
 [start]
