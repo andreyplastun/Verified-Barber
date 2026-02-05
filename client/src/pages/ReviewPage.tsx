@@ -330,7 +330,7 @@ export default function ReviewPage() {
         )}
         <h2 className="text-lg font-medium">{isEditMode ? "Обновите ваш отзыв" : "Как прошёл визит?"}</h2>
         <p className="text-sm text-muted-foreground">
-          Запись #{booking.id} • {new Date(booking.appointmentTime).toLocaleDateString()}
+          {new Date(booking.appointmentTime).toLocaleDateString()}
         </p>
         {isEditable && booking.review?.editableUntil && (
           <p className="text-xs text-primary mt-2">
