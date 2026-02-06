@@ -72,7 +72,7 @@ export default function SpecialistProfile() {
     };
     return { 
       label: "Рейтинг формируется", 
-      tooltip: "Рейтинг станет точнее по мере увеличения количества отзывов"
+      tooltip: "При увеличении отзывов рейтинг будет становиться точнее"
     };
   };
 
@@ -119,9 +119,6 @@ export default function SpecialistProfile() {
               <div className="flex items-center gap-1">
                 <Star size={16} className="text-yellow-400 fill-yellow-400" />
                 <span className="text-lg font-semibold text-[#1F2933] dark:text-[#1F2933]">{rating.toFixed(1)}</span>
-                <Link href="/how-trust-works" title="Как формируется рейтинг">
-                  <Info size={14} className="text-[#9CA3AF] hover:text-[#6B7280] cursor-pointer" data-testid="link-how-rating-works" />
-                </Link>
               </div>
               <p className="mt-0.5 text-xs text-[#6B7280]">
                 {reviewCount} {(() => {
@@ -142,7 +139,6 @@ export default function SpecialistProfile() {
                 <Link href="/how-trust-works#rating-status">
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] cursor-pointer transition-colors" data-testid="link-rating-status">
                     {ratingStatus.label}
-                    <Info size={10} className="opacity-60" />
                   </span>
                 </Link>
               </motion.div>
