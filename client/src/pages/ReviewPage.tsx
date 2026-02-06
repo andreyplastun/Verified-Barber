@@ -162,8 +162,8 @@ export default function ReviewPage() {
   const [showNewAccountPopup, setShowNewAccountPopup] = useState(false);
   const [pendingRedirectSpecialistId, setPendingRedirectSpecialistId] = useState<number | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!booking || isSubmitting) return;
 
     if (rating === 0) {
@@ -314,7 +314,7 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
+    <div className="min-h-screen bg-background p-6 pb-32">
       <header className="mb-8">
         <div className="flex items-center mb-4">
           <button 
@@ -444,17 +444,19 @@ export default function ReviewPage() {
           />
         </div>
 
-        <div className="space-y-3">
-          <button
-            type="submit"
-            disabled={isSubmitting || isPending}
-            className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            data-testid="button-submit-review"
-          >
-            {isSubmitting || isPending ? "Сохранение..." : isEditMode ? "Обновить отзыв" : "Оставить отзыв"}
-          </button>
-        </div>
       </form>
+
+      <div className="fixed bottom-0 left-0 right-0 z-[60] p-4 pb-6 bg-background border-t border-border">
+        <button
+          type="button"
+          onClick={() => handleSubmit()}
+          disabled={isSubmitting || isPending}
+          className="w-full max-w-md mx-auto block py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          data-testid="button-submit-review"
+        >
+          {isSubmitting || isPending ? "Сохранение..." : isEditMode ? "Обновить отзыв" : "Оставить отзыв"}
+        </button>
+      </div>
 
       {/* New account info popup - custom modal for iOS compatibility */}
       {showNewAccountPopup && (

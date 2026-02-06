@@ -178,7 +178,7 @@ function Router() {
 
 function AppContent() {
   const [location] = useLocation();
-  const hideNavigation = location.startsWith('/r/') || location.startsWith('/claim/');
+  const hideNavigation = location.startsWith('/r/') || location.startsWith('/claim/') || location.startsWith('/review/');
 
   return (
     <div className="min-h-screen bg-background">
