@@ -12,6 +12,12 @@ const DB_NAME = process.env.DB_NAME;
 
 console.log(`[DB] Variables check: HOST=${!!DB_HOST}, PORT=${!!DB_PORT}, USER=${!!DB_USER}, PASS=${!!DB_PASSWORD}, NAME=${!!DB_NAME}`);
 
+const SUPABASE_HOST = "aws-1-ap-southeast-1.pooler.supabase.com";
+const SUPABASE_PORT = 5432;
+const SUPABASE_USER = "postgres.btltvgmurloofyfzmeue";
+const SUPABASE_DB = "postgres";
+const SUPABASE_PASSWORD = "MyNewPass2026abd";
+
 let poolConfig: pg.PoolConfig;
 
 if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
@@ -72,9 +78,22 @@ if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
     };
   }
 } else {
-  console.error("FATAL: No database configuration found!");
-  console.error("Set either DATABASE_URL or DB_HOST/DB_USER/DB_PASSWORD/DB_NAME");
-  process.exit(1);
+  console.log(`[DB] No DATABASE_URL or DB_* vars found, using hardcoded Supabase connection (Railway fallback)`);
+  console.log(`[DB] Host: ${SUPABASE_HOST}, Port: ${SUPABASE_PORT}, User: ${SUPABASE_USER}, DB: ${SUPABASE_DB}`);
+  
+  poolConfig = {
+    host: SUPABASE_HOST,
+    port: SUPABASE_PORT,
+    database: SUPABASE_DB,
+    user: SUPABASE_USER,
+    password: SUPABASE_PASSWORD,
+    max: 3,
+    min: 0,
+    idleTimeoutMillis: 10000,
+    connectionTimeoutMillis: 10000,
+    allowExitOnIdle: true,
+    ssl: { rejectUnauthorized: false },
+  };
 }
 
 export const pool = new Pool(poolConfig);
