@@ -362,8 +362,8 @@ export default function ReviewPage() {
             </button>
           ))}
         </div>
-        <div className="text-center mt-2">
-          <Link href="/how-trust-works" className="text-xs text-muted-foreground hover:text-primary underline" data-testid="link-how-trust-works">
+        <div className="text-center mt-1">
+          <Link href="/how-trust-works" className="text-[11px] text-muted-foreground/70 hover:text-primary underline" data-testid="link-how-trust-works">
             Как работает рейтинг
           </Link>
         </div>
