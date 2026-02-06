@@ -1716,21 +1716,61 @@ ${magicLink}`;
       storage.syncSpecialistMappings().catch(err => {
         console.error("[STARTUP] Failed to sync specialist mappings:", err);
       });
-      
-      // Seed Data (development only) - only if no specialists exist
+    }
+
+    // Seed real specialists if database is empty or only has old test data
+    try {
       const existing = await storage.getSpecialists();
-      if (existing.length === 0) {
-        console.log("Seeding specialists...");
-        await storage.createSpecialist({
-          name: "Владимир",
-          specialty: "Барбер",
-          bio: "Мастер классических стрижек и укладок с опытом более 10 лет.",
-          imageUrl: "https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=800&q=80",
-          rating: "0",
-          isActive: true,
-          tipsEnabled: false,
-        });
+      const hasRealSpecialists = existing.some(s => 
+        ["Жанибек", "Руслан", "Денис", "Джон", "Виктория", "Иван", "Рафаэль", "Света", "Ильяс", "Болат"].includes(s.name)
+      );
+      
+      if (!hasRealSpecialists) {
+        console.log("[SEED] No real specialists found, seeding production data...");
+        
+        const realSpecialists = [
+          { name: "Жанибек", specialty: "Специалист" },
+          { name: "Руслан", specialty: "Специалист" },
+          { name: "Денис", specialty: "Специалист" },
+          { name: "Джон", specialty: "Специалист" },
+          { name: "Виктория", specialty: "Специалист" },
+          { name: "Иван", specialty: "Специалист" },
+          { name: "Рафаэль", specialty: "Специалист" },
+          { name: "Света", specialty: "Специалист" },
+          { name: "Ильяс", specialty: "Специалист" },
+          { name: "Болат", specialty: "Специалист" },
+          { name: "Захид", specialty: "Специалист" },
+          { name: "Игорь", specialty: "Специалист" },
+          { name: "Нурболат", specialty: "Специалист" },
+          { name: "Перизат", specialty: "Специалист" },
+          { name: "Михаил", specialty: "Специалист" },
+          { name: "Танирберген", specialty: "Специалист" },
+          { name: "Алишер", specialty: "Специалист" },
+          { name: "Жасур", specialty: "Барбер" },
+          { name: "Анастасия", specialty: "Барбер" },
+          { name: "Магдалина", specialty: "Барбер" },
+          { name: "Алихан", specialty: "Барбер" },
+          { name: "Rustam", specialty: "Барбер", bio: "Профессиональный барбер", imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400" },
+        ];
+        
+        for (const spec of realSpecialists) {
+          await storage.createSpecialist({
+            name: spec.name,
+            specialty: spec.specialty,
+            bio: spec.bio || "",
+            imageUrl: spec.imageUrl || "",
+            rating: "0",
+            isActive: true,
+            tipsEnabled: false,
+            category: "barber",
+            city: "Алматы",
+            status: "active",
+          });
+        }
+        console.log(`[SEED] Created ${realSpecialists.length} specialists`);
       }
+    } catch (err) {
+      console.error("[SEED] Error seeding specialists:", err);
     }
   });
 
