@@ -11,6 +11,12 @@ export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true);
 
   const handleSuccess = async () => {
+    const claimReturn = sessionStorage.getItem("claimReturnUrl");
+    if (claimReturn) {
+      sessionStorage.removeItem("claimReturnUrl");
+      setLocation(claimReturn);
+      return;
+    }
     const user = await getCurrentUserWithRole();
     if (user?.role === 'specialist') {
       setLocation('/specialist-dashboard');

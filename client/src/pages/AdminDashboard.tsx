@@ -54,7 +54,7 @@ export default function AdminDashboard() {
     appointmentTime: "",
   });
 
-  const [activeTab, setActiveTab] = useState<"bookings" | "specialists">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims">("bookings");
   const [specialistFormOpen, setSpecialistFormOpen] = useState(false);
   const [editingSpecialist, setEditingSpecialist] = useState<Specialist | null>(null);
   const [specialistForm, setSpecialistForm] = useState({
@@ -290,6 +290,81 @@ export default function AdminDashboard() {
     createBookingMutation.mutate(formData);
   };
 
+  type ClaimRequestWithName = {
+    id: number;
+    specialistId: number;
+    phone: string;
+    status: string;
+    claimToken: string | null;
+    tokenExpiresAt: string | null;
+    tokenUsedAt: string | null;
+    createdAt: string;
+    resolvedAt: string | null;
+    specialistName: string;
+  };
+
+  const [claimCopied, setClaimCopied] = useState<number | null>(null);
+
+  const { data: claimRequests = [], refetch: refetchClaims } = useQuery<ClaimRequestWithName[]>({
+    queryKey: ["/api/admin/claim-requests"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/claim-requests", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) throw new Error("Failed to fetch claims");
+      return res.json();
+    },
+    enabled: !!currentUser && activeTab === "claims",
+  });
+
+  const approveClaimMutation = useMutation({
+    mutationFn: async (claimId: number) => {
+      const res = await fetch(`/api/admin/claim-requests/${claimId}/approve`, {
+        method: "POST",
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Запрос одобрен" });
+      refetchClaims();
+      if (data.claimLink) {
+        navigator.clipboard.writeText(data.claimLink);
+        toast({ title: "Ссылка скопирована", description: "Отправьте её заявителю" });
+      }
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const rejectClaimMutation = useMutation({
+    mutationFn: async (claimId: number) => {
+      const res = await fetch(`/api/admin/claim-requests/${claimId}/reject`, {
+        method: "POST",
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Запрос отклонён" });
+      refetchClaims();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const pendingClaimsCount = claimRequests.filter(c => c.status === "pending").length;
+
   const filteredBookings = bookings.filter((booking) => {
     if (statusFilter === "all") return true;
     return booking.status === statusFilter;
@@ -308,15 +383,24 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists")}>
-          <TabsList className="grid w-full grid-cols-2 mb-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims")}>
+          <TabsList className="grid w-full grid-cols-3 mb-4">
             <TabsTrigger value="bookings" data-testid="tab-bookings-main">
               <Calendar className="h-4 w-4 mr-2" />
               Записи
             </TabsTrigger>
             <TabsTrigger value="specialists" data-testid="tab-specialists-main">
               <Users className="h-4 w-4 mr-2" />
-              Специалисты ({specialists.length})
+              Специалисты
+            </TabsTrigger>
+            <TabsTrigger value="claims" data-testid="tab-claims-main" className="relative">
+              <UserCheck className="h-4 w-4 mr-2" />
+              Заявки
+              {pendingClaimsCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                  {pendingClaimsCount}
+                </span>
+              )}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -715,6 +799,127 @@ export default function AdminDashboard() {
                   </div>
                 ))}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {activeTab === "claims" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserCheck size={20} />
+                Заявки на профили
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {claimRequests.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8" data-testid="text-no-claims">
+                  Заявок пока нет
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {claimRequests.map((claim) => (
+                    <div
+                      key={claim.id}
+                      className="p-4 border rounded-lg space-y-2"
+                      data-testid={`claim-card-${claim.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div>
+                          <p className="font-medium text-sm">{claim.specialistName}</p>
+                          <p className="text-xs text-muted-foreground">{claim.phone}</p>
+                        </div>
+                        <Badge
+                          variant={
+                            claim.status === "pending" ? "secondary" :
+                            claim.status === "approved" ? "default" : "destructive"
+                          }
+                          data-testid={`badge-claim-status-${claim.id}`}
+                        >
+                          {claim.status === "pending" ? "Ожидает" :
+                           claim.status === "approved" ? "Одобрено" : "Отклонено"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(claim.createdAt).toLocaleString("ru-RU")}
+                      </p>
+
+                      {claim.status === "pending" && (
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            onClick={() => approveClaimMutation.mutate(claim.id)}
+                            disabled={approveClaimMutation.isPending}
+                            data-testid={`button-approve-claim-${claim.id}`}
+                          >
+                            <CheckCircle className="h-4 w-4 mr-1" />
+                            Одобрить
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => rejectClaimMutation.mutate(claim.id)}
+                            disabled={rejectClaimMutation.isPending}
+                            data-testid={`button-reject-claim-${claim.id}`}
+                          >
+                            <UserX className="h-4 w-4 mr-1" />
+                            Отклонить
+                          </Button>
+                        </div>
+                      )}
+
+                      {claim.status === "approved" && claim.claimToken && (
+                        <div className="pt-1">
+                          <div className="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const baseUrl = window.location.origin;
+                                const link = `${baseUrl}/claim/${claim.claimToken}`;
+                                navigator.clipboard.writeText(link);
+                                setClaimCopied(claim.id);
+                                setTimeout(() => setClaimCopied(null), 2000);
+                              }}
+                              data-testid={`button-copy-claim-link-${claim.id}`}
+                            >
+                              {claimCopied === claim.id ? (
+                                <><Check className="h-4 w-4 mr-1" /> Скопировано</>
+                              ) : (
+                                <><Copy className="h-4 w-4 mr-1" /> Копировать ссылку</>
+                              )}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const baseUrl = window.location.origin;
+                                const link = `${baseUrl}/claim/${claim.claimToken}`;
+                                const text = `Здравствуйте! Ваш запрос на профиль «${claim.specialistName}» на WHO одобрен. Перейдите по ссылке для привязки: ${link}`;
+                                window.open(`https://wa.me/${claim.phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, "_blank");
+                              }}
+                              data-testid={`button-whatsapp-claim-${claim.id}`}
+                            >
+                              <MessageCircle className="h-4 w-4 mr-1" />
+                              WhatsApp
+                            </Button>
+                          </div>
+                          {claim.tokenUsedAt && (
+                            <p className="text-xs text-green-600 mt-1">
+                              Привязано {new Date(claim.tokenUsedAt).toLocaleString("ru-RU")}
+                            </p>
+                          )}
+                          {!claim.tokenUsedAt && claim.tokenExpiresAt && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Срок: до {new Date(claim.tokenExpiresAt).toLocaleDateString("ru-RU")}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

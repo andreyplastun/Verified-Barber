@@ -20,6 +20,7 @@ import LoginPage from "@/pages/LoginPage";
 import PrivacyPage from "@/pages/PrivacyPage";
 import HowTrustWorksPage from "@/pages/HowTrustWorksPage";
 import JoinPage from "@/pages/JoinPage";
+import ClaimProfilePage from "@/pages/ClaimProfilePage";
 import { Navigation } from "@/components/Navigation";
 
 function LoginRoute() {
@@ -173,6 +174,7 @@ function Router() {
       <Route path="/join" component={JoinPage} />
       <Route path="/privacy" component={PrivacyPage} />
       <Route path="/how-trust-works" component={HowTrustWorksPage} />
+      <Route path="/claim/:token" component={ClaimProfilePage} />
       <Route component={NotFound} />
     </Switch>
   );

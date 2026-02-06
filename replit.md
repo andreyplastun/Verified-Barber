@@ -172,6 +172,27 @@ Located in `server/antifraud.ts`. Soft system that marks reviews as "limited" bu
 - **Endpoint**: `POST /api/users/:id/complete-onboarding`
 - **Files**: `client/src/pages/SpecialistOnboarding.tsx`, `client/src/App.tsx`
 
+### Profile Claiming System
+- **Purpose**: Allow specialist profile owners to claim and manage their profiles
+- **Database**: `owner_user_id` on specialists table, `claim_requests` table
+- **Flow**:
+  1. Visitor sees "Забрать профиль" button on unclaimed specialist profile
+  2. Submits phone number via bottom sheet form
+  3. Admin receives email notification (best-effort, requires RESEND_API_KEY)
+  4. Admin reviews in dashboard Claims tab → approves/rejects
+  5. On approval: 7-day magic link generated, sent to claimant via WhatsApp
+  6. Claimant opens `/claim/:token` → must authenticate → binds profile
+  7. Sets `owner_user_id`, updates user role to `specialist`
+- **Endpoints**:
+  - `POST /api/claim-requests` - Submit claim (public, phone + specialistId)
+  - `GET /api/admin/claim-requests` - List all claims (admin)
+  - `POST /api/admin/claim-requests/:id/approve` - Approve + generate token (admin)
+  - `POST /api/admin/claim-requests/:id/reject` - Reject (admin)
+  - `GET /api/claim/:token` - Validate token (public)
+  - `POST /api/claim/:token/bind` - Bind profile to user (authenticated)
+  - `GET /api/specialists/:id/claim-status` - Check if profile is claimed (public)
+- **Files**: `client/src/pages/ClaimProfilePage.tsx`, `client/src/pages/SpecialistProfile.tsx`, `client/src/pages/AdminDashboard.tsx`
+
 ### Application Flow
 1. Users browse specialists on the home page (or login via bottom nav)
 2. Clicking a specialist shows their profile with reviews and ratings

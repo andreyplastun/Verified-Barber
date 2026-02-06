@@ -1,4 +1,4 @@
-import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, asc } from "drizzle-orm";
@@ -77,6 +77,16 @@ export interface IStorage {
     deviceType?: string;
     source?: string;
   }): Promise<void>;
+  
+  // Claim Requests
+  createClaimRequest(specialistId: number, phone: string): Promise<ClaimRequest>;
+  getClaimRequests(): Promise<(ClaimRequest & { specialistName: string })[]>;
+  getClaimRequestById(id: number): Promise<ClaimRequest | undefined>;
+  approveClaimRequest(id: number): Promise<{ claim: ClaimRequest; token: string }>;
+  rejectClaimRequest(id: number): Promise<ClaimRequest | undefined>;
+  getClaimByToken(token: string): Promise<ClaimRequest | undefined>;
+  bindSpecialistToUser(specialistId: number, userId: string): Promise<void>;
+  markClaimTokenUsed(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -689,6 +699,80 @@ export class DatabaseStorage implements IStorage {
       source: event.source || 'whatsapp',
     });
     console.log(`[ANALYTICS] Event tracked: ${event.eventType} for specialist ${event.specialistId}, booking ${event.bookingId}`);
+  }
+
+  // Claim Requests
+  async createClaimRequest(specialistId: number, phone: string): Promise<ClaimRequest> {
+    const [claim] = await db.insert(claimRequests).values({
+      specialistId,
+      phone,
+      status: "pending",
+    }).returning();
+    console.log(`[CLAIM] Created claim request #${claim.id} for specialist ${specialistId}, phone: ${phone}`);
+    return claim;
+  }
+
+  async getClaimRequests(): Promise<(ClaimRequest & { specialistName: string })[]> {
+    const allClaims = await db.select().from(claimRequests).orderBy(desc(claimRequests.createdAt));
+    const allSpecialists = await db.select().from(specialists);
+    return allClaims.map(claim => ({
+      ...claim,
+      specialistName: allSpecialists.find(s => s.id === claim.specialistId)?.name || "Неизвестный",
+    }));
+  }
+
+  async getClaimRequestById(id: number): Promise<ClaimRequest | undefined> {
+    const [claim] = await db.select().from(claimRequests).where(eq(claimRequests.id, id));
+    return claim;
+  }
+
+  async approveClaimRequest(id: number): Promise<{ claim: ClaimRequest; token: string }> {
+    const token = crypto.randomBytes(16).toString("base64url");
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    const [claim] = await db.update(claimRequests)
+      .set({
+        status: "approved",
+        claimToken: token,
+        tokenExpiresAt: expiresAt,
+        resolvedAt: new Date(),
+      })
+      .where(eq(claimRequests.id, id))
+      .returning();
+    console.log(`[CLAIM] Approved claim #${id}, token generated`);
+    return { claim, token };
+  }
+
+  async rejectClaimRequest(id: number): Promise<ClaimRequest | undefined> {
+    const [claim] = await db.update(claimRequests)
+      .set({
+        status: "rejected",
+        resolvedAt: new Date(),
+      })
+      .where(eq(claimRequests.id, id))
+      .returning();
+    console.log(`[CLAIM] Rejected claim #${id}`);
+    return claim;
+  }
+
+  async getClaimByToken(token: string): Promise<ClaimRequest | undefined> {
+    const [claim] = await db.select().from(claimRequests).where(eq(claimRequests.claimToken, token));
+    return claim;
+  }
+
+  async bindSpecialistToUser(specialistId: number, userId: string): Promise<void> {
+    await db.update(specialists)
+      .set({ ownerUserId: userId })
+      .where(eq(specialists.id, specialistId));
+    await db.update(users)
+      .set({ role: "specialist" as const, specialistId })
+      .where(eq(users.id, userId));
+    console.log(`[CLAIM] Bound specialist ${specialistId} to user ${userId}`);
+  }
+
+  async markClaimTokenUsed(id: number): Promise<void> {
+    await db.update(claimRequests)
+      .set({ tokenUsedAt: new Date() })
+      .where(eq(claimRequests.id, id));
   }
 }
 

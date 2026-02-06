@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, type Review, specialistSignupSchema } from "@shared/schema";
+import { bookings, type Review, specialistSignupSchema, claimRequestSchema } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
@@ -1446,6 +1446,247 @@ ${magicLink}`;
       res.json({ success: true, deleted });
     } catch (err: any) {
       console.error("Error deleting photo:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =====================
+  // CLAIM PROFILE ROUTES
+  // =====================
+
+  // Helper: send email notification to admin about new claim
+  async function notifyAdminNewClaim(claim: any, specialistName: string) {
+    const adminEmail = "andreyplastun@gmail.com";
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (!resendApiKey) {
+      console.log(`[CLAIM-EMAIL] No RESEND_API_KEY set, skipping email notification for claim #${claim.id}`);
+      return;
+    }
+    try {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${resendApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: "WHO <noreply@rateus.kz>",
+          to: [adminEmail],
+          subject: `Новый запрос на профиль: ${specialistName}`,
+          html: `<h2>Новый запрос на профиль</h2>
+            <p><strong>Специалист:</strong> ${specialistName}</p>
+            <p><strong>Телефон заявителя:</strong> ${claim.phone}</p>
+            <p><strong>Дата:</strong> ${new Date(claim.createdAt).toLocaleString("ru-RU")}</p>
+            <p><a href="https://rateus.kz/admin">Перейти в админ-панель для одобрения</a></p>`,
+        }),
+      });
+      if (response.ok) {
+        console.log(`[CLAIM-EMAIL] Notification sent to admin for claim #${claim.id}`);
+      } else {
+        const err = await response.text();
+        console.error(`[CLAIM-EMAIL] Failed to send email:`, err);
+      }
+    } catch (err) {
+      console.error(`[CLAIM-EMAIL] Error sending email:`, err);
+    }
+  }
+
+  // Public: Submit claim request
+  app.post("/api/claim-requests", async (req, res) => {
+    try {
+      const parsed = claimRequestSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: parsed.error.errors[0].message });
+      }
+
+      const { specialistId, phone } = parsed.data;
+
+      const specialist = await storage.getSpecialist(specialistId);
+      if (!specialist) {
+        return res.status(404).json({ message: "Специалист не найден" });
+      }
+
+      if (specialist.ownerUserId) {
+        return res.status(400).json({ message: "Профиль уже привязан" });
+      }
+
+      const claim = await storage.createClaimRequest(specialistId, phone);
+
+      // Best-effort email notification
+      notifyAdminNewClaim(claim, specialist.name).catch(() => {});
+
+      res.status(201).json({ message: "Запрос отправлен", id: claim.id });
+    } catch (err: any) {
+      console.error("Error creating claim:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin: List all claim requests
+  app.get("/api/admin/claim-requests", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+
+      const claims = await storage.getClaimRequests();
+      res.json(claims);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin: Approve claim request
+  app.post("/api/admin/claim-requests/:id/approve", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+
+      const claimId = parseInt(req.params.id);
+      const existing = await storage.getClaimRequestById(claimId);
+      if (!existing) {
+        return res.status(404).json({ message: "Запрос не найден" });
+      }
+      if (existing.status !== "pending") {
+        return res.status(400).json({ message: "Запрос уже обработан" });
+      }
+
+      const specialist = await storage.getSpecialist(existing.specialistId);
+      if (!specialist) {
+        return res.status(404).json({ message: "Специалист не найден" });
+      }
+      if (specialist.ownerUserId) {
+        return res.status(400).json({ message: "Профиль уже привязан к другому пользователю" });
+      }
+
+      const { claim, token } = await storage.approveClaimRequest(claimId);
+
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? 'https://rateus.kz' 
+        : `${req.protocol}://${req.get('host')}`;
+      const claimLink = `${baseUrl}/claim/${token}`;
+
+      const whatsappText = `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на WHO одобрен. Перейдите по ссылке для привязки: ${claimLink}`;
+
+      res.json({ 
+        claim, 
+        claimLink,
+        whatsappText,
+      });
+    } catch (err: any) {
+      console.error("Error approving claim:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin: Reject claim request
+  app.post("/api/admin/claim-requests/:id/reject", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+
+      const claimId = parseInt(req.params.id);
+      const existing = await storage.getClaimRequestById(claimId);
+      if (!existing) {
+        return res.status(404).json({ message: "Запрос не найден" });
+      }
+      if (existing.status !== "pending") {
+        return res.status(400).json({ message: "Запрос уже обработан" });
+      }
+
+      const claim = await storage.rejectClaimRequest(claimId);
+      res.json(claim);
+    } catch (err: any) {
+      console.error("Error rejecting claim:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Public: Validate claim token
+  app.get("/api/claim/:token", async (req, res) => {
+    try {
+      const claim = await storage.getClaimByToken(req.params.token);
+      if (!claim) {
+        return res.status(404).json({ message: "Ссылка недействительна" });
+      }
+      if (claim.status !== "approved") {
+        return res.status(400).json({ message: "Ссылка недействительна" });
+      }
+      if (claim.tokenUsedAt) {
+        return res.status(400).json({ message: "Ссылка уже использована" });
+      }
+      if (claim.tokenExpiresAt && new Date() > new Date(claim.tokenExpiresAt)) {
+        return res.status(400).json({ message: "Срок действия ссылки истёк" });
+      }
+
+      const specialist = await storage.getSpecialist(claim.specialistId);
+      res.json({
+        claimId: claim.id,
+        specialistId: claim.specialistId,
+        specialistName: specialist?.name || "Неизвестный",
+        specialistImageUrl: specialist?.imageUrl,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Authenticated: Bind specialist profile via claim token
+  app.post("/api/claim/:token/bind", async (req, res) => {
+    try {
+      const authUserId = req.headers["x-user-id"] as string;
+      if (!authUserId) {
+        return res.status(401).json({ message: "Необходимо войти в аккаунт" });
+      }
+
+      const claim = await storage.getClaimByToken(req.params.token);
+      if (!claim) {
+        return res.status(404).json({ message: "Ссылка недействительна" });
+      }
+      if (claim.status !== "approved") {
+        return res.status(400).json({ message: "Ссылка недействительна" });
+      }
+      if (claim.tokenUsedAt) {
+        return res.status(400).json({ message: "Ссылка уже использована" });
+      }
+      if (claim.tokenExpiresAt && new Date() > new Date(claim.tokenExpiresAt)) {
+        return res.status(400).json({ message: "Срок действия ссылки истёк" });
+      }
+
+      const specialist = await storage.getSpecialist(claim.specialistId);
+      if (!specialist) {
+        return res.status(404).json({ message: "Специалист не найден" });
+      }
+      if (specialist.ownerUserId) {
+        return res.status(400).json({ message: "Профиль уже привязан к другому пользователю" });
+      }
+
+      // Bind the specialist to this user
+      await storage.bindSpecialistToUser(claim.specialistId, authUserId);
+      await storage.markClaimTokenUsed(claim.id);
+
+      res.json({ 
+        message: "Профиль успешно привязан", 
+        specialistId: claim.specialistId 
+      });
+    } catch (err: any) {
+      console.error("Error binding claim:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Check if specialist profile is claimed (public)
+  app.get("/api/specialists/:id/claim-status", async (req, res) => {
+    try {
+      const specialistId = parseInt(req.params.id);
+      const specialist = await storage.getSpecialist(specialistId);
+      if (!specialist) {
+        return res.status(404).json({ message: "Специалист не найден" });
+      }
+      res.json({ 
+        isClaimed: !!specialist.ownerUserId,
+        specialistId 
+      });
+    } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });

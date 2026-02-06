@@ -20,6 +20,12 @@ export const specialistStatusEnum = pgEnum("specialist_status", [
   "active"    // Visible in public listings
 ]);
 
+export const claimStatusEnum = pgEnum("claim_status", [
+  "pending",
+  "approved",
+  "rejected"
+]);
+
 // Category labels for UI display (Russian)
 export const categoryLabels: Record<string, string> = {
   barber: "Барбер",
@@ -79,6 +85,8 @@ export const specialists = pgTable("specialists", {
   tipsOnboardingCompletedAt: timestamp("tips_onboarding_completed_at"), // When tips onboarding was completed
   // Referral tracking (who invited this specialist)
   referredBySpecialistId: integer("referred_by_specialist_id"), // ID of specialist who shared invite link
+  // Profile ownership - links specialist to their user account
+  ownerUserId: uuid("owner_user_id"), // References users.id - set when profile is claimed
 });
 
 export const bookings = pgTable("bookings", {
@@ -168,6 +176,19 @@ export const tipsEvents = pgTable("tips_events", {
   tipsConfirmedAt: timestamp("tips_confirmed_at"), // When user clicked "I transferred"
   tipsSkipped: boolean("tips_skipped").default(false), // If user skipped tips
   tipsAmountSelected: integer("tips_amount_selected"), // Amount selected by user
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Claim requests for profile ownership
+export const claimRequests = pgTable("claim_requests", {
+  id: serial("id").primaryKey(),
+  specialistId: integer("specialist_id").notNull(),
+  phone: text("phone").notNull(),
+  status: claimStatusEnum("status").default("pending").notNull(),
+  claimToken: text("claim_token"),
+  tokenExpiresAt: timestamp("token_expires_at"),
+  tokenUsedAt: timestamp("token_used_at"),
+  resolvedAt: timestamp("resolved_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -313,6 +334,20 @@ export const insertUserSchema = createInsertSchema(users).omit({
   createdAt: true,
 });
 
+export const claimRequestsRelations = relations(claimRequests, ({ one }) => ({
+  specialist: one(specialists, {
+    fields: [claimRequests.specialistId],
+    references: [specialists.id],
+  }),
+}));
+
+export const claimRequestSchema = z.object({
+  specialistId: z.number().int().positive(),
+  phone: z.string().min(10, "Введите корректный номер телефона"),
+});
+
+export type CreateClaimRequest = z.infer<typeof claimRequestSchema>;
+
 // === EXPLICIT API TYPES ===
 
 export type User = typeof users.$inferSelect;
@@ -321,6 +356,7 @@ export type Booking = typeof bookings.$inferSelect;
 export type Review = typeof reviews.$inferSelect;
 export type SpecialistPhoto = typeof specialistPhotos.$inferSelect;
 export type MagicLink = typeof magicLinks.$inferSelect;
+export type ClaimRequest = typeof claimRequests.$inferSelect;
 export type TipsEvent = typeof tipsEvents.$inferSelect;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
 
