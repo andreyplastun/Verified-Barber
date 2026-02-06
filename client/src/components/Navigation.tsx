@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 
 export function Navigation() {
   const [location, setLocation] = useLocation();
-  const { authUser, currentUser, refetchUser } = useAuth();
+  const { authUser, currentUser, refetchUser, loading } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const { toast } = useToast();
 
@@ -126,7 +126,12 @@ export function Navigation() {
             </button>
           )}
 
-          {authUser ? (
+          {loading ? (
+            <div className="flex flex-col items-center justify-center space-y-1 w-16 h-full text-muted-foreground">
+              <LogIn className="w-6 h-6 opacity-30" strokeWidth={2} />
+              <span className="text-[10px] font-medium opacity-30">Войти</span>
+            </div>
+          ) : authUser ? (
             <button
               onClick={handleLogout}
               className="flex flex-col items-center justify-center space-y-1 w-16 h-full cursor-pointer transition-colors duration-200 text-muted-foreground hover:text-foreground"
