@@ -201,8 +201,8 @@ export default function MagicReviewPage() {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (rating === 0) {
       toast({
         variant: "destructive",
@@ -530,22 +530,24 @@ export default function MagicReviewPage() {
           />
         </div>
 
-        <div className="space-y-3">
-          <button
-            type="submit"
-            disabled={submitMutation.isPending}
-            className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-            data-testid="button-submit-review"
-          >
-            {submitMutation.isPending ? "Отправка..." : "Оставить отзыв"}
-          </button>
-          <div className="text-center">
-            <Link href="/how-trust-works" className="text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-how-trust-works-magic">
-              Как формируется доверие в Rateus
-            </Link>
-          </div>
+        <div className="text-center pt-2">
+          <Link href="/how-trust-works" className="text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-how-trust-works-magic">
+            Как формируется доверие в Rateus
+          </Link>
         </div>
       </form>
+
+      <div className="fixed bottom-0 left-0 right-0 z-[60] p-4 pb-6 bg-background border-t border-border">
+        <button
+          type="button"
+          onClick={() => handleSubmit()}
+          disabled={submitMutation.isPending}
+          className="w-full max-w-md mx-auto block py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+          data-testid="button-submit-review"
+        >
+          {submitMutation.isPending ? "Отправка..." : "Оставить отзыв"}
+        </button>
+      </div>
 
       {showNewAccountPopup && (
         <div 
