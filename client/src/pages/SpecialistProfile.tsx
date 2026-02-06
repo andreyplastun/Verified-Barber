@@ -213,8 +213,9 @@ export default function SpecialistProfile() {
               data-testid="button-claim-profile"
             >
               <UserCheck size={18} className="text-[#6B7280] flex-shrink-0" />
-              <span>Это ваш профиль? Забрать управление</span>
+              <span>Это ваш профиль? Забрать профиль</span>
             </button>
+            <p className="text-xs text-muted-foreground mt-1 text-center">Отзывы и рейтинг сохранятся</p>
           </div>
         )}
 
