@@ -76,10 +76,6 @@ function HomeRoute() {
     return <div className="min-h-screen bg-background flex items-center justify-center text-foreground">Loading...</div>;
   }
 
-  if (!currentUser) {
-    return <Redirect to="/login" />;
-  }
-
   if (currentUser?.role === 'admin') {
     return <Redirect to="/admin-dashboard" />;
   }
