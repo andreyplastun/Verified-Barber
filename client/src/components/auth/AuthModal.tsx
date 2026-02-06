@@ -25,7 +25,7 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="w-[calc(100%-2rem)] max-w-md mx-4">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle data-testid="text-auth-modal-title">
             {mode === 'login' ? 'Вход' : 'Регистрация'}
