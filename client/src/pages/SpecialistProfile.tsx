@@ -5,6 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { RatingStars } from "@/components/RatingStars";
 import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { motion } from "framer-motion";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
 
@@ -136,11 +137,17 @@ export default function SpecialistProfile() {
                 transition={{ delay: 0.3, duration: 0.3 }}
                 className="mt-1.5"
               >
-                <Link href="/how-trust-works#rating-status">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569] hover:bg-[#E2E8F0] cursor-pointer transition-colors" data-testid="link-rating-status">
-                    {ratingStatus.label}
-                  </span>
-                </Link>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569] cursor-pointer transition-colors" data-testid="link-rating-status">
+                      {ratingStatus.label}
+                      <Info size={10} className="opacity-60" />
+                    </span>
+                  </PopoverTrigger>
+                  <PopoverContent side="bottom" className="max-w-xs text-sm p-3">
+                    <p>{ratingStatus.tooltip}</p>
+                  </PopoverContent>
+                </Popover>
               </motion.div>
             </div>
           </div>
@@ -295,11 +302,6 @@ export default function SpecialistProfile() {
               </Button>
             </Link>
           )}
-          <Link href="/">
-            <Button variant="ghost" className="w-full text-sm text-muted-foreground" data-testid="button-back-home">
-              На главную
-            </Button>
-          </Link>
         </div>
       </div>
     </div>

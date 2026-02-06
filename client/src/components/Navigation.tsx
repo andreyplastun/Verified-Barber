@@ -122,7 +122,7 @@ export function Navigation() {
               data-testid="button-claim-profile"
             >
               <UserCheck className={cn("w-6 h-6", claimMutation.isPending && "animate-pulse")} strokeWidth={2} />
-              <span className="text-[10px] font-medium leading-tight text-center">Забрать{'\n'}управление</span>
+              <span className="text-[10px] font-medium leading-tight text-center">Забрать управление{'\n'}профилем</span>
             </button>
           )}
 
