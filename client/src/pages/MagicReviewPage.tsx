@@ -130,13 +130,25 @@ export default function MagicReviewPage() {
     }
   }, [linkData, isLoading, error]);
 
+  const negativeTriggers = [
+    "Не понял запрос", "Неаккуратно", "Спешил", "Не услышал пожелания",
+    "Результат не устроил", "Долго ждал мастера", "Не понравилась стрижка",
+    "Слишком коротко", "Гигиена мастера", "Уровень салона",
+  ];
+
   const triggersByRating: Record<number, string[]> = {
     5: ["Понравилась стрижка", "Аккуратно", "Вежливый", "Профессионал", "Хочу прийти ещё"],
-    4: ["Долго ждал", "Не понял результат", "Неаккуратно", "Не услышал пожелания"],
-    3: ["Долго ждал", "Не понял результат", "Неаккуратно", "Не услышал пожелания"],
-    2: ["Долго ждал", "Не понял результат", "Неаккуратно", "Не услышал пожелания"],
-    1: ["Не понравилась стрижка", "Невежливо", "Плохо объяснил", "Не рекомендую"],
+    4: negativeTriggers,
+    3: negativeTriggers,
+    2: negativeTriggers,
+    1: negativeTriggers,
   };
+
+  const triggerTitle = rating === 5
+    ? "Что особенно запомнилось?"
+    : rating === 4
+      ? "Что ухудшило впечатление?"
+      : "Что испортило опыт?";
 
   const availableTriggers = rating > 0 ? (triggersByRating[rating] || []) : [];
 
@@ -149,8 +161,8 @@ export default function MagicReviewPage() {
   };
 
   const handleRatingChange = (newRating: number) => {
-    const oldCategory = rating === 5 ? 'positive' : rating === 1 ? 'negative' : 'neutral';
-    const newCategory = newRating === 5 ? 'positive' : newRating === 1 ? 'negative' : 'neutral';
+    const oldCategory = rating === 5 ? 'positive' : 'negative';
+    const newCategory = newRating === 5 ? 'positive' : 'negative';
     if (oldCategory !== newCategory) {
       setTriggers([]);
     }
@@ -457,7 +469,7 @@ export default function MagicReviewPage() {
 
         {rating > 0 && availableTriggers.length > 0 && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground text-center">Что запомнилось?</p>
+            <p className="text-sm text-muted-foreground text-center">{triggerTitle}</p>
             <div className="flex flex-wrap justify-center gap-2">
               {availableTriggers.map((trigger) => (
                 <button
