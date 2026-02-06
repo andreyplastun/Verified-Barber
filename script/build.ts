@@ -37,7 +37,6 @@ async function buildAll() {
   // Force clean rebuild
   console.log("cleaning dist and node_modules cache...");
   await rm("dist", { recursive: true, force: true });
-  await rm(".cache", { recursive: true, force: true }).catch(() => {});
 
   console.log("building client...");
   await viteBuild();
