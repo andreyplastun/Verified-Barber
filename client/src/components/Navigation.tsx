@@ -1,16 +1,19 @@
 import { useState } from "react";
 import { Link, useLocation } from "wouter";
-import { Home, ShieldCheck, LogIn, LogOut, User } from "lucide-react";
+import { Home, ShieldCheck, LogIn, LogOut, User, UserCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { signOut, getCurrentUserWithRole } from "@/lib/auth";
 import { AuthModal } from "./auth/AuthModal";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 
 export function Navigation() {
   const [location, setLocation] = useLocation();
   const { authUser, currentUser, refetchUser } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const { toast } = useToast();
 
   const handleLogout = async () => {
     await signOut();
@@ -30,7 +33,43 @@ export function Navigation() {
     }
   };
 
-  // Dynamic dashboard link based on user role
+  const specialistMatch = location.match(/^\/specialist\/(\d+)$/);
+  const specialistId = specialistMatch ? parseInt(specialistMatch[1]) : null;
+
+  const { data: claimStatus } = useQuery<{ isClaimed: boolean }>({
+    queryKey: ['/api/specialists', specialistId, 'claim-status'],
+    queryFn: async () => {
+      const res = await fetch(`/api/specialists/${specialistId}/claim-status`);
+      if (!res.ok) return { isClaimed: true };
+      return res.json();
+    },
+    enabled: specialistId !== null && specialistId > 0,
+  });
+
+  const claimMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/claim-requests", {
+        specialistId: specialistId,
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Запрос отправлен",
+        description: "Администратор рассмотрит ваш запрос.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'claim-status'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Ошибка",
+        description: error?.message || "Ошибка при отправке запроса",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const showClaimButton = specialistId !== null && claimStatus && !claimStatus.isClaimed;
+
   const getDashboardLink = () => {
     if (currentUser?.role === 'admin') {
       return { href: "/admin-dashboard", icon: ShieldCheck, label: "Админ" };
@@ -74,6 +113,18 @@ export function Navigation() {
               </Link>
             );
           })}
+
+          {showClaimButton && (
+            <button
+              onClick={() => claimMutation.mutate()}
+              disabled={claimMutation.isPending}
+              className="flex flex-col items-center justify-center space-y-1 w-16 h-full cursor-pointer transition-colors duration-200 text-muted-foreground hover:text-foreground"
+              data-testid="button-claim-profile"
+            >
+              <UserCheck className={cn("w-6 h-6", claimMutation.isPending && "animate-pulse")} strokeWidth={2} />
+              <span className="text-[10px] font-medium leading-tight text-center">Забрать{'\n'}управление</span>
+            </button>
+          )}
 
           {authUser ? (
             <button

@@ -343,7 +343,7 @@ export const claimRequestsRelations = relations(claimRequests, ({ one }) => ({
 
 export const claimRequestSchema = z.object({
   specialistId: z.number().int().positive(),
-  phone: z.string().min(10, "Введите корректный номер телефона"),
+  phone: z.string().optional().default(""),
 });
 
 export type CreateClaimRequest = z.infer<typeof claimRequestSchema>;

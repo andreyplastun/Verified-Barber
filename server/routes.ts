@@ -1473,9 +1473,9 @@ ${magicLink}`;
           from: "WHO <noreply@rateus.kz>",
           to: [adminEmail],
           subject: `Новый запрос на профиль: ${specialistName}`,
-          html: `<h2>Новый запрос на профиль</h2>
+          html: `<h2>Новый запрос на управление профилем</h2>
             <p><strong>Специалист:</strong> ${specialistName}</p>
-            <p><strong>Телефон заявителя:</strong> ${claim.phone}</p>
+            ${claim.phone ? `<p><strong>Телефон заявителя:</strong> ${claim.phone}</p>` : ''}
             <p><strong>Дата:</strong> ${new Date(claim.createdAt).toLocaleString("ru-RU")}</p>
             <p><a href="https://rateus.kz/admin">Перейти в админ-панель для одобрения</a></p>`,
         }),
@@ -1510,7 +1510,15 @@ ${magicLink}`;
         return res.status(400).json({ message: "Профиль уже привязан" });
       }
 
-      const claim = await storage.createClaimRequest(specialistId, phone);
+      const existingClaims = await storage.getClaimRequests();
+      const hasPendingClaim = existingClaims.some(
+        c => c.specialistId === specialistId && c.status === "pending"
+      );
+      if (hasPendingClaim) {
+        return res.status(400).json({ message: "Запрос уже отправлен" });
+      }
+
+      const claim = await storage.createClaimRequest(specialistId, phone || "");
 
       // Best-effort email notification
       notifyAdminNewClaim(claim, specialist.name).catch(() => {});
@@ -1682,8 +1690,12 @@ ${magicLink}`;
       if (!specialist) {
         return res.status(404).json({ message: "Специалист не найден" });
       }
+      const allClaims = await storage.getClaimRequests();
+      const hasPendingOrApprovedClaim = allClaims.some(
+        c => c.specialistId === specialistId && (c.status === "pending" || c.status === "approved")
+      );
       res.json({ 
-        isClaimed: !!specialist.ownerUserId,
+        isClaimed: !!specialist.ownerUserId || hasPendingOrApprovedClaim,
         specialistId 
       });
     } catch (err: any) {

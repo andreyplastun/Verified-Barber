@@ -1,15 +1,11 @@
-import { useState } from "react";
 import { useRoute, Link } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
 import { useAuth } from "@/contexts/AuthContext";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info, UserCheck, Phone, CheckCircle2 } from "lucide-react";
+import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { motion } from "framer-motion";
-import { apiRequest } from "@/lib/queryClient";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
 
 export default function SpecialistProfile() {
@@ -55,32 +51,6 @@ export default function SpecialistProfile() {
 
   const workPhotos = photos.filter(p => p.photoType === 'work');
 
-  const [claimSheetOpen, setClaimSheetOpen] = useState(false);
-  const [claimPhone, setClaimPhone] = useState("");
-  const [claimSubmitted, setClaimSubmitted] = useState(false);
-
-  const { data: claimStatus } = useQuery<{ isClaimed: boolean }>({
-    queryKey: ['/api/specialists', id, 'claim-status'],
-    queryFn: async () => {
-      const res = await fetch(`/api/specialists/${id}/claim-status`);
-      if (!res.ok) return { isClaimed: true };
-      return res.json();
-    },
-    enabled: id > 0,
-  });
-
-  const claimMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/claim-requests", {
-        specialistId: id,
-        phone: claimPhone,
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      setClaimSubmitted(true);
-    },
-  });
 
   if (isLoading || !specialist) {
     return <div className="min-h-screen bg-background animate-pulse" />;
@@ -203,86 +173,6 @@ export default function SpecialistProfile() {
             </div>
           </div>
         </div>
-
-        {/* Claim Profile Button */}
-        {claimStatus && !claimStatus.isClaimed && (
-          <div className="mt-4">
-            <button
-              onClick={() => setClaimSheetOpen(true)}
-              className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-[#F1F5F9] text-[#475569] text-sm hover:bg-[#E2E8F0] transition-colors"
-              data-testid="button-claim-profile"
-            >
-              <UserCheck size={18} className="text-[#6B7280] flex-shrink-0" />
-              <span>Это ваш профиль? Забрать профиль</span>
-            </button>
-            <p className="text-xs text-muted-foreground mt-1 text-center">Отзывы и рейтинг сохранятся</p>
-          </div>
-        )}
-
-        {/* Claim Profile Sheet */}
-        <Sheet open={claimSheetOpen} onOpenChange={setClaimSheetOpen}>
-          <SheetContent side="bottom" className="rounded-t-2xl px-6 pb-8">
-            <SheetHeader className="mb-4">
-              <SheetTitle className="text-[#1F2933]">Забрать профиль</SheetTitle>
-              <SheetDescription>
-                Оставьте номер телефона. Администратор проверит запрос и отправит вам ссылку для привязки.
-              </SheetDescription>
-            </SheetHeader>
-
-            {claimSubmitted ? (
-              <div className="flex flex-col items-center gap-3 py-4">
-                <CheckCircle2 size={48} className="text-green-500" />
-                <p className="text-sm text-[#475569] text-center">
-                  Запрос отправлен! Мы свяжемся с вами для подтверждения.
-                </p>
-                <Button
-                  variant="ghost"
-                  className="mt-2"
-                  onClick={() => {
-                    setClaimSheetOpen(false);
-                    setClaimSubmitted(false);
-                    setClaimPhone("");
-                  }}
-                  data-testid="button-claim-close"
-                >
-                  Закрыть
-                </Button>
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium text-[#1F2933]">
-                    Ваш номер телефона
-                  </label>
-                  <div className="relative">
-                    <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#9CA3AF]" />
-                    <Input
-                      type="tel"
-                      placeholder="+7 (___) ___-__-__"
-                      value={claimPhone}
-                      onChange={(e) => setClaimPhone(e.target.value)}
-                      className="pl-10"
-                      data-testid="input-claim-phone"
-                    />
-                  </div>
-                </div>
-                {claimMutation.isError && (
-                  <p className="text-sm text-red-500" data-testid="text-claim-error">
-                    {(claimMutation.error as any)?.message || "Ошибка при отправке запроса"}
-                  </p>
-                )}
-                <Button
-                  onClick={() => claimMutation.mutate()}
-                  disabled={!claimPhone.trim() || claimMutation.isPending}
-                  className="w-full"
-                  data-testid="button-claim-submit"
-                >
-                  {claimMutation.isPending ? "Отправка..." : "Отправить запрос"}
-                </Button>
-              </div>
-            )}
-          </SheetContent>
-        </Sheet>
 
         {/* Work Photos Gallery */}
         {workPhotos.length > 0 && (
