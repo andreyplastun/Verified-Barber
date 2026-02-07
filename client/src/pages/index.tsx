@@ -268,10 +268,9 @@ export default function SpecialistList() {
           >
             <Link href={`/specialist/${specialist.id}`}>
               <div className="group bg-white rounded-xl border border-gray-100 shadow-sm active:scale-[0.99] transition-transform duration-150 p-3">
-                {/* Top row: Avatar + Basic info + Trust block */}
-                <div className="flex gap-3">
-                  {/* Avatar */}
-                  <div className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+                {/* Level 1: Name + Rating + Reviews */}
+                <div className="flex items-start gap-3">
+                  <div className="relative w-14 h-14 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
                     <img 
                       src={specialist.imageUrl} 
                       alt={specialist.name}
@@ -279,100 +278,81 @@ export default function SpecialistList() {
                     />
                   </div>
 
-                  {/* Block 1 - Identification */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base font-semibold text-[#1F2933] truncate">
-                      {specialist.name}
-                    </h3>
-                    <p className="text-sm text-[#6B7280]">
-                      {categoryLabels[(specialist as any).category] || specialist.specialty}
-                      {(specialist as any).subcategory && ` · ${(specialist as any).subcategory}`}
-                    </p>
-                    {/* Block 3 - Location */}
-                    <div className="flex items-center text-xs text-[#9CA3AF] mt-1">
-                      <MapPin size={11} className="mr-1" />
-                      <span>
-                        {(specialist as any).city || 'Алматы'}
-                        {(specialist as any).district && ` · ${(specialist as any).district}`}
-                      </span>
-                    </div>
-                    {/* Base service price */}
-                    {(specialist as any).baseServiceName && (specialist as any).baseServicePrice && (
-                      <div className="flex items-center gap-1 mt-1">
-                        <span className="text-xs text-[#6B7280] whitespace-nowrap" data-testid={`text-price-${specialist.id}`}>
-                          {(specialist as any).baseServiceName}{'\u00A0'}—{'\u00A0'}{Number((specialist as any).baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-[#1F2933] truncate">
+                        {specialist.name}
+                      </h3>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <Star size={13} className="text-amber-400 fill-amber-400" />
+                        <span className="text-sm font-semibold text-[#1F2933]">
+                          {(specialist.averageRating / 10).toFixed(1)}
                         </span>
-                        <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <button type="button" className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors" data-testid={`button-price-info-${specialist.id}`}>
-                                <Info size={11} />
-                              </button>
-                            </PopoverTrigger>
-                            <PopoverContent side="top" className="max-w-xs text-sm p-3">
-                              <p>Это цена базовой услуги.<br/>Итоговая стоимость может отличаться в зависимости от выбранного набора услуг.</p>
-                            </PopoverContent>
-                          </Popover>
-                        </div>
+                        <span className="text-xs text-[#6B7280]">
+                          ({specialist.reviewCount})
+                        </span>
                       </div>
-                    )}
-                  </div>
-
-                  {/* Trust Block (right) */}
-                  <div className="flex-shrink-0 flex flex-col items-end gap-1">
-                    {/* Rating */}
-                    <div className="flex items-center gap-1">
-                      <Star size={14} className="text-amber-400 fill-amber-400" />
-                      <span className="text-sm font-semibold text-[#1F2933]">
-                        {(specialist.averageRating / 10).toFixed(1)}
-                      </span>
                     </div>
-                    
-                    {/* Review count */}
-                    <span className="text-xs text-[#6B7280]">
-                      {specialist.reviewCount} {(() => {
-                        const n = specialist.reviewCount % 100;
-                        if (n >= 11 && n <= 19) return 'отзывов';
-                        const last = n % 10;
-                        if (last === 1) return 'отзыв';
-                        if (last >= 2 && last <= 4) return 'отзыва';
-                        return 'отзывов';
-                      })()}
-                    </span>
-                    
-                    {/* Rating status badge */}
-                    {((specialist as any).validReviewCount || 0) >= 10 ? (
-                      <div className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700" data-testid="badge-rating-formed">
-                        <span>Сформированный</span>
-                      </div>
-                    ) : (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#F1F5F9] text-[#475569] cursor-help" data-testid="badge-rating-forming">
-                            <span>Формируется</span>
-                            <Info size={10} className="opacity-60" />
-                          </div>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom" className="max-w-[200px] text-center">
-                          <p className="text-xs">С увеличением количества отзывов рейтинг станет точнее</p>
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
+
+                    {/* Level 2: Category · Location · Price · Status */}
+                    <div className="flex items-center flex-wrap gap-x-1.5 gap-y-0.5 mt-1 text-xs text-[#6B7280]">
+                      <span>{categoryLabels[(specialist as any).category] || specialist.specialty}</span>
+                      <span className="text-[#D1D5DB]">·</span>
+                      <span className="inline-flex items-center">
+                        <MapPin size={10} className="mr-0.5 text-[#9CA3AF]" />
+                        {(specialist as any).city || 'Алматы'}
+                      </span>
+                      {(specialist as any).baseServiceName && (specialist as any).baseServicePrice && (
+                        <>
+                          <span className="text-[#D1D5DB]">·</span>
+                          <span className="inline-flex items-center gap-0.5 whitespace-nowrap" data-testid={`text-price-${specialist.id}`}>
+                            {(specialist as any).baseServiceName}{'\u00A0'}—{'\u00A0'}{Number((specialist as any).baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
+                            <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button type="button" className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors" data-testid={`button-price-info-${specialist.id}`}>
+                                    <Info size={10} />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent side="top" className="max-w-xs text-sm p-3">
+                                  <p>Это цена базовой услуги.<br/>Итоговая стоимость может отличаться в зависимости от выбранного набора услуг.</p>
+                                </PopoverContent>
+                              </Popover>
+                            </span>
+                          </span>
+                        </>
+                      )}
+                      <span className="text-[#D1D5DB]">·</span>
+                      {((specialist as any).validReviewCount || 0) >= 10 ? (
+                        <span className="text-emerald-600" data-testid="badge-rating-formed">Сформированный</span>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="inline-flex items-center gap-0.5 cursor-help" data-testid="badge-rating-forming">
+                              Формируется
+                              <Info size={9} className="text-[#9CA3AF]" />
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-[200px] text-center">
+                            <p className="text-xs">С увеличением количества отзывов рейтинг станет точнее</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Arrow */}
-                  <div className="flex items-center justify-center text-[#9CA3AF] group-hover:text-[#6B7280] transition-colors">
-                    <ArrowRight size={18} />
+                  <div className="flex items-center justify-center text-[#9CA3AF] group-hover:text-[#6B7280] transition-colors flex-shrink-0">
+                    <ArrowRight size={16} />
                   </div>
                 </div>
 
-                {/* Description block (below, separated) */}
+                {/* Level 3: Description */}
                 {specialist.bio && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-wide mb-1">
+                  <div className="mt-2.5 pt-2.5 border-t border-gray-100">
+                    <p className="text-[10px] font-medium text-[#BCC3CE] uppercase tracking-wide mb-1">
                       О мастере
                     </p>
-                    <p className="text-sm text-[#6B7280] line-clamp-2">
+                    <p className="text-xs text-[#9CA3AF] line-clamp-2 leading-relaxed">
                       {specialist.bio}
                     </p>
                   </div>
