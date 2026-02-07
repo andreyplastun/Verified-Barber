@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-07-v45-price-visual-separation";
+const BUILD_VERSION = "2026-02-07-v46-price-chip-not-checkbox";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();

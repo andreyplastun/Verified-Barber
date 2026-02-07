@@ -81,7 +81,6 @@ export default function MagicReviewPage() {
   const [comment, setComment] = useState("");
   const [triggers, setTriggers] = useState<string[]>([]);
   const [hiddenName, setHiddenName] = useState(false);
-  const [priceMismatch, setPriceMismatch] = useState(false);
   const [showNewAccountPopup, setShowNewAccountPopup] = useState(false);
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [showTipsScreen, setShowTipsScreen] = useState(false);
@@ -136,6 +135,7 @@ export default function MagicReviewPage() {
     "Не понял запрос", "Неаккуратно", "Спешил", "Не услышал пожелания",
     "Результат не устроил", "Долго ждал мастера", "Не понравилась стрижка",
     "Слишком коротко", "Гигиена мастера", "Уровень салона",
+    "Итоговая цена отличалась от заявленной",
   ];
 
   const triggersByRating: Record<number, string[]> = {
@@ -169,9 +169,6 @@ export default function MagicReviewPage() {
       setTriggers([]);
     }
     setRating(newRating);
-    if (newRating === 5) {
-      setPriceMismatch(false);
-    }
     if (newRating <= 3) {
       setHiddenName(true);
     }
@@ -215,7 +212,7 @@ export default function MagicReviewPage() {
       });
       return;
     }
-    submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName, priceMismatch });
+    submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName, priceMismatch: triggers.includes("Итоговая цена отличалась от заявленной") });
   };
 
   const generateKaspiDeepLink = (amount: number) => {
@@ -521,19 +518,6 @@ export default function MagicReviewPage() {
             data-testid="switch-hidden-name"
           />
         </div>
-
-        {rating > 0 && rating <= 4 && (
-          <label className="flex items-start gap-3 cursor-pointer" data-testid="label-price-mismatch">
-            <input
-              type="checkbox"
-              checked={priceMismatch}
-              onChange={(e) => setPriceMismatch(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
-              data-testid="checkbox-price-mismatch"
-            />
-            <span className="text-sm text-muted-foreground">Итоговая цена выше заявленной</span>
-          </label>
-        )}
 
         <div className="space-y-2">
           <label className="text-sm font-medium ml-1">Комментарий <span className="text-muted-foreground">(необязательно)</span></label>

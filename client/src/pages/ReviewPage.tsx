@@ -98,13 +98,13 @@ export default function ReviewPage() {
   const [comment, setComment] = useState("");
   const [triggers, setTriggers] = useState<string[]>([]);
   const [hiddenName, setHiddenName] = useState(false);
-  const [priceMismatch, setPriceMismatch] = useState(false);
   const [formInitialized, setFormInitialized] = useState(false);
 
   const negativeTriggers = [
     "Не понял запрос", "Неаккуратно", "Спешил", "Не услышал пожелания",
     "Результат не устроил", "Долго ждал мастера", "Не понравилась стрижка",
     "Слишком коротко", "Гигиена мастера", "Уровень салона",
+    "Итоговая цена отличалась от заявленной",
   ];
 
   const triggersByRating: Record<number, string[]> = {
@@ -138,7 +138,6 @@ export default function ReviewPage() {
       setComment(booking.review.comment || "");
       setTriggers(booking.review.triggers || []);
       setHiddenName(!booking.review.showName);
-      setPriceMismatch(!!(booking.review as any).priceMismatch);
       setFormInitialized(true);
     }
   }, [booking, formInitialized]);
@@ -151,9 +150,6 @@ export default function ReviewPage() {
       setTriggers([]);
     }
     setRating(newRating);
-    if (newRating === 5) {
-      setPriceMismatch(false);
-    }
     if (newRating <= 3) {
       setHiddenName(true);
     }
@@ -188,7 +184,7 @@ export default function ReviewPage() {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ rating, comment, triggers, showName: !hiddenName, priceMismatch }),
+          body: JSON.stringify({ rating, comment, triggers, showName: !hiddenName, priceMismatch: triggers.includes("Итоговая цена отличалась от заявленной") }),
         });
         
         if (res.ok) {
@@ -210,7 +206,7 @@ export default function ReviewPage() {
           comment,
           triggers,
           showName: !hiddenName,
-          priceMismatch,
+          priceMismatch: triggers.includes("Итоговая цена отличалась от заявленной"),
         }, {
           onSuccess: (result) => {
             queryClient.invalidateQueries({ queryKey: ['/api/reviews'] });
@@ -436,19 +432,6 @@ export default function ReviewPage() {
             data-testid="switch-hidden-name"
           />
         </div>
-
-        {rating > 0 && rating <= 4 && (
-          <label className="flex items-start gap-3 cursor-pointer" data-testid="label-price-mismatch">
-            <input
-              type="checkbox"
-              checked={priceMismatch}
-              onChange={(e) => setPriceMismatch(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
-              data-testid="checkbox-price-mismatch"
-            />
-            <span className="text-sm text-muted-foreground">Итоговая цена выше заявленной</span>
-          </label>
-        )}
 
         <div className="space-y-2">
           <label className="text-sm font-medium ml-1">Комментарий <span className="text-muted-foreground">(необязательно)</span></label>
