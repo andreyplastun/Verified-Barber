@@ -125,7 +125,7 @@ export default function SpecialistProfile() {
                       </button>
                     </PopoverTrigger>
                     <PopoverContent side="top" className="max-w-xs text-sm p-3">
-                      <p>Это ориентировочная стоимость базовой услуги. Итоговая цена может измениться при дополнительных запросах или услугах.</p>
+                      <p>Это цена базовой услуги.<br/>Итоговая стоимость может отличаться, если вы договоритесь о дополнительных услугах.</p>
                     </PopoverContent>
                   </Popover>
                 </div>
