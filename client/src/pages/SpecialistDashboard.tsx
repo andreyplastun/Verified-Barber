@@ -358,13 +358,8 @@ export default function SpecialistDashboard() {
               id="baseServiceName"
               value={baseServiceName}
               onChange={(e) => setBaseServiceName(e.target.value)}
-              placeholder={
-                specialist?.category === 'manicure' ? 'Маникюр' :
-                specialist?.category === 'trainer' ? 'Персональная тренировка' :
-                specialist?.category === 'doctor' ? 'Консультация' :
-                specialist?.category === 'cosmetology' ? 'Консультация' :
-                'Базовая стрижка'
-              }
+              placeholder="Наименование базовой услуги"
+              className="placeholder:text-muted-foreground/40"
               maxLength={100}
               data-testid="input-base-service-name"
             />
@@ -376,7 +371,8 @@ export default function SpecialistDashboard() {
               type="number"
               value={baseServicePrice}
               onChange={(e) => setBaseServicePrice(e.target.value)}
-              placeholder="8000"
+              placeholder="Цена базовой услуги"
+              className="placeholder:text-muted-foreground/40"
               min={1}
               data-testid="input-base-service-price"
             />
