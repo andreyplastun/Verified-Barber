@@ -114,14 +114,14 @@ export default function SpecialistProfile() {
               <h1 className="text-lg font-semibold text-[#1F2933] dark:text-[#1F2933]">{specialist.name}</h1>
               <p className="mt-1 text-sm text-[#6B7280]">{specialist.specialty}</p>
               {specialist.baseServiceName && specialist.baseServicePrice && (
-                <div className="flex items-center gap-1 mt-1.5">
-                  <span className="text-sm text-[#6B7280] whitespace-nowrap" data-testid="text-base-service-price">
+                <div className="flex items-center gap-1 mt-2">
+                  <span className="text-xs text-[#9CA3AF] whitespace-nowrap" data-testid="text-base-service-price">
                     {specialist.baseServiceName}{'\u00A0'}—{'\u00A0'}{Number(specialist.baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
                   </span>
                   <Popover>
                     <PopoverTrigger asChild>
                       <button type="button" className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors" data-testid="button-price-info">
-                        <Info size={12} />
+                        <Info size={11} />
                       </button>
                     </PopoverTrigger>
                     <PopoverContent side="top" className="max-w-xs text-sm p-3">
