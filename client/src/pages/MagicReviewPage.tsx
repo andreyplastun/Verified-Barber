@@ -522,7 +522,7 @@ export default function MagicReviewPage() {
           />
         </div>
 
-        {linkData?.baseServicePrice && rating > 0 && rating <= 4 && (
+        {rating > 0 && rating <= 4 && (
           <label className="flex items-start gap-3 cursor-pointer" data-testid="label-price-mismatch">
             <input
               type="checkbox"
