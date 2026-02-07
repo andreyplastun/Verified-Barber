@@ -169,7 +169,9 @@ export default function MagicReviewPage() {
       setTriggers([]);
     }
     setRating(newRating);
-    // Auto-enable anonymous mode for ratings 3 or less
+    if (newRating === 5) {
+      setPriceMismatch(false);
+    }
     if (newRating <= 3) {
       setHiddenName(true);
     }
@@ -520,7 +522,7 @@ export default function MagicReviewPage() {
           />
         </div>
 
-        {linkData?.baseServicePrice && (
+        {linkData?.baseServicePrice && rating > 0 && rating <= 4 && (
           <label className="flex items-start gap-3 cursor-pointer" data-testid="label-price-mismatch">
             <input
               type="checkbox"
@@ -529,7 +531,7 @@ export default function MagicReviewPage() {
               className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
               data-testid="checkbox-price-mismatch"
             />
-            <span className="text-sm text-muted-foreground">Итоговая цена отличалась от заявленной</span>
+            <span className="text-sm text-muted-foreground">Итоговая цена выше заявленной</span>
           </label>
         )}
 

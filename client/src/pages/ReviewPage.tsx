@@ -151,7 +151,9 @@ export default function ReviewPage() {
       setTriggers([]);
     }
     setRating(newRating);
-    // Auto-enable anonymous mode for ratings 1-3
+    if (newRating === 5) {
+      setPriceMismatch(false);
+    }
     if (newRating <= 3) {
       setHiddenName(true);
     }
@@ -435,7 +437,7 @@ export default function ReviewPage() {
           />
         </div>
 
-        {specialist?.baseServicePrice && (
+        {specialist?.baseServicePrice && rating > 0 && rating <= 4 && (
           <label className="flex items-start gap-3 cursor-pointer" data-testid="label-price-mismatch">
             <input
               type="checkbox"
@@ -444,7 +446,7 @@ export default function ReviewPage() {
               className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
               data-testid="checkbox-price-mismatch"
             />
-            <span className="text-sm text-muted-foreground">Итоговая цена отличалась от заявленной</span>
+            <span className="text-sm text-muted-foreground">Итоговая цена выше заявленной</span>
           </label>
         )}
 
