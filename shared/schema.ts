@@ -127,6 +127,7 @@ export const reviews = pgTable("reviews", {
   showName: boolean("show_name").default(false).notNull(),
   isPrivate: boolean("is_private").default(false).notNull(),
   isPublicName: boolean("is_public_name").default(false).notNull(),
+  priceMismatch: boolean("price_mismatch").default(false).notNull(),
   finalizedAt: timestamp("finalized_at"),
   editableUntil: timestamp("editable_until"),
   createdAt: timestamp("created_at").defaultNow(),
