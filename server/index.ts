@@ -66,18 +66,20 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  await registerRoutes(httpServer, app);
-  
-  // Auto-migrate: ensure price_mismatch column exists in reviews table
+  // Auto-migrate: ensure all new columns exist BEFORE any queries
   try {
     console.log("[STARTUP] Running auto-migrations...");
     await pool.query(`
-      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS price_mismatch boolean NOT NULL DEFAULT false
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS base_service_name text;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS base_service_price integer;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS price_mismatch boolean NOT NULL DEFAULT false;
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
     console.error("[STARTUP] Auto-migration error (non-fatal):", err);
   }
+
+  await registerRoutes(httpServer, app);
   
   // Finalize any pending reviews at startup (fixes reviews that missed lazy finalization)
   try {
