@@ -3,9 +3,10 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
+import { pool } from "./db";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-07-v38-base-service-price";
+const BUILD_VERSION = "2026-02-07-v39-price-mismatch-rating";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();
@@ -66,6 +67,17 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+  
+  // Auto-migrate: ensure price_mismatch column exists in reviews table
+  try {
+    console.log("[STARTUP] Running auto-migrations...");
+    await pool.query(`
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS price_mismatch boolean NOT NULL DEFAULT false
+    `);
+    console.log("[STARTUP] Auto-migrations complete");
+  } catch (err) {
+    console.error("[STARTUP] Auto-migration error (non-fatal):", err);
+  }
   
   // Finalize any pending reviews at startup (fixes reviews that missed lazy finalization)
   try {
