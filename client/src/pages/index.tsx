@@ -12,6 +12,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -291,6 +296,26 @@ export default function SpecialistList() {
                         {(specialist as any).district && ` · ${(specialist as any).district}`}
                       </span>
                     </div>
+                    {/* Base service price */}
+                    {(specialist as any).baseServiceName && (specialist as any).baseServicePrice && (
+                      <div className="flex items-center gap-1 mt-1">
+                        <span className="text-xs text-[#6B7280]" data-testid={`text-price-${specialist.id}`}>
+                          {(specialist as any).baseServiceName} — {Number((specialist as any).baseServicePrice).toLocaleString('ru-RU')} ₸
+                        </span>
+                        <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button type="button" className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors" data-testid={`button-price-info-${specialist.id}`}>
+                                <Info size={11} />
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent side="top" className="max-w-xs text-sm p-3">
+                              <p>Это ориентировочная стоимость базовой услуги. Итоговая цена может измениться при дополнительных запросах или услугах.</p>
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Trust Block (right) */}

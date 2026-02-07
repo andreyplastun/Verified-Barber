@@ -1315,6 +1315,55 @@ ${magicLink}`;
     }
   });
 
+  // Update specialist base service settings
+  app.patch("/api/specialists/:id/base-service", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      const specialistId = Number(req.params.id);
+      const { baseServiceName, baseServicePrice } = req.body;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      if (isNaN(specialistId)) {
+        return res.status(400).json({ message: "Invalid specialist ID" });
+      }
+
+      const canEdit = await checkSpecialistOwner(userId, specialistId);
+      if (!canEdit) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const name = typeof baseServiceName === 'string' ? baseServiceName.trim() : null;
+      const rawPrice = baseServicePrice !== null && baseServicePrice !== undefined && baseServicePrice !== '' 
+        ? Number(baseServicePrice) : null;
+      const price = rawPrice !== null && !isNaN(rawPrice) && Number.isInteger(rawPrice) ? rawPrice : null;
+
+      if ((name && !price) || (!name && price)) {
+        return res.status(400).json({ message: "Оба поля должны быть заполнены или оба пусты" });
+      }
+
+      if (rawPrice !== null && (isNaN(rawPrice) || !Number.isInteger(rawPrice))) {
+        return res.status(400).json({ message: "Стоимость должна быть целым числом" });
+      }
+
+      if (price !== null && (price <= 0 || price > 10000000)) {
+        return res.status(400).json({ message: "Некорректная стоимость" });
+      }
+
+      if (name && name.length > 100) {
+        return res.status(400).json({ message: "Название услуги слишком длинное" });
+      }
+
+      await storage.updateSpecialistBaseService(specialistId, name, price);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error updating base service:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Get photos for a specialist
   app.get("/api/specialists/:id/photos", async (req, res) => {
     try {

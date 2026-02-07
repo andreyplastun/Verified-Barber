@@ -85,6 +85,9 @@ export const specialists = pgTable("specialists", {
   tipsOnboardingCompletedAt: timestamp("tips_onboarding_completed_at"), // When tips onboarding was completed
   // Referral tracking (who invited this specialist)
   referredBySpecialistId: integer("referred_by_specialist_id"), // ID of specialist who shared invite link
+  // Base service pricing
+  baseServiceName: text("base_service_name"),
+  baseServicePrice: integer("base_service_price"),
   // Profile ownership - links specialist to their user account
   ownerUserId: uuid("owner_user_id"), // References users.id - set when profile is claimed
 });

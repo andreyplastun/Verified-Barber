@@ -79,6 +79,20 @@ Language: Russian (Русский) - all UI text is in Russian.
   - "Формируется" when validReviewCount < 10
   - "Сформированный рейтинг" when validReviewCount >= 10
 
+### Base Service Pricing
+- **Purpose**: Show transparent price anchor for clients without turning Rateus into a price list
+- **Database Fields** (in specialists table):
+  - `base_service_name` (text, nullable) - Name of the base service
+  - `base_service_price` (integer, nullable) - Price in tenge
+- **Validation**: Both fields must be filled together or both empty
+- **Display**: "{serviceName} — {price} ₸" with ⓘ tooltip
+- **Tooltip text**: "Это ориентировочная стоимость базовой услуги. Итоговая цена может измениться при дополнительных запросах или услугах."
+- **Listing**: Under location, before bio
+- **Profile**: Under name and specialty, before rating
+- **Dashboard**: "Базовая услуга" card with name/price inputs
+- **Analytics**: Price discrepancy counter (keyword-based scan of reviews)
+- **Endpoint**: `PATCH /api/specialists/:id/base-service`
+
 ### Specialist Self-Signup System
 - **Purpose**: Allow specialists to register themselves without admin intervention
 - **Route**: `/specialist-signup`

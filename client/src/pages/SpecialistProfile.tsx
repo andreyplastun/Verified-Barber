@@ -113,6 +113,23 @@ export default function SpecialistProfile() {
             <div className="flex-1 min-w-0">
               <h1 className="text-lg font-semibold text-[#1F2933] dark:text-[#1F2933]">{specialist.name}</h1>
               <p className="mt-1 text-sm text-[#6B7280]">{specialist.specialty}</p>
+              {specialist.baseServiceName && specialist.baseServicePrice && (
+                <div className="flex items-center gap-1 mt-1.5">
+                  <span className="text-sm text-[#6B7280]" data-testid="text-base-service-price">
+                    {specialist.baseServiceName} — {Number(specialist.baseServicePrice).toLocaleString('ru-RU')} ₸
+                  </span>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button type="button" className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors" data-testid="button-price-info">
+                        <Info size={12} />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent side="top" className="max-w-xs text-sm p-3">
+                      <p>Это ориентировочная стоимость базовой услуги. Итоговая цена может измениться при дополнительных запросах или услугах.</p>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              )}
             </div>
 
             {/* Right block - Trust (pinned to top) */}

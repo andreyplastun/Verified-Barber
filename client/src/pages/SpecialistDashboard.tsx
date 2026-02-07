@@ -27,6 +27,9 @@ export default function SpecialistDashboard() {
   const [kaspiPhone, setKaspiPhone] = useState('');
   const [tipsEnabled, setTipsEnabled] = useState(false);
   const [savingTips, setSavingTips] = useState(false);
+  const [baseServiceName, setBaseServiceName] = useState('');
+  const [baseServicePrice, setBaseServicePrice] = useState('');
+  const [savingBaseService, setSavingBaseService] = useState(false);
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -175,6 +178,8 @@ export default function SpecialistDashboard() {
     if (specialist) {
       setKaspiPhone(specialist.kaspiPhone || '');
       setTipsEnabled(specialist.tipsEnabled || false);
+      setBaseServiceName(specialist.baseServiceName || '');
+      setBaseServicePrice(specialist.baseServicePrice ? String(specialist.baseServicePrice) : '');
     }
   }, [specialist]);
 
@@ -228,9 +233,56 @@ export default function SpecialistDashboard() {
     }
   };
 
+  const handleSaveBaseService = async () => {
+    if (!specialistId || !currentUser?.id) return;
+    const name = baseServiceName.trim();
+    const priceStr = baseServicePrice.trim();
+    let price: number | null = null;
+    if (priceStr) {
+      if (!/^\d+$/.test(priceStr)) {
+        toast({ title: 'Ошибка', description: 'Стоимость должна быть целым числом', variant: 'destructive' });
+        return;
+      }
+      price = parseInt(priceStr, 10);
+      if (price <= 0 || price > 10000000) {
+        toast({ title: 'Ошибка', description: 'Введите корректную стоимость (от 1 до 10 000 000)', variant: 'destructive' });
+        return;
+      }
+    }
+    if ((name && !price) || (!name && price)) {
+      toast({ title: 'Ошибка', description: 'Заполните оба поля или оставьте оба пустыми', variant: 'destructive' });
+      return;
+    }
+    setSavingBaseService(true);
+    try {
+      const res = await fetch(`/api/specialists/${specialistId}/base-service`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({ baseServiceName: name || null, baseServicePrice: price }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to save');
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      toast({ title: 'Базовая услуга сохранена' });
+    } catch (err: any) {
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    } finally {
+      setSavingBaseService(false);
+    }
+  };
+
   const tipsSettingsChanged = 
     kaspiPhone !== (specialist?.kaspiPhone || '') || 
     tipsEnabled !== (specialist?.tipsEnabled || false);
+
+  const baseServiceChanged =
+    baseServiceName !== (specialist?.baseServiceName || '') ||
+    baseServicePrice !== (specialist?.baseServicePrice ? String(specialist.baseServicePrice) : '');
 
   return (
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
@@ -291,6 +343,56 @@ export default function SpecialistDashboard() {
                 {savingBio ? 'Сохранение...' : 'Сохранить'}
               </Button>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Базовая услуга</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="baseServiceName">Базовая услуга</Label>
+            <Input
+              id="baseServiceName"
+              value={baseServiceName}
+              onChange={(e) => setBaseServiceName(e.target.value)}
+              placeholder={
+                specialist?.category === 'manicure' ? 'Маникюр' :
+                specialist?.category === 'trainer' ? 'Персональная тренировка' :
+                specialist?.category === 'doctor' ? 'Консультация' :
+                specialist?.category === 'cosmetology' ? 'Консультация' :
+                'Базовая стрижка'
+              }
+              maxLength={100}
+              data-testid="input-base-service-name"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="baseServicePrice">Стоимость, ₸</Label>
+            <Input
+              id="baseServicePrice"
+              type="number"
+              value={baseServicePrice}
+              onChange={(e) => setBaseServicePrice(e.target.value)}
+              placeholder="8000"
+              min={1}
+              data-testid="input-base-service-price"
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Это ориентир для клиентов. Итоговая стоимость может отличаться при дополнительных услугах.
+          </p>
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={handleSaveBaseService}
+              disabled={savingBaseService || !baseServiceChanged}
+              data-testid="button-save-base-service"
+            >
+              {savingBaseService ? 'Сохранение...' : 'Сохранить'}
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -519,6 +621,24 @@ export default function SpecialistDashboard() {
             )}
           </CardContent>
         </Card>
+
+        {reviews && reviews.length > 0 && specialist?.baseServicePrice && (() => {
+          const priceKeywords = ['цена', 'цену', 'ценой', 'ценник', 'стоимость', 'дорого', 'дороже', 'дешевле', 'переплат', 'доплат', 'наценк', 'прайс'];
+          const priceReviewCount = reviews.filter((r: Review) => {
+            const text = ((r.comment || '') + ' ' + (r.triggers || []).join(' ')).toLowerCase();
+            return priceKeywords.some(kw => text.includes(kw));
+          }).length;
+          if (priceReviewCount === 0) return null;
+          return (
+            <Card>
+              <CardContent className="py-4">
+                <p className="text-sm text-muted-foreground" data-testid="text-price-discrepancy-count">
+                  Отзывы с расхождением по цене — <span className="font-semibold text-foreground">{priceReviewCount}</span>
+                </p>
+              </CardContent>
+            </Card>
+          );
+        })()}
 
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">

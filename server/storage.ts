@@ -54,6 +54,7 @@ export interface IStorage {
   updateSpecialistAvatar(specialistId: number, imageUrl: string): Promise<void>;
   updateSpecialistBio(specialistId: number, bio: string): Promise<void>;
   updateSpecialistTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean): Promise<void>;
+  updateSpecialistBaseService(specialistId: number, baseServiceName: string | null, baseServicePrice: number | null): Promise<void>;
   saveOnboardingTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean, skipped: boolean): Promise<void>;
   
   // Magic Links
@@ -579,6 +580,12 @@ export class DatabaseStorage implements IStorage {
   async updateSpecialistTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean): Promise<void> {
     await db.update(specialists)
       .set({ kaspiPhone, tipsEnabled })
+      .where(eq(specialists.id, specialistId));
+  }
+
+  async updateSpecialistBaseService(specialistId: number, baseServiceName: string | null, baseServicePrice: number | null): Promise<void> {
+    await db.update(specialists)
+      .set({ baseServiceName, baseServicePrice })
       .where(eq(specialists.id, specialistId));
   }
 
