@@ -299,8 +299,8 @@ export default function SpecialistList() {
                     {/* Base service price */}
                     {(specialist as any).baseServiceName && (specialist as any).baseServicePrice && (
                       <div className="flex items-center gap-1 mt-1">
-                        <span className="text-xs text-[#6B7280]" data-testid={`text-price-${specialist.id}`}>
-                          {(specialist as any).baseServiceName} — {Number((specialist as any).baseServicePrice).toLocaleString('ru-RU')} ₸
+                        <span className="text-xs text-[#6B7280] whitespace-nowrap" data-testid={`text-price-${specialist.id}`}>
+                          {(specialist as any).baseServiceName}{'\u00A0'}—{'\u00A0'}{Number((specialist as any).baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
                         </span>
                         <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
                           <Popover>

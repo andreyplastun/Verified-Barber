@@ -115,8 +115,8 @@ export default function SpecialistProfile() {
               <p className="mt-1 text-sm text-[#6B7280]">{specialist.specialty}</p>
               {specialist.baseServiceName && specialist.baseServicePrice && (
                 <div className="flex items-center gap-1 mt-1.5">
-                  <span className="text-sm text-[#6B7280]" data-testid="text-base-service-price">
-                    {specialist.baseServiceName} — {Number(specialist.baseServicePrice).toLocaleString('ru-RU')} ₸
+                  <span className="text-sm text-[#6B7280] whitespace-nowrap" data-testid="text-base-service-price">
+                    {specialist.baseServiceName}{'\u00A0'}—{'\u00A0'}{Number(specialist.baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
                   </span>
                   <Popover>
                     <PopoverTrigger asChild>
