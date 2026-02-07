@@ -597,6 +597,7 @@ export async function registerRoutes(
         normalizedText: normalizedText || null,
         isRatingLimited: antifraudResult.isLimited,
         ratingLimitReason: antifraudResult.reason,
+        priceMismatch: !!(input as any).priceMismatch,
       });
       
       // Mark booking as reviewed
@@ -624,8 +625,8 @@ export async function registerRoutes(
   app.patch("/api/reviews/:id", async (req, res) => {
     try {
       const id = Number(req.params.id);
-      const { rating, comment, triggers, showName } = req.body;
-      const updated = await storage.updateReview(id, { rating, comment, triggers, showName });
+      const { rating, comment, triggers, showName, priceMismatch } = req.body;
+      const updated = await storage.updateReview(id, { rating, comment, triggers, showName, priceMismatch });
       if (!updated) return res.status(404).json({ message: "Review not found" });
       res.json(updated);
     } catch (err: any) {
@@ -1038,6 +1039,7 @@ export async function registerRoutes(
         tipsEnabled: specialist.tipsEnabled || false,
         kaspiPhone: specialist.kaspiPhone || null,
         sentAt: link.createdAt,
+        baseServicePrice: specialist.baseServicePrice || null,
       });
     } catch (err: any) {
       console.error("Error validating magic link:", err);
@@ -1112,7 +1114,7 @@ export async function registerRoutes(
         return res.status(409).json({ message: "Отзыв уже оставлен" });
       }
       
-      const { rating, comment, triggers, showName } = req.body;
+      const { rating, comment, triggers, showName, priceMismatch } = req.body;
       
       if (!rating || rating < 1 || rating > 5) {
         return res.status(400).json({ message: "Укажите оценку от 1 до 5" });
@@ -1143,7 +1145,8 @@ export async function registerRoutes(
         normalizedText: normalizedText || null,
         isRatingLimited: antifraudResult.isLimited,
         ratingLimitReason: antifraudResult.reason,
-        source: "magic_link", // Track submission method (no special privileges)
+        source: "magic_link",
+        priceMismatch: !!priceMismatch,
       });
       
       // Magic link reviews are finalized immediately (no edit window)

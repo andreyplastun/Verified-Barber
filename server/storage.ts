@@ -41,7 +41,7 @@ export interface IStorage {
 
   // Reviews
   createReview(review: any): Promise<Review>;
-  updateReview(id: number, data: { rating?: number; comment?: string; triggers?: string[]; showName?: boolean }): Promise<Review | undefined>;
+  updateReview(id: number, data: { rating?: number; comment?: string; triggers?: string[]; showName?: boolean; priceMismatch?: boolean }): Promise<Review | undefined>;
   finalizeReview(id: number): Promise<Review | undefined>;
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
   getReviewByBookingId(bookingId: number): Promise<Review | undefined>;
@@ -459,13 +459,14 @@ export class DatabaseStorage implements IStorage {
       normalizedText: review.normalizedText || null,
       isRatingLimited: review.isRatingLimited || false,
       ratingLimitReason: review.ratingLimitReason || null,
+      priceMismatch: review.priceMismatch || false,
     } as any).returning();
     
     console.log(`[STORAGE] createReview - Created review ID: ${newReview.id} for specialist ${newReview.specialistId}, isRatingLimited: ${newReview.isRatingLimited}`);
     return newReview;
   }
 
-  async updateReview(id: number, data: { rating?: number; comment?: string; triggers?: string[]; showName?: boolean }): Promise<Review | undefined> {
+  async updateReview(id: number, data: { rating?: number; comment?: string; triggers?: string[]; showName?: boolean; priceMismatch?: boolean }): Promise<Review | undefined> {
     const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
     if (!review) return undefined;
 
@@ -484,7 +485,8 @@ export class DatabaseStorage implements IStorage {
         triggers: data.triggers !== undefined ? data.triggers : review.triggers,
         showName: newShowName,
         hiddenName: !newShowName,
-        isPublicName: newShowName
+        isPublicName: newShowName,
+        priceMismatch: data.priceMismatch !== undefined ? data.priceMismatch : review.priceMismatch,
       })
       .where(eq(reviews.id, id))
       .returning();

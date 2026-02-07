@@ -623,11 +623,7 @@ export default function SpecialistDashboard() {
         </Card>
 
         {reviews && reviews.length > 0 && specialist?.baseServicePrice && (() => {
-          const priceKeywords = ['цена', 'цену', 'ценой', 'ценник', 'стоимость', 'дорого', 'дороже', 'дешевле', 'переплат', 'доплат', 'наценк', 'прайс'];
-          const priceReviewCount = reviews.filter((r: Review) => {
-            const text = ((r.comment || '') + ' ' + (r.triggers || []).join(' ')).toLowerCase();
-            return priceKeywords.some(kw => text.includes(kw));
-          }).length;
+          const priceReviewCount = reviews.filter((r: any) => r.priceMismatch).length;
           if (priceReviewCount === 0) return null;
           return (
             <Card>

@@ -52,6 +52,7 @@ interface MagicLinkData {
   tipsEnabled?: boolean;
   kaspiPhone?: string | null;
   sentAt?: string;
+  baseServicePrice?: number | null;
 }
 
 export default function MagicReviewPage() {
@@ -80,6 +81,7 @@ export default function MagicReviewPage() {
   const [comment, setComment] = useState("");
   const [triggers, setTriggers] = useState<string[]>([]);
   const [hiddenName, setHiddenName] = useState(false);
+  const [priceMismatch, setPriceMismatch] = useState(false);
   const [showNewAccountPopup, setShowNewAccountPopup] = useState(false);
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [showTipsScreen, setShowTipsScreen] = useState(false);
@@ -174,7 +176,7 @@ export default function MagicReviewPage() {
   };
 
   const submitMutation = useMutation({
-    mutationFn: async (data: { rating: number; comment: string; triggers: string[]; showName: boolean }) => {
+    mutationFn: async (data: { rating: number; comment: string; triggers: string[]; showName: boolean; priceMismatch: boolean }) => {
       const res = await fetch(`/api/r/${token}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -211,7 +213,7 @@ export default function MagicReviewPage() {
       });
       return;
     }
-    submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName });
+    submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName, priceMismatch });
   };
 
   const generateKaspiDeepLink = (amount: number) => {
@@ -517,6 +519,19 @@ export default function MagicReviewPage() {
             data-testid="switch-hidden-name"
           />
         </div>
+
+        {linkData?.baseServicePrice && (
+          <label className="flex items-start gap-3 cursor-pointer" data-testid="label-price-mismatch">
+            <input
+              type="checkbox"
+              checked={priceMismatch}
+              onChange={(e) => setPriceMismatch(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+              data-testid="checkbox-price-mismatch"
+            />
+            <span className="text-sm text-muted-foreground">Итоговая цена отличалась от заявленной</span>
+          </label>
+        )}
 
         <div className="space-y-2">
           <label className="text-sm font-medium ml-1">Комментарий <span className="text-muted-foreground">(необязательно)</span></label>
