@@ -299,7 +299,7 @@ export default function SpecialistList() {
                     {/* Base service price */}
                     {(specialist as any).baseServiceName && (specialist as any).baseServicePrice && (
                       <div className="flex items-center gap-1 mt-1">
-                        <span className="text-xs text-[#6B7280] whitespace-nowrap" data-testid={`text-price-${specialist.id}`}>
+                        <span className="text-sm text-[#6B7280] whitespace-nowrap" data-testid={`text-price-${specialist.id}`}>
                           {(specialist as any).baseServiceName}{'\u00A0'}—{'\u00A0'}{Number((specialist as any).baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
                         </span>
                         <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
@@ -323,13 +323,13 @@ export default function SpecialistList() {
                     {/* Rating */}
                     <div className="flex items-center gap-1">
                       <Star size={14} className="text-amber-400 fill-amber-400" />
-                      <span className="text-sm font-semibold text-[#1F2933]">
+                      <span className="text-base font-semibold text-[#1F2933]">
                         {(specialist.averageRating / 10).toFixed(1)}
                       </span>
                     </div>
                     
                     {/* Review count */}
-                    <span className="text-xs text-[#6B7280]">
+                    <span className="text-sm text-[#6B7280]">
                       {specialist.reviewCount} {(() => {
                         const n = specialist.reviewCount % 100;
                         if (n >= 11 && n <= 19) return 'отзывов';
@@ -342,16 +342,14 @@ export default function SpecialistList() {
                     
                     {/* Rating status badge */}
                     {((specialist as any).validReviewCount || 0) >= 10 ? (
-                      <div className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700" data-testid="badge-rating-formed">
-                        <span>Сформированный</span>
-                      </div>
+                      <span className="text-xs text-emerald-600" data-testid="badge-rating-formed">Сформированный</span>
                     ) : (
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <div className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium bg-[#F1F5F9] text-[#475569] cursor-help" data-testid="badge-rating-forming">
-                            <span>Формируется</span>
+                          <span className="inline-flex items-center gap-0.5 text-xs text-[#9CA3AF] cursor-help" data-testid="badge-rating-forming">
+                            Формируется
                             <Info size={10} className="opacity-60" />
-                          </div>
+                          </span>
                         </TooltipTrigger>
                         <TooltipContent side="bottom" className="max-w-[200px] text-center">
                           <p className="text-xs">С увеличением количества отзывов рейтинг станет точнее</p>
