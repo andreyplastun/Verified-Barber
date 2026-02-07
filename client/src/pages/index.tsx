@@ -310,7 +310,7 @@ export default function SpecialistList() {
                               </button>
                             </PopoverTrigger>
                             <PopoverContent side="top" className="max-w-xs text-sm p-3">
-                              <p>Это цена базовой услуги.<br/>Итоговая стоимость может отличаться взависимости от выбранного набора услуг.</p>
+                              <p>Это цена базовой услуги.<br/>Итоговая стоимость может отличаться в зависимости от выбранного набора услуг.</p>
                             </PopoverContent>
                           </Popover>
                         </div>
