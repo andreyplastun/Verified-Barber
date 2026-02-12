@@ -7,6 +7,7 @@ import { bookings, type Review, specialistSignupSchema, claimRequestSchema } fro
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
+import { syncBookingToAltegio, isAltegioConfigured } from "./altegio";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -492,6 +493,30 @@ export async function registerRoutes(
       
       const input = api.bookings.create.input.parse(body);
       const booking = await storage.createBooking(input);
+
+      if (isAltegioConfigured()) {
+        const specialist = await storage.getSpecialist(booking.specialistId);
+        const syncResult = await syncBookingToAltegio(
+          { ...booking, updatedFrom: "rateus" },
+          specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
+          "create",
+        );
+        if (syncResult.success && syncResult.altegioId) {
+          await storage.updateBooking(booking.id, {
+            altegioAppointmentId: syncResult.altegioId,
+            updatedFrom: "rateus",
+            altegioSyncStatus: "synced",
+            altegioSyncError: null,
+          });
+        } else if (syncResult.error && syncResult.error !== "not_configured" && syncResult.error !== "no_altegio_staff_id") {
+          await storage.updateBooking(booking.id, {
+            updatedFrom: "rateus",
+            altegioSyncStatus: "error",
+            altegioSyncError: syncResult.error,
+          });
+        }
+      }
+
       res.status(201).json(booking);
     } catch (err) {
       if (err instanceof z.ZodError) {
@@ -796,6 +821,28 @@ export async function registerRoutes(
         customerEmail: customerEmail.toLowerCase(),
         appointmentTime: new Date(appointmentTime),
       });
+
+      if (isAltegioConfigured()) {
+        const spec = await storage.getSpecialist(booking.specialistId);
+        const syncResult = await syncBookingToAltegio(
+          { ...booking, updatedFrom: "rateus" },
+          spec ? { altegioStaffId: (spec as any).altegioStaffId, altegioCompanyId: (spec as any).altegioCompanyId } : null,
+          "create",
+        );
+        if (syncResult.success && syncResult.altegioId) {
+          await storage.updateBooking(booking.id, {
+            altegioAppointmentId: syncResult.altegioId,
+            updatedFrom: "rateus",
+            altegioSyncStatus: "synced",
+          });
+        } else if (syncResult.error && syncResult.error !== "not_configured" && syncResult.error !== "no_altegio_staff_id") {
+          await storage.updateBooking(booking.id, {
+            updatedFrom: "rateus",
+            altegioSyncStatus: "error",
+            altegioSyncError: syncResult.error,
+          });
+        }
+      }
       
       res.status(201).json(booking);
     } catch (err: any) {
@@ -804,17 +851,31 @@ export async function registerRoutes(
     }
   });
 
-  // Admin mark booking as completed
   app.patch("/api/admin/bookings/:id/complete", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
       
       const id = Number(req.params.id);
+      const existingBooking = await storage.getBooking(id);
       const booking = await storage.updateBookingStatus(id, "completed");
       
       if (!booking) {
         return res.status(404).json({ message: "Booking not found" });
+      }
+
+      if (isAltegioConfigured() && existingBooking && existingBooking.updatedFrom !== "altegio") {
+        const spec = await storage.getSpecialist(booking.specialistId);
+        const syncResult = await syncBookingToAltegio(
+          { ...booking, updatedFrom: "rateus" },
+          spec ? { altegioStaffId: (spec as any).altegioStaffId, altegioCompanyId: (spec as any).altegioCompanyId } : null,
+          "complete",
+        );
+        await storage.updateBooking(id, {
+          updatedFrom: "rateus",
+          altegioSyncStatus: syncResult.success ? "synced" : "error",
+          altegioSyncError: syncResult.error || null,
+        });
       }
       
       res.json(booking);
@@ -1269,9 +1330,23 @@ ${magicLink}`;
 
       const updated = await storage.updateBookingStatus(bookingId, "completed");
 
+      const specialist = await storage.getSpecialist(booking.specialistId);
+
+      if (isAltegioConfigured() && booking.updatedFrom !== "altegio") {
+        const syncResult = await syncBookingToAltegio(
+          { ...booking, status: "completed", updatedFrom: "rateus" },
+          specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
+          "complete",
+        );
+        await storage.updateBooking(bookingId, {
+          updatedFrom: "rateus",
+          altegioSyncStatus: syncResult.success ? "synced" : "error",
+          altegioSyncError: syncResult.error || null,
+        });
+      }
+
       let magicLinkData = null;
       if (booking.clientId) {
-        const specialist = await storage.getSpecialist(booking.specialistId);
         const barberName = specialist?.name || 'барберу';
 
         const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
@@ -1899,6 +1974,7 @@ ${magicLink}`;
             altegioAppointmentId: altegioId,
             altegioStaffId: staffId || null,
             status: "confirmed",
+            updatedFrom: "altegio",
           });
           console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}`);
           break;
@@ -1930,6 +2006,7 @@ ${magicLink}`;
               altegioAppointmentId: altegioId,
               altegioStaffId: staffId || null,
               status: "confirmed",
+              updatedFrom: "altegio",
             });
             console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}`);
             break;
@@ -1940,6 +2017,7 @@ ${magicLink}`;
           if (clientName && clientName !== "Клиент Altegio") updateData.customerName = clientName;
           if (clientPhone) updateData.customerPhone = clientPhone;
           if (staffId) updateData.altegioStaffId = staffId;
+          updateData.updatedFrom = "altegio";
 
           if (Object.keys(updateData).length > 0) {
             await storage.updateBooking(existing.id, updateData);
@@ -1955,7 +2033,7 @@ ${magicLink}`;
             console.warn(`[ALTEGIO] Appointment ${altegioId} not found for cancellation`);
             break;
           }
-          await storage.updateBookingStatus(existing.id, "cancelled");
+          await storage.updateBooking(existing.id, { status: "cancelled", updatedFrom: "altegio" } as any);
           console.log(`[ALTEGIO] Cancelled booking ${existing.id} for appointment ${altegioId}`);
           break;
         }
@@ -1970,7 +2048,7 @@ ${magicLink}`;
             console.log(`[ALTEGIO] Booking ${existing.id} already completed`);
             break;
           }
-          await storage.updateBookingStatus(existing.id, "completed");
+          await storage.updateBooking(existing.id, { status: "completed", updatedFrom: "altegio" } as any);
           console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId}`);
 
           if (existing.clientId) {

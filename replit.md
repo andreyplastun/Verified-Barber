@@ -93,13 +93,16 @@ Language: Russian (Русский) - all UI text is in Russian.
 - **Purpose**: Allows specialist owners to claim and manage their public profiles.
 - **Flow**: User submits a claim request, admin approves, a magic link is sent, and the user binds their profile after authentication, gaining specialist role.
 
-#### Altegio Webhook Integration
-- **Endpoint**: `POST /api/altegio/webhook`
-- **Events**: appointment.created, appointment.updated, appointment.cancelled, appointment.completed (also handles record.* variants)
-- **Anti-duplication**: Uses `altegio_appointment_id` column in bookings table; repeated events update instead of creating duplicates
-- **Security**: Optional `ALTEGIO_WEBHOOK_SECRET` env var; verified via `X-Altegio-Signature` header or `?secret=` query param
-- **Completion**: appointment.completed triggers booking status change and auto-creates magic link for review (if clientId exists)
-- **Logging**: All events logged with `[ALTEGIO]` prefix
+#### Altegio Bidirectional Sync
+- **Webhook (Altegio → Rateus)**: `POST /api/altegio/webhook` handles appointment lifecycle events
+- **Sync (Rateus → Altegio)**: `server/altegio.ts` client syncs booking create/update/cancel/complete to Altegio API
+- **Loop Protection**: `updatedFrom` field on bookings ('rateus' | 'altegio') prevents infinite sync loops
+- **Sync Status**: `altegioSyncStatus` ('synced' | 'error') + `altegioSyncError` for diagnostics
+- **Specialist Fields**: `altegioStaffId` and `altegioCompanyId` on specialists table for mapping
+- **API**: Uses Altegio V1 API (`POST /records/{company_id}`, `PUT /record/{company_id}/{id}`, `DELETE /record/{company_id}/{id}`)
+- **Auth**: Requires `ALTEGIO_PARTNER_TOKEN`, `ALTEGIO_USER_TOKEN`, `ALTEGIO_COMPANY_ID` env vars
+- **Security**: Optional `ALTEGIO_WEBHOOK_SECRET` for incoming webhook validation
+- **Logging**: All sync logged with `[ALTEGIO-SYNC]` prefix, webhooks with `[ALTEGIO]` prefix
 
 ## External Dependencies
 

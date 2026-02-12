@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-12-v55-altegio-webhook";
+const BUILD_VERSION = "2026-02-12-v56-altegio-bidirectional-sync";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();
@@ -75,6 +75,11 @@ app.use((req, res, next) => {
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS price_mismatch boolean NOT NULL DEFAULT false;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_appointment_id integer;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_staff_id integer;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS updated_from text;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_sync_status text;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_sync_error text;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_staff_id integer;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_company_id integer;
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
