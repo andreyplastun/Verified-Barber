@@ -73,6 +73,8 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS base_service_name text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS base_service_price integer;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS price_mismatch boolean NOT NULL DEFAULT false;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_appointment_id integer;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_staff_id integer;
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {

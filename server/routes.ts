@@ -1828,6 +1828,177 @@ ${magicLink}`;
     }
   });
 
+  // ==========================================
+  // Altegio Webhook
+  // ==========================================
+  app.post("/api/altegio/webhook", async (req, res) => {
+    try {
+      const webhookSecret = process.env.ALTEGIO_WEBHOOK_SECRET;
+      if (webhookSecret) {
+        const signature = req.headers["x-altegio-signature"] || req.query.secret;
+        if (signature !== webhookSecret) {
+          console.warn("[ALTEGIO] Unauthorized webhook attempt, signature mismatch");
+          return res.json({ status: "ok" });
+        }
+      }
+
+      const body = req.body;
+      const eventType = body?.event || body?.event_type;
+      const data = body?.data || body;
+
+      if (!eventType) {
+        console.warn("[ALTEGIO] Webhook received without event type:", JSON.stringify(body).slice(0, 500));
+        return res.json({ status: "ok" });
+      }
+
+      const altegioId = data?.id;
+      const staffId = data?.staff_id || data?.employee_id;
+      const clientData = data?.client || {};
+      const clientName = clientData?.name || data?.client_name || "Клиент Altegio";
+      const clientPhone = clientData?.phone || data?.client_phone || "";
+      const datetime = data?.datetime || data?.date;
+
+      console.log(`[ALTEGIO] Event: ${eventType}, appointmentId: ${altegioId}, staffId: ${staffId}, client: ${clientName}`);
+
+      if (!altegioId) {
+        console.warn("[ALTEGIO] No appointment ID in payload");
+        return res.json({ status: "ok" });
+      }
+
+      const existing = await storage.getBookingByAltegioId(altegioId);
+
+      switch (eventType) {
+        case "appointment.created":
+        case "record.created":
+        case "create": {
+          if (existing) {
+            console.log(`[ALTEGIO] Appointment ${altegioId} already exists as booking ${existing.id}, skipping create`);
+            break;
+          }
+
+          let specialistId: number | null = null;
+          if (staffId) {
+            const allSpecialists = await storage.getSpecialists();
+            const matched = allSpecialists.find((s: any) => s.altegioStaffId === staffId);
+            if (matched) specialistId = matched.id;
+          }
+          if (!specialistId) {
+            const firstSpecialist = await storage.getFirstSpecialist();
+            specialistId = firstSpecialist?.id || 1;
+            console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, using default id=${specialistId}`);
+          }
+
+          const appointmentTime = datetime ? new Date(datetime) : new Date();
+          const newBooking = await storage.createBooking({
+            specialistId,
+            customerName: clientName,
+            customerPhone: clientPhone,
+            appointmentTime,
+          });
+          await storage.updateBooking(newBooking.id, {
+            altegioAppointmentId: altegioId,
+            altegioStaffId: staffId || null,
+            status: "confirmed",
+          });
+          console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}`);
+          break;
+        }
+
+        case "appointment.updated":
+        case "record.updated":
+        case "update": {
+          if (!existing) {
+            console.warn(`[ALTEGIO] Appointment ${altegioId} not found for update, creating new`);
+            let specialistId: number | null = null;
+            if (staffId) {
+              const allSpecialists = await storage.getSpecialists();
+              const matched = allSpecialists.find((s: any) => s.altegioStaffId === staffId);
+              if (matched) specialistId = matched.id;
+            }
+            if (!specialistId) {
+              const firstSpecialist = await storage.getFirstSpecialist();
+              specialistId = firstSpecialist?.id || 1;
+            }
+            const appointmentTime = datetime ? new Date(datetime) : new Date();
+            const newBooking = await storage.createBooking({
+              specialistId,
+              customerName: clientName,
+              customerPhone: clientPhone,
+              appointmentTime,
+            });
+            await storage.updateBooking(newBooking.id, {
+              altegioAppointmentId: altegioId,
+              altegioStaffId: staffId || null,
+              status: "confirmed",
+            });
+            console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}`);
+            break;
+          }
+
+          const updateData: any = {};
+          if (datetime) updateData.appointmentTime = new Date(datetime);
+          if (clientName && clientName !== "Клиент Altegio") updateData.customerName = clientName;
+          if (clientPhone) updateData.customerPhone = clientPhone;
+          if (staffId) updateData.altegioStaffId = staffId;
+
+          if (Object.keys(updateData).length > 0) {
+            await storage.updateBooking(existing.id, updateData);
+            console.log(`[ALTEGIO] Updated booking ${existing.id} for appointment ${altegioId}`);
+          }
+          break;
+        }
+
+        case "appointment.cancelled":
+        case "record.deleted":
+        case "delete": {
+          if (!existing) {
+            console.warn(`[ALTEGIO] Appointment ${altegioId} not found for cancellation`);
+            break;
+          }
+          await storage.updateBookingStatus(existing.id, "cancelled");
+          console.log(`[ALTEGIO] Cancelled booking ${existing.id} for appointment ${altegioId}`);
+          break;
+        }
+
+        case "appointment.completed":
+        case "record.completed": {
+          if (!existing) {
+            console.warn(`[ALTEGIO] Appointment ${altegioId} not found for completion`);
+            break;
+          }
+          if (existing.status === "completed") {
+            console.log(`[ALTEGIO] Booking ${existing.id} already completed`);
+            break;
+          }
+          await storage.updateBookingStatus(existing.id, "completed");
+          console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId}`);
+
+          if (existing.clientId) {
+            try {
+              const magicLink = await storage.createMagicLink(
+                existing.clientId,
+                existing.id,
+                existing.specialistId,
+              );
+              console.log(`[ALTEGIO] Auto-created magic link for booking ${existing.id}, token: ${magicLink.token.slice(0, 8)}...`);
+            } catch (mlErr) {
+              console.error(`[ALTEGIO] Failed to create magic link for booking ${existing.id}:`, mlErr);
+            }
+          }
+          break;
+        }
+
+        default:
+          console.log(`[ALTEGIO] Unknown event type: ${eventType}`);
+      }
+
+      return res.json({ status: "ok" });
+    } catch (err) {
+      console.error("[ALTEGIO] Webhook error:", err);
+      return res.json({ status: "ok" });
+    }
+  });
+
   // Defer startup tasks to run AFTER server is listening (for faster cold-start)
   // Uses setImmediate to not block the event loop
   setImmediate(async () => {

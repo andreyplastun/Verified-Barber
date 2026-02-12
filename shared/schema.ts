@@ -102,6 +102,8 @@ export const bookings = pgTable("bookings", {
   appointmentTime: timestamp("appointment_time").notNull(),
   status: text("status", { enum: ["pending", "confirmed", "completed", "cancelled"] }).default("pending").notNull(),
   hasReview: boolean("has_review").default(false).notNull(),
+  altegioAppointmentId: integer("altegio_appointment_id"),
+  altegioStaffId: integer("altegio_staff_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

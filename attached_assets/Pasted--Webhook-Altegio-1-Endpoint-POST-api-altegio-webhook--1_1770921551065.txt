@@ -1,0 +1,175 @@
+ТЗ агенту: Webhook для Altegio
+
+1. Endpoint
+
+Создать публичный маршрут:
+
+POST /api/altegio/webhook
+
+Production URL:
+
+https://rateus.kz/api/altegio/webhook
+
+(если есть staging → аналогично)
+
+⸻
+
+2. Назначение
+
+Endpoint принимает события из Altegio:
+	•	создание записи
+	•	изменение записи
+	•	отмена
+	•	завершение визита
+
+3. Метод
+
+POST
+Content-Type: application/json
+
+4. Обработка событий
+
+Webhook должен корректно обрабатывать минимум:
+
+События:
+
+✔ appointment.created
+✔ appointment.updated
+✔ appointment.cancelled
+✔ appointment.completed
+
+(названия проверить по документации Altegio)
+
+⸻
+
+5. Логика внутри Rateus
+
+appointment.created
+
+→ создать визит в Rateus
+→ статус = Scheduled
+
+⸻
+
+appointment.updated
+
+→ обновить дату / время
+→ если был Scheduled → остаётся Scheduled
+
+⸻
+
+appointment.cancelled
+
+→ статус = Cancelled
+
+⸻
+
+appointment.completed
+
+→ статус = Completed
+→ активировать:
+	•	возможность оставить отзыв
+	•	чаевые
+
+6. Связка записей
+
+Использовать внешний ID Altegio:
+
+altegio_appointment_id
+
+Хранить в визите Rateus.
+
+Если визит уже существует → update
+Если нет → create
+
+7. Ответ Altegio
+
+Endpoint всегда возвращает:
+
+200 OK
+
+Body:
+
+{ "status": "ok" }
+
+(если событие невалидно → всё равно 200, но логируем ошибку)
+
+⸻
+
+8. Безопасность
+
+Добавить проверку подписи / секрета:
+
+Варианты:
+
+✔ Header с токеном
+✔ Query param secret
+✔ HMAC подпись (если Altegio поддерживает)
+
+Пример:
+
+X-Altegio-Signature
+
+Если проверка не прошла:
+
+→ 401 Unauthorized
+
+⸻
+
+9. Логирование
+
+Логировать:
+
+✔ тип события
+✔ altegio_appointment_id
+✔ результат обработки
+
+⸻
+
+10. Антидублирование
+
+Повторный webhook с тем же ID:
+
+→ не создавать дубль
+→ только update
+
+⸻
+
+11. Тесты
+
+Проверить вручную:
+
+✔ POST через curl / Postman
+✔ валидный payload → 200
+✔ невалидный payload → 200 + лог ошибки
+✔ completed → визит закрывается
+
+⸻
+
+12. Payload (пример структуры)
+
+Агент должен поддержать формат Altegio:
+
+{
+  "event": "appointment.completed",
+  "data": {
+    "id": 12345,
+    "client": {
+      "name": "Andrey",
+      "phone": "+7701..."
+    },
+    "datetime": "2026-02-12T15:00:00"
+  }
+}
+
+(реальный формат взять из Altegio docs)
+
+⸻
+
+13. Результат
+
+После внедрения:
+
+✔ Altegio может слать события
+✔ визиты синхронизируются
+✔ Completed закрывает визит в Rateus

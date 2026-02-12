@@ -93,6 +93,14 @@ Language: Russian (Русский) - all UI text is in Russian.
 - **Purpose**: Allows specialist owners to claim and manage their public profiles.
 - **Flow**: User submits a claim request, admin approves, a magic link is sent, and the user binds their profile after authentication, gaining specialist role.
 
+#### Altegio Webhook Integration
+- **Endpoint**: `POST /api/altegio/webhook`
+- **Events**: appointment.created, appointment.updated, appointment.cancelled, appointment.completed (also handles record.* variants)
+- **Anti-duplication**: Uses `altegio_appointment_id` column in bookings table; repeated events update instead of creating duplicates
+- **Security**: Optional `ALTEGIO_WEBHOOK_SECRET` env var; verified via `X-Altegio-Signature` header or `?secret=` query param
+- **Completion**: appointment.completed triggers booking status change and auto-creates magic link for review (if clientId exists)
+- **Logging**: All events logged with `[ALTEGIO]` prefix
+
 ## External Dependencies
 
 ### Database
