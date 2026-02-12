@@ -70,9 +70,15 @@ Language: Russian (Русский) - all UI text is in Russian.
 #### Anti-Fraud System
 - **Mechanism**: Marks reviews as "limited" based on conditions like account age, review timing, duplicate content, and text similarity. Reviews are still published but flagged.
 
+#### Visit Completion Flow
+- **Purpose**: Specialist manages visit lifecycle; reviews and tips only available after visit completion.
+- **Flow**: Specialist clicks "Завершить визит → открыть отзыв" in dashboard → booking status changes to "completed" → magic link auto-created → WhatsApp share opens.
+- **Guards**: Backend rejects reviews if booking status != "completed". Client-side hides review/tips buttons for non-completed bookings.
+- **Reminders**: Dashboard shows warning banner for uncompleted visits, stale hint after 6+ hours.
+
 #### Magic Link System
 - **Purpose**: Facilitates passwordless review submission via WhatsApp.
-- **Flow**: Admin generates a one-time, expiring link for a booking, customer clicks link, submits review.
+- **Flow**: Specialist completes visit (auto-creates magic link), or admin generates a one-time, expiring link for a booking. Customer clicks link, submits review.
 - **Follow-up**: Option for admins to send a follow-up link if no review is submitted within a timeframe.
 
 #### Kaspi Tipping System

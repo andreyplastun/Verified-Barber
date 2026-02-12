@@ -1108,6 +1108,10 @@ export async function registerRoutes(
       if (!booking) {
         return res.status(404).json({ message: "Визит не найден" });
       }
+
+      if (booking.status !== "completed") {
+        return res.status(403).json({ message: "Отзыв доступен после завершения визита" });
+      }
       
       if (booking.hasReview) {
         await storage.markMagicLinkUsed(link.id);
@@ -1223,6 +1227,75 @@ ${magicLink}
 Завершить или пропустить:
 ${magicLink}`;
   }
+
+  // =====================
+  // SPECIALIST: COMPLETE VISIT ENDPOINT
+  // =====================
+
+  app.post("/api/specialist/bookings/:id/complete-visit", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || (user.role !== 'specialist' && user.role !== 'admin')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const bookingId = Number(req.params.id);
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Визит не найден" });
+      }
+
+      if (user.role === 'specialist' && user.specialistId !== booking.specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (booking.status === 'completed') {
+        return res.status(409).json({ message: "Визит уже завершён" });
+      }
+
+      if (booking.hasReview) {
+        return res.status(409).json({ message: "Отзыв уже оставлен" });
+      }
+
+      const appointmentTime = new Date(booking.appointmentTime).getTime();
+      if (appointmentTime > Date.now()) {
+        return res.status(400).json({ message: "Нельзя завершить будущий визит" });
+      }
+
+      const updated = await storage.updateBookingStatus(bookingId, "completed");
+
+      let magicLinkData = null;
+      if (booking.clientId) {
+        const specialist = await storage.getSpecialist(booking.specialistId);
+        const barberName = specialist?.name || 'барберу';
+
+        const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
+        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
+        const fullLink = `${baseUrl}/r/${magicLink.token}`;
+
+        magicLinkData = {
+          magicLink: fullLink,
+          whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
+          expiresAt: magicLink.expiresAt,
+        };
+      }
+
+      console.log(`[SPECIALIST] Visit ${bookingId} completed by user ${userId}, magic link created: ${!!magicLinkData}`);
+
+      res.json({
+        booking: updated,
+        magicLink: magicLinkData,
+      });
+    } catch (err: any) {
+      console.error("Error completing visit:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
 
   // =====================
   // SPECIALIST PHOTO ENDPOINTS

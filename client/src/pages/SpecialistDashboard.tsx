@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy } from 'lucide-react';
+import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
@@ -157,11 +157,56 @@ export default function SpecialistDashboard() {
     );
   }
 
+  const [completingBookingId, setCompletingBookingId] = useState<number | null>(null);
+
+  const completeVisitMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      if (!currentUser?.id) throw new Error('Not authorized');
+      setCompletingBookingId(bookingId);
+      const res = await fetch(`/api/specialist/bookings/${bookingId}/complete-visit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to complete visit');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setCompletingBookingId(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+
+      if (data.magicLink) {
+        const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(data.magicLink.whatsappText)}`;
+        toast({ title: 'Визит завершён. Ссылка на отзыв готова' });
+        window.open(whatsappUrl, '_blank');
+      } else {
+        toast({ title: 'Визит завершён. Отзыв отправлен клиенту' });
+      }
+    },
+    onError: (err: Error) => {
+      setCompletingBookingId(null);
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    },
+  });
+
   const upcomingBookings = bookings?.filter(b => 
     b.status !== 'completed' && b.status !== 'cancelled'
   ) || [];
 
   const completedBookings = bookings?.filter(b => b.status === 'completed') || [];
+
+  const STALE_HOURS = 6;
+  const staleBookings = upcomingBookings.filter(b => {
+    const appointmentTime = new Date(b.appointmentTime).getTime();
+    const hoursSince = (Date.now() - appointmentTime) / (1000 * 60 * 60);
+    return hoursSince >= STALE_HOURS;
+  });
 
   const averageRating = specialist?.averageRating ? (specialist.averageRating / 10).toFixed(1) : '0.0';
 
@@ -582,6 +627,24 @@ export default function SpecialistDashboard() {
         </CardContent>
       </Card>
 
+      {upcomingBookings.length > 0 && (
+        <Card className="border-amber-200 bg-amber-50/50">
+          <CardContent className="py-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-medium text-amber-800" data-testid="text-uncompleted-warning">
+                  Есть незавершённые визиты
+                </p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Отзывы и чаевые недоступны до завершения визита
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader className="flex flex-row items-center gap-2">
@@ -598,21 +661,45 @@ export default function SpecialistDashboard() {
               <p className="text-muted-foreground text-sm">Нет предстоящих записей</p>
             ) : (
               <div className="space-y-3">
-                {upcomingBookings.map((booking) => (
-                  <div 
-                    key={booking.id} 
-                    className="p-3 rounded-md bg-muted/50 flex items-center justify-between gap-2"
-                    data-testid={`booking-item-${booking.id}`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <User className="w-4 h-4 text-muted-foreground" />
-                      <span data-testid={`text-customer-${booking.id}`}>{booking.customerName}</span>
+                {upcomingBookings.map((booking) => {
+                  const appointmentTime = new Date(booking.appointmentTime).getTime();
+                  const hoursSince = (Date.now() - appointmentTime) / (1000 * 60 * 60);
+                  const isStale = hoursSince >= STALE_HOURS;
+
+                  return (
+                    <div 
+                      key={booking.id} 
+                      className="p-3 rounded-md bg-muted/50 space-y-2"
+                      data-testid={`booking-item-${booking.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-muted-foreground" />
+                          <span data-testid={`text-customer-${booking.id}`}>{booking.customerName}</span>
+                        </div>
+                        <Badge variant="outline" data-testid={`badge-time-${booking.id}`}>
+                          {format(new Date(booking.appointmentTime), 'MMM d, h:mm a')}
+                        </Badge>
+                      </div>
+                      {isStale && (
+                        <div className="flex items-center gap-1.5 text-xs text-amber-600" data-testid={`text-stale-hint-${booking.id}`}>
+                          <Clock className="w-3 h-3" />
+                          <span>Клиент был сегодня. Завершите визит</span>
+                        </div>
+                      )}
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        onClick={() => completeVisitMutation.mutate(booking.id)}
+                        disabled={completingBookingId === booking.id}
+                        data-testid={`button-complete-visit-${booking.id}`}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        {completingBookingId === booking.id ? 'Завершение...' : 'Завершить визит → открыть отзыв'}
+                      </Button>
                     </div>
-                    <Badge variant="outline" data-testid={`badge-time-${booking.id}`}>
-                      {format(new Date(booking.appointmentTime), 'MMM d, h:mm a')}
-                    </Badge>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </CardContent>
