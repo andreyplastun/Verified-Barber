@@ -114,15 +114,13 @@ export default function SpecialistProfile() {
               <h1 className="text-lg font-semibold text-[#1F2933] dark:text-[#1F2933]">{specialist.name}</h1>
               <p className="mt-1 text-sm text-[#6B7280]">{specialist.specialty}</p>
               {specialist.baseServiceName && specialist.baseServicePrice && (
-                <div className="flex items-center gap-1 mt-2">
-                  <span className="text-xs text-[#9CA3AF] whitespace-nowrap" data-testid="text-base-service-price">
-                    {specialist.baseServiceName}{'\u00A0'}—{'\u00A0'}{Number(specialist.baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
-                  </span>
+                <div className="mt-2">
                   <Popover>
                     <PopoverTrigger asChild>
-                      <button type="button" className="text-[#9CA3AF] hover:text-[#6B7280] transition-colors" data-testid="button-price-info">
-                        <Info size={11} />
-                      </button>
+                      <span className="inline-flex items-center gap-1 text-xs text-[#9CA3AF] whitespace-nowrap cursor-pointer" data-testid="text-base-service-price">
+                        {specialist.baseServiceName}{'\u00A0'}—{'\u00A0'}{Number(specialist.baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
+                        <Info size={10} className="opacity-60" />
+                      </span>
                     </PopoverTrigger>
                     <PopoverContent side="top" className="max-w-xs text-sm p-3">
                       <p>Это цена базовой услуги.<br/>Итоговая стоимость может отличаться в зависимости от выбранного набора услуг.</p>
@@ -156,7 +154,7 @@ export default function SpecialistProfile() {
               >
                 <Popover>
                   <PopoverTrigger asChild>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569] cursor-pointer transition-colors" data-testid="link-rating-status">
+                    <span className="inline-flex items-center gap-1 text-xs text-[#9CA3AF] cursor-pointer" data-testid="link-rating-status">
                       {ratingStatus.label}
                       <Info size={10} className="opacity-60" />
                     </span>
@@ -175,20 +173,20 @@ export default function SpecialistProfile() {
               <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-wide mb-1.5">
                 О мастере
               </p>
-              <p className="text-sm text-[#6B7280] leading-relaxed">
+              <p className="text-xs text-[#9CA3AF] leading-relaxed">
                 {specialist.bio}
               </p>
             </div>
           )}
 
           {/* Service tags */}
-          <div className="mt-4 flex gap-2">
-            <div className="px-2.5 py-1 bg-[#F1F5F9] rounded-md flex items-center gap-1.5 text-xs text-[#6B7280]">
-              <MapPin size={12} />
+          <div className="mt-4 flex gap-3">
+            <div className="flex items-center gap-1 text-xs text-[#9CA3AF]">
+              <MapPin size={11} />
               Алматы
             </div>
-            <div className="px-2.5 py-1 bg-[#F1F5F9] rounded-md flex items-center gap-1.5 text-xs text-[#6B7280]">
-              <Calendar size={12} />
+            <div className="flex items-center gap-1 text-xs text-[#9CA3AF]">
+              <Calendar size={11} />
               Пн-Сб
             </div>
           </div>
