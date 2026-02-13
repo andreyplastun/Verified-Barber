@@ -1,0 +1,243 @@
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Button } from '@/components/ui/button';
+import { RefreshCw, Loader2, AlertTriangle, KeyRound, ShieldOff } from 'lucide-react';
+
+export type SyncSeverity = 'info' | 'warning' | 'error' | 'blocking';
+
+export interface SyncBannerConfig {
+  severity: SyncSeverity;
+  title: string;
+  description?: string;
+  buttonLabel?: string;
+  onAction?: () => void;
+  autoHide?: number;
+  showSpinner?: boolean;
+}
+
+const SEVERITY_STYLES: Record<SyncSeverity, {
+  bg: string;
+  text: string;
+  icon: typeof AlertTriangle;
+  iconColor: string;
+}> = {
+  info: {
+    bg: 'bg-sky-50/80 dark:bg-sky-950/20',
+    text: 'text-sky-700 dark:text-sky-400',
+    icon: RefreshCw,
+    iconColor: 'text-sky-500',
+  },
+  warning: {
+    bg: 'bg-amber-50/80 dark:bg-amber-950/20',
+    text: 'text-amber-700 dark:text-amber-400',
+    icon: AlertTriangle,
+    iconColor: 'text-amber-500',
+  },
+  error: {
+    bg: 'bg-orange-50/80 dark:bg-orange-950/20',
+    text: 'text-orange-700 dark:text-orange-400',
+    icon: KeyRound,
+    iconColor: 'text-orange-500',
+  },
+  blocking: {
+    bg: 'bg-red-50/80 dark:bg-red-950/20',
+    text: 'text-red-700 dark:text-red-400',
+    icon: ShieldOff,
+    iconColor: 'text-red-400',
+  },
+};
+
+const bannerVariants = {
+  hidden: { opacity: 0, y: 8, height: 0, marginTop: 0 },
+  visible: { opacity: 1, y: 0, height: 'auto', marginTop: 8 },
+  exit: { opacity: 0, y: -4, height: 0, marginTop: 0 },
+};
+
+interface AltegioSyncBannerProps {
+  config: SyncBannerConfig | null;
+  debounceMs?: number;
+  loading?: boolean;
+  testId?: string;
+}
+
+export default function AltegioSyncBanner({
+  config,
+  debounceMs = 0,
+  loading = false,
+  testId,
+}: AltegioSyncBannerProps) {
+  const [visible, setVisible] = useState(false);
+  const [displayConfig, setDisplayConfig] = useState<SyncBannerConfig | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (autoHideRef.current) clearTimeout(autoHideRef.current);
+
+    if (!config) {
+      setVisible(false);
+      return;
+    }
+
+    const showDelay = debounceMs > 0 ? debounceMs : 0;
+
+    if (config.severity === 'error' || config.severity === 'blocking') {
+      setDisplayConfig(config);
+      setVisible(true);
+    } else {
+      timerRef.current = setTimeout(() => {
+        setDisplayConfig(config);
+        setVisible(true);
+      }, showDelay);
+    }
+
+    const autoHideMs = config.autoHide && config.autoHide > 0
+      ? config.autoHide
+      : 0;
+
+    if (autoHideMs > 0) {
+      const totalDelay = (config.severity === 'error' || config.severity === 'blocking' ? 0 : showDelay) + autoHideMs;
+      autoHideRef.current = setTimeout(() => {
+        setVisible(false);
+      }, totalDelay);
+    }
+
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      if (autoHideRef.current) clearTimeout(autoHideRef.current);
+    };
+  }, [config?.severity, config?.title, debounceMs]);
+
+  useEffect(() => {
+    if (visible && config && displayConfig) {
+      setDisplayConfig(config);
+    }
+  }, [config?.title, config?.description]);
+
+  if (!displayConfig) return null;
+
+  const style = SEVERITY_STYLES[displayConfig.severity];
+  const Icon = displayConfig.showSpinner ? Loader2 : style.icon;
+
+  return (
+    <AnimatePresence mode="wait">
+      {visible && (
+        <motion.div
+          key={displayConfig.severity + displayConfig.title}
+          variants={bannerVariants}
+          initial="hidden"
+          animate="visible"
+          exit="exit"
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+          data-testid={testId}
+        >
+          <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md ${style.bg}`}>
+            <div className="flex items-center gap-2 min-w-0">
+              <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${displayConfig.showSpinner ? 'animate-spin ' : ''}${style.iconColor}`} />
+              <div className="min-w-0">
+                <span className={`text-xs font-medium ${style.text}`}>
+                  {displayConfig.title}
+                </span>
+                {displayConfig.description && (
+                  <p className={`text-[11px] ${style.text} opacity-80 mt-0.5`}>
+                    {displayConfig.description}
+                  </p>
+                )}
+              </div>
+            </div>
+            {displayConfig.buttonLabel && displayConfig.onAction && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={displayConfig.onAction}
+                disabled={loading}
+                className="flex-shrink-0"
+              >
+                {loading ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  displayConfig.buttonLabel
+                )}
+              </Button>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export function getBookingSyncBannerConfig(
+  syncStatus: string | null | undefined,
+  syncError: string | null | undefined,
+  retryCount: number | null | undefined,
+  onRetry?: () => void,
+  isRetrying?: boolean,
+): SyncBannerConfig | null {
+  if (!syncStatus || syncStatus === 'synced') return null;
+
+  if (syncStatus === 'pending') {
+    const isRetryAttempt = (retryCount || 0) > 0;
+    return {
+      severity: 'info',
+      title: isRetryAttempt ? 'Пробуем снова...' : 'Синхронизация с Altegio...',
+      description: isRetryAttempt ? 'Повторяем попытку' : undefined,
+      showSpinner: true,
+    };
+  }
+
+  if (syncStatus === 'error') {
+    const isTokenError = syncError?.includes('401');
+    const isAccessError = syncError?.includes('403');
+
+    if (isTokenError) {
+      return {
+        severity: 'error',
+        title: 'Сессия Altegio истекла',
+        description: 'Нужно переподключить Altegio',
+        buttonLabel: 'Переподключить',
+        onAction: onRetry,
+      };
+    }
+
+    if (isAccessError) {
+      return {
+        severity: 'blocking',
+        title: 'Доступ к Altegio отозван',
+        description: 'Переподключите интеграцию',
+        buttonLabel: 'Подключить заново',
+        onAction: onRetry,
+      };
+    }
+
+    return {
+      severity: 'error',
+      title: 'Синхронизация временно недоступна',
+      description: 'Altegio не отвечает. Мы автоматически повторим попытку.',
+      buttonLabel: 'Повторить сейчас',
+      onAction: onRetry,
+    };
+  }
+
+  return null;
+}
+
+export function getGlobalAltegioBannerConfig(
+  bookings: Array<{ altegioSyncStatus?: string }>,
+  threshold: number = 3,
+): SyncBannerConfig | null {
+  const errorCount = bookings.filter(
+    b => (b as any).altegioSyncStatus === 'error'
+  ).length;
+
+  if (errorCount >= threshold) {
+    return {
+      severity: 'warning',
+      title: 'Altegio временно недоступен',
+      description: 'Синхронизация будет выполнена автоматически',
+    };
+  }
+
+  return null;
+}

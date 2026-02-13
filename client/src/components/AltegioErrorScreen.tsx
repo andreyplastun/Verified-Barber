@@ -1,6 +1,6 @@
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, XCircle, Globe, KeyRound, UserX, RefreshCw, Loader2 } from 'lucide-react';
+import { AlertTriangle, Globe, KeyRound, UserX, RefreshCw, Loader2, ShieldOff } from 'lucide-react';
 
 export type AltegioErrorType =
   | 'token_expired'
@@ -23,21 +23,21 @@ interface ErrorConfig {
 
 const ERROR_CONFIGS: Record<AltegioErrorType, ErrorConfig> = {
   token_expired: {
-    icon: AlertTriangle,
+    icon: KeyRound,
     iconColor: 'text-amber-500',
-    title: 'Подключение к Altegio прервано',
-    description: 'Сессия Altegio истекла. Rateus больше не может обмениваться данными.',
-    hint: 'Это нормально. Просто переподключите Altegio.',
-    primaryLabel: 'Переподключить Altegio',
+    title: 'Сессия Altegio истекла',
+    description: 'Нужно переподключить Altegio, чтобы синхронизация продолжилась.',
+    hint: 'Это нормально и занимает пару секунд.',
+    primaryLabel: 'Переподключить',
     primaryAction: 'reconnect',
     showClose: true,
   },
   access_revoked: {
-    icon: XCircle,
-    iconColor: 'text-red-500',
+    icon: ShieldOff,
+    iconColor: 'text-red-400',
     title: 'Доступ к Altegio отозван',
-    description: 'В Altegio отключили приложение Rateus.',
-    hint: 'Нужно заново разрешить доступ.',
+    description: 'Altegio больше не разрешает доступ. Переподключите интеграцию.',
+    hint: '',
     primaryLabel: 'Подключить заново',
     primaryAction: 'reconnect',
     showClose: true,
@@ -46,35 +46,35 @@ const ERROR_CONFIGS: Record<AltegioErrorType, ErrorConfig> = {
     icon: Globe,
     iconColor: 'text-blue-500',
     title: 'Altegio временно недоступен',
-    description: 'Не удалось связаться с Altegio.',
-    hint: 'Попробуем снова автоматически.',
+    description: 'Не удалось связаться с Altegio. Мы автоматически повторим попытку.',
+    hint: '',
     primaryLabel: 'Повторить сейчас',
     primaryAction: 'retry',
     showClose: true,
   },
   invalid_keys: {
     icon: KeyRound,
-    iconColor: 'text-orange-500',
-    title: 'Ошибка авторизации Altegio',
-    description: 'Rateus не может войти в Altegio.',
-    hint: 'Проверьте токены или переподключите интеграцию.',
-    primaryLabel: 'Переподключить Altegio',
+    iconColor: 'text-amber-500',
+    title: 'Требуется переподключение',
+    description: 'Не удаётся авторизоваться в Altegio. Проверьте настройки или переподключите.',
+    hint: '',
+    primaryLabel: 'Переподключить',
     primaryAction: 'reconnect',
   },
   staff_not_found: {
     icon: UserX,
     iconColor: 'text-purple-500',
     title: 'Специалист не найден в Altegio',
-    description: 'Rateus не может сопоставить мастера.',
-    hint: 'Откройте настройки интеграции.',
+    description: 'Не удаётся сопоставить вашу запись с сотрудником в Altegio.',
+    hint: 'Откройте настройки интеграции и выберите сотрудника.',
     primaryLabel: 'Настройки Altegio',
     primaryAction: 'settings',
   },
   unknown: {
     icon: AlertTriangle,
     iconColor: 'text-amber-500',
-    title: 'Ошибка Altegio',
-    description: 'Rateus не смог обменяться данными с Altegio.',
+    title: 'Синхронизация временно недоступна',
+    description: 'Не удалось обменяться данными с Altegio. Попробуем снова.',
     hint: '',
     primaryLabel: 'Попробовать снова',
     primaryAction: 'retry',
