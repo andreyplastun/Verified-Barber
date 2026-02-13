@@ -7,7 +7,7 @@ import { bookings, type Review, specialistSignupSchema, claimRequestSchema } fro
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
-import { syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList } from "./altegio";
+import { syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth } from "./altegio";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -1912,6 +1912,41 @@ ${magicLink}`;
       res.json({ configured: isAltegioConfigured() });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/altegio/health", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== "specialist") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (!isAltegioConfigured()) {
+        return res.json({ ok: false, errorType: "invalid_keys", errorDetail: "not_configured" });
+      }
+
+      let specialistStaffId: number | null = null;
+      let specialistCompanyId: number | null = null;
+      if (user.specialistId) {
+        const specialist = await storage.getSpecialist(user.specialistId);
+        if (specialist) {
+          specialistStaffId = (specialist as any).altegioStaffId || null;
+          specialistCompanyId = (specialist as any).altegioCompanyId || null;
+        }
+      }
+
+      const result = await checkAltegioHealth(specialistStaffId, specialistCompanyId);
+      console.log(`[ALTEGIO-HEALTH] specialist=${user.specialistId}, result=${JSON.stringify(result)}`);
+      res.json(result);
+    } catch (err: any) {
+      console.error("[ALTEGIO-HEALTH] API error:", err);
+      res.status(500).json({ ok: false, errorType: "unknown", errorDetail: err.message });
     }
   });
 

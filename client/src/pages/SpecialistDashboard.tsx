@@ -16,6 +16,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import type { Specialist, Booking, Review, SpecialistPhoto } from '@shared/schema';
+import AltegioErrorScreen, { type AltegioErrorType } from '@/components/AltegioErrorScreen';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export default function SpecialistDashboard() {
   const { currentUser } = useAuth();
@@ -82,6 +84,53 @@ export default function SpecialistDashboard() {
     enabled: !!specialistId,
   });
 
+  const isAltegioConnected = !!(specialist as any)?.altegioStaffId;
+
+  const [altegioErrorDismissed, setAltegioErrorDismissed] = useState(false);
+  const [altegioRetrying, setAltegioRetrying] = useState(false);
+
+  const { data: altegioHealth, refetch: refetchAltegioHealth } = useQuery<{
+    ok: boolean;
+    errorType?: AltegioErrorType;
+    errorDetail?: string;
+  }>({
+    queryKey: ['/api/altegio/health'],
+    queryFn: async () => {
+      if (!currentUser?.id) throw new Error('Not authorized');
+      const res = await fetch('/api/altegio/health', {
+        headers: { 'x-user-id': currentUser.id },
+      });
+      if (!res.ok) {
+        return { ok: false, errorType: 'api_unavailable' as AltegioErrorType, errorDetail: `HTTP ${res.status}` };
+      }
+      return res.json();
+    },
+    enabled: !!specialistId && !!altegioStatus?.configured && isAltegioConnected,
+    staleTime: 60000,
+    retry: 2,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 10000),
+  });
+
+  const altegioRetryTimerRef = useRef<number>(0);
+  useEffect(() => {
+    if (altegioHealth && !altegioHealth.ok && altegioHealth.errorType === 'api_unavailable') {
+      altegioRetryTimerRef.current++;
+      const attempt = altegioRetryTimerRef.current;
+      const delays = [30000, 120000, 600000];
+      const delay = delays[Math.min(attempt - 1, delays.length - 1)];
+      const timer = setTimeout(() => refetchAltegioHealth(), delay);
+      return () => clearTimeout(timer);
+    } else if (altegioHealth?.ok) {
+      altegioRetryTimerRef.current = 0;
+    }
+  }, [altegioHealth?.ok, altegioHealth?.errorType]);
+
+  useEffect(() => {
+    if (altegioHealth?.ok) {
+      setAltegioErrorDismissed(false);
+    }
+  }, [altegioHealth?.ok]);
+
   const { data: altegioStaffData, isLoading: loadingAltegioStaff, error: altegioStaffError, refetch: refetchStaff } = useQuery<{ staff: Array<{ id: number; name: string; avatar: string | null; specialization: string | null }>; companyId: number }>({
     queryKey: ['/api/altegio/staff'],
     queryFn: async () => {
@@ -97,8 +146,6 @@ export default function SpecialistDashboard() {
     },
     enabled: false,
   });
-
-  const isAltegioConnected = !!(specialist as any)?.altegioStaffId;
 
   const handleAltegioConnect = async () => {
     setAltegioModalOpen(true);
@@ -602,48 +649,81 @@ export default function SpecialistDashboard() {
       </Card>
 
       {altegioStatus?.configured && (
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <Link2 className="w-5 h-5" />
-            <CardTitle>Altegio</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {isAltegioConnected ? (
-              <>
-                <div className="flex items-center gap-2" data-testid="altegio-status-connected">
-                  <CircleCheck className="w-5 h-5 text-green-500" />
-                  <div>
-                    <p className="text-sm font-medium">Подключён</p>
-                    <p className="text-xs text-muted-foreground">Синхронизация активна</p>
+        <>
+          {isAltegioConnected && altegioHealth && !altegioHealth.ok && !altegioErrorDismissed && (
+            <AltegioErrorScreen
+              errorType={altegioHealth.errorType || 'unknown'}
+              onReconnect={() => {
+                handleAltegioDisconnect().then(() => {
+                  handleAltegioConnect();
+                });
+              }}
+              onRetry={async () => {
+                setAltegioRetrying(true);
+                await refetchAltegioHealth();
+                setAltegioRetrying(false);
+              }}
+              onSettings={() => {
+                handleAltegioDisconnect().then(() => {
+                  handleAltegioConnect();
+                });
+              }}
+              onClose={() => setAltegioErrorDismissed(true)}
+              retrying={altegioRetrying}
+            />
+          )}
+
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2">
+              <Link2 className="w-5 h-5" />
+              <CardTitle>Altegio</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {isAltegioConnected ? (
+                <>
+                  <div className="flex items-center gap-2" data-testid="altegio-status-connected">
+                    {altegioHealth && !altegioHealth.ok ? (
+                      <AlertTriangle className="w-5 h-5 text-amber-500" />
+                    ) : (
+                      <CircleCheck className="w-5 h-5 text-green-500" />
+                    )}
+                    <div>
+                      <p className="text-sm font-medium">
+                        {altegioHealth && !altegioHealth.ok ? 'Проблема с подключением' : 'Подключён'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {altegioHealth && !altegioHealth.ok ? 'Синхронизация приостановлена' : 'Синхронизация активна'}
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAltegioDisconnect}
-                  data-testid="button-altegio-disconnect"
-                >
-                  <Unlink className="w-4 h-4 mr-2" />
-                  Отключить Altegio
-                </Button>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  Подключите Altegio для автоматической синхронизации визитов
-                </p>
-                <Button
-                  onClick={handleAltegioConnect}
-                  className="w-full"
-                  data-testid="button-altegio-connect"
-                >
-                  <Link2 className="w-4 h-4 mr-2" />
-                  Подключить Altegio
-                </Button>
-              </>
-            )}
-          </CardContent>
-        </Card>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAltegioDisconnect}
+                    data-testid="button-altegio-disconnect"
+                  >
+                    <Unlink className="w-4 h-4 mr-2" />
+                    Отключить Altegio
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Подключите Altegio для автоматической синхронизации визитов
+                  </p>
+                  <Button
+                    onClick={handleAltegioConnect}
+                    className="w-full"
+                    data-testid="button-altegio-connect"
+                  >
+                    <Link2 className="w-4 h-4 mr-2" />
+                    Подключить Altegio
+                  </Button>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </>
       )}
 
       <Dialog open={altegioModalOpen} onOpenChange={setAltegioModalOpen}>
@@ -962,10 +1042,20 @@ export default function SpecialistDashboard() {
                         </div>
                         <div className="flex items-center gap-1.5">
                           {(booking as any).altegioSyncStatus === 'synced' && (
-                            <RefreshCw className="w-3.5 h-3.5 text-green-500" data-testid={`icon-sync-ok-${booking.id}`} />
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <RefreshCw className="w-3.5 h-3.5 text-green-500" data-testid={`icon-sync-ok-${booking.id}`} />
+                              </TooltipTrigger>
+                              <TooltipContent>Altegio: синхронизировано</TooltipContent>
+                            </Tooltip>
                           )}
                           {(booking as any).altegioSyncStatus === 'error' && (
-                            <CircleX className="w-3.5 h-3.5 text-red-500" data-testid={`icon-sync-error-${booking.id}`} />
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <AlertTriangle className="w-3.5 h-3.5 text-amber-500" data-testid={`icon-sync-error-${booking.id}`} />
+                              </TooltipTrigger>
+                              <TooltipContent>Altegio: не синхронизировано</TooltipContent>
+                            </Tooltip>
                           )}
                           <Badge variant="outline" data-testid={`badge-time-${booking.id}`}>
                             {format(new Date(booking.appointmentTime), 'MMM d, h:mm a')}
@@ -1105,10 +1195,20 @@ export default function SpecialistDashboard() {
                   </div>
                   <div className="flex items-center gap-2">
                     {(booking as any).altegioSyncStatus === 'synced' && (
-                      <RefreshCw className="w-3.5 h-3.5 text-green-500" />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <RefreshCw className="w-3.5 h-3.5 text-green-500" />
+                        </TooltipTrigger>
+                        <TooltipContent>Altegio: синхронизировано</TooltipContent>
+                      </Tooltip>
                     )}
                     {(booking as any).altegioSyncStatus === 'error' && (
-                      <CircleX className="w-3.5 h-3.5 text-red-500" />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                        </TooltipTrigger>
+                        <TooltipContent>Altegio: не синхронизировано</TooltipContent>
+                      </Tooltip>
                     )}
                     <Badge variant="secondary">
                       {format(new Date(booking.appointmentTime), 'MMM d')}

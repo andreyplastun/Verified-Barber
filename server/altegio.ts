@@ -43,26 +43,137 @@ function getHeaders(config: AltegioConfig) {
   };
 }
 
+export type AltegioErrorType = 
+  | "token_expired"
+  | "access_revoked"
+  | "api_unavailable"
+  | "invalid_keys"
+  | "staff_not_found"
+  | "unknown";
+
+export interface AltegioHealthResult {
+  ok: boolean;
+  errorType?: AltegioErrorType;
+  errorDetail?: string;
+  httpStatus?: number;
+}
+
+function classifyAltegioError(httpStatus: number, responseBody?: any): AltegioErrorType {
+  const msg = (responseBody?.meta?.message || responseBody?.message || "").toLowerCase();
+
+  if (httpStatus === 401) {
+    if (msg.includes("expired") || msg.includes("истек") || msg.includes("session")) {
+      return "token_expired";
+    }
+    if (msg.includes("revoke") || msg.includes("отозван") || msg.includes("deactivat") || msg.includes("blocked")) {
+      return "access_revoked";
+    }
+    return "token_expired";
+  }
+
+  if (httpStatus === 403) {
+    if (msg.includes("revoke") || msg.includes("forbidden") || msg.includes("deactivat") || msg.includes("blocked") || msg.includes("отключ")) {
+      return "access_revoked";
+    }
+    if (msg.includes("invalid") || msg.includes("credentials") || msg.includes("token") || msg.includes("ключ")) {
+      return "invalid_keys";
+    }
+    return "invalid_keys";
+  }
+
+  if (httpStatus >= 500 || httpStatus === 502 || httpStatus === 503 || httpStatus === 504) {
+    return "api_unavailable";
+  }
+
+  if (httpStatus === 404) {
+    if (msg.includes("staff") || msg.includes("сотрудник") || msg.includes("company") || msg.includes("компан")) {
+      return "staff_not_found";
+    }
+    return "staff_not_found";
+  }
+
+  if (httpStatus === 429) return "api_unavailable";
+
+  return "unknown";
+}
+
+function classifyNetworkError(_err: Error): AltegioErrorType {
+  return "api_unavailable";
+}
+
 export function isAltegioConfigured(): boolean {
   return getConfig() !== null;
 }
 
-export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff?: Array<{ id: number; name: string; avatar: string | null; specialization: string | null }>; companyId?: number; error?: string }> {
+export async function checkAltegioHealth(specialistStaffId?: number | null, specialistCompanyId?: number | null): Promise<AltegioHealthResult> {
   const config = getConfig();
   if (!config) {
-    return { success: false, error: "not_configured" };
+    return { ok: false, errorType: "invalid_keys", errorDetail: "not_configured" };
+  }
+
+  const companyId = specialistCompanyId || config.companyId;
+
+  try {
+    console.log(`[ALTEGIO-HEALTH] Checking health for company ${companyId}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
+    const response = await fetch(`${ALTEGIO_BASE_URL}/book_staff/${companyId}`, {
+      method: "GET",
+      headers: getHeaders(config),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    let body: any = null;
+    try { body = await response.json(); } catch {}
+
+    if (response.ok && body?.success) {
+      if (specialistStaffId) {
+        const staffList = body.data || [];
+        const found = staffList.some((s: any) => s.id === specialistStaffId);
+        if (!found) {
+          console.log(`[ALTEGIO-HEALTH] Staff ID ${specialistStaffId} not found in ${staffList.length} staff members`);
+          return { ok: false, errorType: "staff_not_found", httpStatus: 200, errorDetail: `Staff ID ${specialistStaffId} not found` };
+        }
+      }
+      console.log(`[ALTEGIO-HEALTH] OK`);
+      return { ok: true };
+    }
+
+    const errorType = classifyAltegioError(response.status, body);
+    const detail = body?.meta?.message || `HTTP ${response.status}`;
+    console.error(`[ALTEGIO-HEALTH] Error: ${errorType} (${response.status}) - ${detail}`);
+    return { ok: false, errorType, httpStatus: response.status, errorDetail: detail };
+  } catch (err: any) {
+    const errorType = classifyNetworkError(err);
+    console.error(`[ALTEGIO-HEALTH] Network error:`, err.message);
+    return { ok: false, errorType, errorDetail: err.message };
+  }
+}
+
+export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff?: Array<{ id: number; name: string; avatar: string | null; specialization: string | null }>; companyId?: number; error?: string; errorType?: AltegioErrorType }> {
+  const config = getConfig();
+  if (!config) {
+    return { success: false, error: "not_configured", errorType: "invalid_keys" };
   }
 
   try {
     console.log(`[ALTEGIO] Fetching staff list for company ${config.companyId}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+
     const response = await fetch(`${ALTEGIO_BASE_URL}/book_staff/${config.companyId}`, {
       method: "GET",
       headers: getHeaders(config),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
-    const result = await response.json();
+    let result: any = null;
+    try { result = await response.json(); } catch {}
 
-    if (response.ok && result.success) {
+    if (response.ok && result?.success) {
       const staffList = (result.data || []).map((s: any) => ({
         id: s.id,
         name: s.name,
@@ -72,13 +183,15 @@ export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff
       console.log(`[ALTEGIO] Staff list loaded: ${staffList.length} members`);
       return { success: true, staff: staffList, companyId: config.companyId };
     } else {
+      const errorType = classifyAltegioError(response.status, result);
       const errorMsg = result?.meta?.message || JSON.stringify(result).slice(0, 200);
-      console.error(`[ALTEGIO] Staff list fetch failed: ${response.status} - ${errorMsg}`);
-      return { success: false, error: errorMsg };
+      console.error(`[ALTEGIO] Staff list fetch failed: ${response.status} (${errorType}) - ${errorMsg}`);
+      return { success: false, error: errorMsg, errorType };
     }
   } catch (err: any) {
-    console.error(`[ALTEGIO] Staff list fetch error:`, err.message);
-    return { success: false, error: err.message };
+    const errorType = classifyNetworkError(err);
+    console.error(`[ALTEGIO] Staff list fetch error (${errorType}):`, err.message);
+    return { success: false, error: err.message, errorType };
   }
 }
 

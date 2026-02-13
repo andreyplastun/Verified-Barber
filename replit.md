@@ -103,6 +103,9 @@ Language: Russian (Русский) - all UI text is in Russian.
 - **Auth**: Requires `ALTEGIO_PARTNER_TOKEN`, `ALTEGIO_USER_TOKEN`, `ALTEGIO_COMPANY_ID` env vars
 - **Security**: Optional `ALTEGIO_WEBHOOK_SECRET` for incoming webhook validation
 - **Logging**: All sync logged with `[ALTEGIO-SYNC]` prefix, webhooks with `[ALTEGIO]` prefix
+- **Error Screen System**: `AltegioErrorScreen` component classifies errors into 5 types (token_expired, access_revoked, api_unavailable, invalid_keys, staff_not_found) with human-readable messages, action buttons, and auto-retry for temporary errors
+- **Health Check**: `GET /api/altegio/health` probes Altegio API, validates specialist mapping, and returns classified error status
+- **Booking Sync Tooltips**: Sync status icons on booking cards show tooltips with human-readable sync state
 
 ## External Dependencies
 
