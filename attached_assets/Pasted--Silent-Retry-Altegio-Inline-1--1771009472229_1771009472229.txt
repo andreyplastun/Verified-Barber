@@ -1,0 +1,225 @@
+ТЗ: Silent Retry + Статусы интеграции Altegio + Inline-баннеры
+
+⸻
+
+1. Цель
+
+Повысить надёжность и прозрачность интеграции Rateus ↔ Altegio:
+
+✔ уменьшить влияние временных сбоев
+✔ исключить silent-fail синхронизации
+✔ дать пользователю понятный статус
+✔ снизить нагрузку на саппорт
+
+⸻
+
+2. Silent Retry логика
+
+2.1 Когда применять retry
+
+Retry запускается если ошибка:
+
+✔ network error
+✔ timeout
+✔ HTTP 5xx
+✔ rate limit (429)
+
+⸻
+
+2.2 Когда retry НЕ делать
+
+❌ 401 Unauthorized
+❌ 403 Forbidden
+❌ invalid token
+❌ staff_id not found
+❌ validation error
+
+👉 Эти ошибки считаются постоянными.
+
+⸻
+
+2.3 Алгоритм retry
+
+При временной ошибке:
+
+1️⃣ попытка → сразу
+2️⃣ retry через 5 минут
+3️⃣ retry через 15 минут
+4️⃣ retry через 60 минут
+
+Максимум: 3 повтора
+
+⸻
+
+2.4 После исчерпания retry
+
+✔ статус sync = failed
+✔ показать UI предупреждение
+✔ записать причину в лог
+
+⸻
+
+3. Статусы синхронизации визита
+
+В таблице visits:
+
+Добавить поля:
+
+altegio_sync_status: pending | success | failed
+altegio_sync_error: string | null
+altegio_last_retry_at: datetime | null
+altegio_retry_count: number
+
+Логика статусов
+
+✔ pending → отправка / retry
+✔ success → sync ок
+✔ failed → retry закончились / permanent error
+
+⸻
+
+4. Статус интеграции специалиста
+
+В таблице specialists:
+
+altegio_connection_status:
+connected | error | disconnected
+Логика
+
+connected
+
+✔ токены валидны
+✔ Altegio отвечает
+
+⸻
+
+error
+
+✔ 401 / 403
+✔ invalid token
+✔ revoked access
+
+⸻
+
+disconnected
+
+✔ нет токенов
+✔ интеграция не настроена
+
+⸻
+
+5. Автообновление статуса интеграции
+
+При каждом вызове Altegio API:
+
+✔ если success → статус = connected
+✔ если 401/403 → статус = error
+✔ если network/timeout → статус НЕ менять
+
+⸻
+
+6. Inline-баннеры
+
+⸻
+
+6.1 В визите
+
+FAILED
+
+🔴 Ошибка синхронизации с Altegio
+Запись не обновилась
+[Повторить]
+
+⸻
+
+PENDING
+
+🟡 Синхронизация с Altegio…
+
+⸻
+
+⸻
+
+6.2 В профиле специалиста
+
+⸻
+
+ERROR
+
+🔴 Проблема с Altegio
+Проверьте подключение
+[Переподключить]
+
+⸻
+
+DISCONNECTED
+
+⚪ Altegio не подключён
+[Подключить]
+
+⸻
+
+⸻
+
+7. Поведение кнопок
+
+⸻
+
+Pending
+
+✔ кнопки активны
+✔ retry в фоне
+
+⸻
+
+Failed
+
+✔ показать кнопку Повторить sync
+
+⸻
+
+Permanent error (401/403)
+
+✔ retry НЕ запускать
+✔ показать баннер
+✔ предложить переподключение
+
+⸻
+
+8. Логирование
+
+Логировать:
+
+✔ действие (create/update/delete/complete)
+✔ retry_count
+✔ тип ошибки (temporary/permanent)
+✔ Altegio response body
+✔ specialist_id / visit_id
+
+⸻
+
+9. UX-правила
+
+✔ Retry — полностью silent
+✔ Баннер только при failed/permanent error
+✔ Pending баннер без тревожного тона
+✔ Ошибки формулировать человеческим языком
+
+⸻
+
+10. Edge cases
+
+✔ Altegio completed → повторно не завершать
+✔ visit deleted → retry отменить
+✔ specialist disconnected → sync не запускать
+
+⸻
+
+11. Результат
+
+После внедрения:
+
+✔ меньше потерянных записей
+✔ меньше silent-ошибок
+✔ понятный статус интеграции
+✔ меньше саппорт-драмы

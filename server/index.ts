@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-13-v59-altegio-error-screens";
+const BUILD_VERSION = "2026-02-13-v61-altegio-connection-status";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();
@@ -80,6 +80,9 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_sync_error text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_staff_id integer;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_company_id integer;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_connection_status text DEFAULT 'disconnected';
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_retry_count integer DEFAULT 0;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_last_retry_at timestamp;
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {

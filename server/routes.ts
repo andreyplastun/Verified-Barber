@@ -7,7 +7,7 @@ import { bookings, type Review, specialistSignupSchema, claimRequestSchema } fro
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
-import { syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth } from "./altegio";
+import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry } from "./altegio";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -496,25 +496,12 @@ export async function registerRoutes(
 
       if (isAltegioConfigured()) {
         const specialist = await storage.getSpecialist(booking.specialistId);
-        const syncResult = await syncBookingToAltegio(
+        await storage.updateBooking(booking.id, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
+        syncWithRetry(
           { ...booking, updatedFrom: "rateus" },
           specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
           "create",
         );
-        if (syncResult.success && syncResult.altegioId) {
-          await storage.updateBooking(booking.id, {
-            altegioAppointmentId: syncResult.altegioId,
-            updatedFrom: "rateus",
-            altegioSyncStatus: "synced",
-            altegioSyncError: null,
-          });
-        } else if (syncResult.error && syncResult.error !== "not_configured" && syncResult.error !== "no_altegio_staff_id") {
-          await storage.updateBooking(booking.id, {
-            updatedFrom: "rateus",
-            altegioSyncStatus: "error",
-            altegioSyncError: syncResult.error,
-          });
-        }
       }
 
       res.status(201).json(booking);
@@ -824,24 +811,12 @@ export async function registerRoutes(
 
       if (isAltegioConfigured()) {
         const spec = await storage.getSpecialist(booking.specialistId);
-        const syncResult = await syncBookingToAltegio(
+        await storage.updateBooking(booking.id, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
+        syncWithRetry(
           { ...booking, updatedFrom: "rateus" },
           spec ? { altegioStaffId: (spec as any).altegioStaffId, altegioCompanyId: (spec as any).altegioCompanyId } : null,
           "create",
         );
-        if (syncResult.success && syncResult.altegioId) {
-          await storage.updateBooking(booking.id, {
-            altegioAppointmentId: syncResult.altegioId,
-            updatedFrom: "rateus",
-            altegioSyncStatus: "synced",
-          });
-        } else if (syncResult.error && syncResult.error !== "not_configured" && syncResult.error !== "no_altegio_staff_id") {
-          await storage.updateBooking(booking.id, {
-            updatedFrom: "rateus",
-            altegioSyncStatus: "error",
-            altegioSyncError: syncResult.error,
-          });
-        }
       }
       
       res.status(201).json(booking);
@@ -866,16 +841,12 @@ export async function registerRoutes(
 
       if (isAltegioConfigured() && existingBooking && existingBooking.updatedFrom !== "altegio") {
         const spec = await storage.getSpecialist(booking.specialistId);
-        const syncResult = await syncBookingToAltegio(
+        await storage.updateBooking(id, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
+        syncWithRetry(
           { ...booking, updatedFrom: "rateus" },
           spec ? { altegioStaffId: (spec as any).altegioStaffId, altegioCompanyId: (spec as any).altegioCompanyId } : null,
           "complete",
         );
-        await storage.updateBooking(id, {
-          updatedFrom: "rateus",
-          altegioSyncStatus: syncResult.success ? "synced" : "error",
-          altegioSyncError: syncResult.error || null,
-        });
       }
       
       res.json(booking);
@@ -1333,16 +1304,12 @@ ${magicLink}`;
       const specialist = await storage.getSpecialist(booking.specialistId);
 
       if (isAltegioConfigured() && booking.updatedFrom !== "altegio") {
-        const syncResult = await syncBookingToAltegio(
+        await storage.updateBooking(bookingId, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
+        syncWithRetry(
           { ...booking, status: "completed", updatedFrom: "rateus" },
           specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
           "complete",
         );
-        await storage.updateBooking(bookingId, {
-          updatedFrom: "rateus",
-          altegioSyncStatus: syncResult.success ? "synced" : "error",
-          altegioSyncError: syncResult.error || null,
-        });
       }
 
       let magicLinkData = null;
@@ -1998,6 +1965,7 @@ ${magicLink}`;
       await storage.updateSpecialist(user.specialistId, {
         altegioStaffId,
         altegioCompanyId: altegioCompanyId || null,
+        altegioConnectionStatus: "connected",
       } as any);
 
       console.log(`[ALTEGIO] Staff selected: specialist=${user.specialistId}, altegioStaffId=${altegioStaffId}, companyId=${altegioCompanyId}`);
@@ -2025,6 +1993,7 @@ ${magicLink}`;
       await storage.updateSpecialist(user.specialistId, {
         altegioStaffId: null,
         altegioCompanyId: null,
+        altegioConnectionStatus: "disconnected",
       } as any);
 
       console.log(`[ALTEGIO] Disconnected: specialist=${user.specialistId}`);
@@ -2033,6 +2002,40 @@ ${magicLink}`;
       res.json(updated);
     } catch (err: any) {
       console.error("[ALTEGIO] Disconnect error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/altegio/retry-sync/:bookingId", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const bookingId = Number(req.params.bookingId);
+      if (isNaN(bookingId)) {
+        return res.status(400).json({ message: "Invalid booking ID" });
+      }
+
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+
+      if (user.role === "specialist" && user.specialistId !== booking.specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const result = await manualRetrySync(bookingId);
+      res.json({ success: result.success, error: result.error });
+    } catch (err: any) {
+      console.error("[ALTEGIO] Retry sync error:", err);
       res.status(500).json({ message: err.message });
     }
   });

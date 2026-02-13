@@ -1,4 +1,9 @@
+import { storage } from "./storage";
+
 const ALTEGIO_BASE_URL = "https://api.alteg.io/api/v1";
+
+const RETRY_DELAYS = [5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000]; // 5min, 15min, 60min
+const MAX_RETRIES = 3;
 
 interface AltegioConfig {
   partnerToken: string;
@@ -58,6 +63,16 @@ export interface AltegioHealthResult {
   httpStatus?: number;
 }
 
+export type SyncAction = "create" | "update" | "cancel" | "complete";
+
+export interface SyncResult {
+  success: boolean;
+  altegioId?: number;
+  error?: string;
+  errorType?: "temporary" | "permanent";
+  httpStatus?: number;
+}
+
 function classifyAltegioError(httpStatus: number, responseBody?: any): AltegioErrorType {
   const msg = (responseBody?.meta?.message || responseBody?.message || "").toLowerCase();
 
@@ -86,9 +101,6 @@ function classifyAltegioError(httpStatus: number, responseBody?: any): AltegioEr
   }
 
   if (httpStatus === 404) {
-    if (msg.includes("staff") || msg.includes("сотрудник") || msg.includes("company") || msg.includes("компан")) {
-      return "staff_not_found";
-    }
     return "staff_not_found";
   }
 
@@ -97,12 +109,30 @@ function classifyAltegioError(httpStatus: number, responseBody?: any): AltegioEr
   return "unknown";
 }
 
-function classifyNetworkError(_err: Error): AltegioErrorType {
-  return "api_unavailable";
+function isTemporaryError(httpStatus: number): boolean {
+  if (httpStatus >= 500) return true;
+  if (httpStatus === 429) return true;
+  return false;
+}
+
+function isTemporaryNetworkError(_err: Error): boolean {
+  return true;
+}
+
+function isPermanentError(httpStatus: number): boolean {
+  return httpStatus === 401 || httpStatus === 403;
 }
 
 export function isAltegioConfigured(): boolean {
   return getConfig() !== null;
+}
+
+async function updateSpecialistConnectionStatus(specialistId: number, status: "connected" | "error") {
+  try {
+    await storage.updateSpecialist(specialistId, { altegioConnectionStatus: status } as any);
+  } catch (err) {
+    console.error(`[ALTEGIO-SYNC] Failed to update connection status for specialist ${specialistId}:`, err);
+  }
 }
 
 export async function checkAltegioHealth(specialistStaffId?: number | null, specialistCompanyId?: number | null): Promise<AltegioHealthResult> {
@@ -146,9 +176,8 @@ export async function checkAltegioHealth(specialistStaffId?: number | null, spec
     console.error(`[ALTEGIO-HEALTH] Error: ${errorType} (${response.status}) - ${detail}`);
     return { ok: false, errorType, httpStatus: response.status, errorDetail: detail };
   } catch (err: any) {
-    const errorType = classifyNetworkError(err);
     console.error(`[ALTEGIO-HEALTH] Network error:`, err.message);
-    return { ok: false, errorType, errorDetail: err.message };
+    return { ok: false, errorType: "api_unavailable", errorDetail: err.message };
   }
 }
 
@@ -189,165 +218,60 @@ export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff
       return { success: false, error: errorMsg, errorType };
     }
   } catch (err: any) {
-    const errorType = classifyNetworkError(err);
-    console.error(`[ALTEGIO] Staff list fetch error (${errorType}):`, err.message);
-    return { success: false, error: err.message, errorType };
+    console.error(`[ALTEGIO] Staff list fetch error (api_unavailable):`, err.message);
+    return { success: false, error: err.message, errorType: "api_unavailable" };
   }
 }
 
-export async function createAltegioAppointment(
-  staffId: number,
-  clientName: string,
-  clientPhone: string,
-  datetime: Date,
-  comment?: string,
-  rateusbookingId?: number,
-): Promise<{ success: boolean; altegioId?: number; error?: string }> {
+async function makeAltegioRequest(
+  url: string,
+  method: string,
+  body: any | null,
+  logCtx: { action: SyncAction; bookingId: number; specialistId: number; retryCount: number },
+): Promise<{ ok: boolean; status: number; data?: any; error?: string }> {
   const config = getConfig();
-  if (!config) {
-    console.log("[ALTEGIO-SYNC] Not configured, skipping create");
-    return { success: false, error: "not_configured" };
-  }
+  if (!config) return { ok: false, status: 0, error: "not_configured" };
 
-  const companyId = staffId ? config.companyId : config.companyId;
-
-  const body: AltegioAppointmentData = {
-    staff_id: staffId,
-    client: {
-      phone: clientPhone,
-      name: clientName,
-    },
-    datetime: datetime.toISOString(),
-    save_if_busy: true,
-    comment: comment || undefined,
+  const options: RequestInit = {
+    method,
+    headers: getHeaders(config),
   };
-
-  if (rateusbookingId) {
-    body.api_id = String(rateusbookingId);
-  }
+  if (body) options.body = JSON.stringify(body);
 
   try {
-    console.log(`[ALTEGIO-SYNC] Creating appointment: staffId=${staffId}, client=${clientName}, datetime=${datetime.toISOString()}`);
-    const response = await fetch(`${ALTEGIO_BASE_URL}/records/${companyId}`, {
-      method: "POST",
-      headers: getHeaders(config),
-      body: JSON.stringify(body),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(timeout);
 
-    const result = await response.json();
+    let responseData: any = null;
+    try { responseData = await response.json(); } catch {}
 
-    if (response.ok && result.success) {
-      const altegioId = Array.isArray(result.data) ? result.data[0]?.id : result.data?.id;
-      console.log(`[ALTEGIO-SYNC] Created appointment: altegioId=${altegioId}`);
-      return { success: true, altegioId };
-    } else {
-      const errorMsg = result?.meta?.message || JSON.stringify(result).slice(0, 200);
-      console.error(`[ALTEGIO-SYNC] Create failed: ${response.status} - ${errorMsg}`);
-      return { success: false, error: errorMsg };
+    console.log(
+      `[ALTEGIO-SYNC] ${logCtx.action} booking=${logCtx.bookingId} specialist=${logCtx.specialistId} ` +
+      `retry=${logCtx.retryCount} status=${response.status} ` +
+      `type=${response.ok ? 'success' : (isPermanentError(response.status) ? 'permanent' : 'temporary')} ` +
+      `body=${JSON.stringify(responseData).slice(0, 300)}`
+    );
+
+    if (response.ok || response.status === 204) {
+      await updateSpecialistConnectionStatus(logCtx.specialistId, "connected");
+      return { ok: true, status: response.status, data: responseData };
     }
-  } catch (err: any) {
-    console.error(`[ALTEGIO-SYNC] Create error:`, err.message);
-    return { success: false, error: err.message };
-  }
-}
 
-export async function updateAltegioAppointment(
-  altegioAppointmentId: number,
-  companyId: number | null,
-  updates: {
-    datetime?: Date;
-    clientName?: string;
-    clientPhone?: string;
-    attendance?: number;
-    comment?: string;
-  },
-): Promise<{ success: boolean; error?: string }> {
-  const config = getConfig();
-  if (!config) {
-    console.log("[ALTEGIO-SYNC] Not configured, skipping update");
-    return { success: false, error: "not_configured" };
-  }
-
-  const locationId = companyId || config.companyId;
-
-  const body: Record<string, any> = {};
-  if (updates.datetime) body.datetime = updates.datetime.toISOString();
-  if (updates.clientName || updates.clientPhone) {
-    body.client = {};
-    if (updates.clientName) body.client.name = updates.clientName;
-    if (updates.clientPhone) body.client.phone = updates.clientPhone;
-  }
-  if (updates.attendance !== undefined) body.attendance = updates.attendance;
-  if (updates.comment) body.comment = updates.comment;
-
-  try {
-    console.log(`[ALTEGIO-SYNC] Updating appointment ${altegioAppointmentId}: ${JSON.stringify(body).slice(0, 200)}`);
-    const response = await fetch(`${ALTEGIO_BASE_URL}/record/${locationId}/${altegioAppointmentId}`, {
-      method: "PUT",
-      headers: getHeaders(config),
-      body: JSON.stringify(body),
-    });
-
-    const result = await response.json();
-
-    if (response.ok && result.success) {
-      console.log(`[ALTEGIO-SYNC] Updated appointment ${altegioAppointmentId}`);
-      return { success: true };
-    } else {
-      const errorMsg = result?.meta?.message || JSON.stringify(result).slice(0, 200);
-      console.error(`[ALTEGIO-SYNC] Update failed: ${response.status} - ${errorMsg}`);
-      return { success: false, error: errorMsg };
+    if (isPermanentError(response.status)) {
+      await updateSpecialistConnectionStatus(logCtx.specialistId, "error");
     }
+
+    const errorMsg = responseData?.meta?.message || `HTTP ${response.status}`;
+    return { ok: false, status: response.status, data: responseData, error: errorMsg };
   } catch (err: any) {
-    console.error(`[ALTEGIO-SYNC] Update error:`, err.message);
-    return { success: false, error: err.message };
+    console.log(
+      `[ALTEGIO-SYNC] ${logCtx.action} booking=${logCtx.bookingId} specialist=${logCtx.specialistId} ` +
+      `retry=${logCtx.retryCount} type=temporary network_error=${err.message}`
+    );
+    return { ok: false, status: 0, error: err.message };
   }
-}
-
-export async function deleteAltegioAppointment(
-  altegioAppointmentId: number,
-  companyId: number | null,
-): Promise<{ success: boolean; error?: string }> {
-  const config = getConfig();
-  if (!config) {
-    console.log("[ALTEGIO-SYNC] Not configured, skipping delete");
-    return { success: false, error: "not_configured" };
-  }
-
-  const locationId = companyId || config.companyId;
-
-  try {
-    console.log(`[ALTEGIO-SYNC] Deleting appointment ${altegioAppointmentId}`);
-    const response = await fetch(`${ALTEGIO_BASE_URL}/record/${locationId}/${altegioAppointmentId}`, {
-      method: "DELETE",
-      headers: getHeaders(config),
-    });
-
-    if (response.status === 204 || response.ok) {
-      console.log(`[ALTEGIO-SYNC] Deleted appointment ${altegioAppointmentId}`);
-      return { success: true };
-    } else {
-      let errorMsg = `HTTP ${response.status}`;
-      try {
-        const result = await response.json();
-        errorMsg = result?.meta?.message || errorMsg;
-      } catch {}
-      console.error(`[ALTEGIO-SYNC] Delete failed: ${errorMsg}`);
-      return { success: false, error: errorMsg };
-    }
-  } catch (err: any) {
-    console.error(`[ALTEGIO-SYNC] Delete error:`, err.message);
-    return { success: false, error: err.message };
-  }
-}
-
-export async function completeAltegioAppointment(
-  altegioAppointmentId: number,
-  companyId: number | null,
-): Promise<{ success: boolean; error?: string }> {
-  return updateAltegioAppointment(altegioAppointmentId, companyId, {
-    attendance: 1,
-  });
 }
 
 export async function syncBookingToAltegio(
@@ -365,8 +289,8 @@ export async function syncBookingToAltegio(
     altegioStaffId?: number | null;
     altegioCompanyId?: number | null;
   } | null,
-  action: "create" | "update" | "cancel" | "complete",
-): Promise<{ success: boolean; altegioId?: number; error?: string }> {
+  action: SyncAction,
+): Promise<SyncResult> {
   if (!isAltegioConfigured()) {
     return { success: false, error: "not_configured" };
   }
@@ -381,59 +305,344 @@ export async function syncBookingToAltegio(
     return { success: false, error: "no_altegio_staff_id" };
   }
 
+  const config = getConfig()!;
+  const companyId = specialist.altegioCompanyId || config.companyId;
+  const logCtx = { action, bookingId: booking.id, specialistId: booking.specialistId, retryCount: 0 };
+
   switch (action) {
     case "create": {
       if (booking.altegioAppointmentId) {
-        console.log(`[ALTEGIO-SYNC] Booking ${booking.id} already has altegioAppointmentId=${booking.altegioAppointmentId}, updating instead`);
         return syncBookingToAltegio(booking, specialist, "update");
       }
-      const result = await createAltegioAppointment(
-        specialist.altegioStaffId,
-        booking.customerName,
-        booking.customerPhone,
-        new Date(booking.appointmentTime),
-        undefined,
-        booking.id,
+      const body: AltegioAppointmentData = {
+        staff_id: specialist.altegioStaffId,
+        client: { phone: booking.customerPhone, name: booking.customerName },
+        datetime: new Date(booking.appointmentTime).toISOString(),
+        save_if_busy: true,
+        api_id: String(booking.id),
+      };
+      const result = await makeAltegioRequest(
+        `${ALTEGIO_BASE_URL}/records/${companyId}`, "POST", body, logCtx
       );
-      return result;
+      if (result.ok) {
+        const altegioId = Array.isArray(result.data?.data) ? result.data.data[0]?.id : result.data?.data?.id;
+        return { success: true, altegioId };
+      }
+      return {
+        success: false,
+        error: result.error,
+        errorType: (result.status === 0 || isTemporaryError(result.status)) ? "temporary" : "permanent",
+        httpStatus: result.status,
+      };
     }
+
     case "update": {
       if (!booking.altegioAppointmentId) {
-        console.log(`[ALTEGIO-SYNC] Booking ${booking.id} has no altegioAppointmentId, creating instead`);
         return syncBookingToAltegio(booking, specialist, "create");
       }
-      const result = await updateAltegioAppointment(
-        booking.altegioAppointmentId,
-        specialist.altegioCompanyId || null,
-        {
-          datetime: new Date(booking.appointmentTime),
-          clientName: booking.customerName,
-          clientPhone: booking.customerPhone,
-        },
+      const body: Record<string, any> = {
+        datetime: new Date(booking.appointmentTime).toISOString(),
+        client: { name: booking.customerName, phone: booking.customerPhone },
+      };
+      const result = await makeAltegioRequest(
+        `${ALTEGIO_BASE_URL}/record/${companyId}/${booking.altegioAppointmentId}`, "PUT", body, logCtx
       );
-      return { success: result.success, error: result.error };
+      if (result.ok) return { success: true };
+      return {
+        success: false,
+        error: result.error,
+        errorType: (result.status === 0 || isTemporaryError(result.status)) ? "temporary" : "permanent",
+        httpStatus: result.status,
+      };
     }
+
     case "cancel": {
-      if (!booking.altegioAppointmentId) {
-        console.log(`[ALTEGIO-SYNC] Booking ${booking.id} has no altegioAppointmentId, nothing to cancel`);
-        return { success: true };
-      }
-      return deleteAltegioAppointment(
-        booking.altegioAppointmentId,
-        specialist.altegioCompanyId || null,
+      if (!booking.altegioAppointmentId) return { success: true };
+      const result = await makeAltegioRequest(
+        `${ALTEGIO_BASE_URL}/record/${companyId}/${booking.altegioAppointmentId}`, "DELETE", null, logCtx
       );
+      if (result.ok) return { success: true };
+      return {
+        success: false,
+        error: result.error,
+        errorType: (result.status === 0 || isTemporaryError(result.status)) ? "temporary" : "permanent",
+        httpStatus: result.status,
+      };
     }
+
     case "complete": {
-      if (!booking.altegioAppointmentId) {
-        console.log(`[ALTEGIO-SYNC] Booking ${booking.id} has no altegioAppointmentId, nothing to complete`);
-        return { success: true };
-      }
-      return completeAltegioAppointment(
-        booking.altegioAppointmentId,
-        specialist.altegioCompanyId || null,
+      if (!booking.altegioAppointmentId) return { success: true };
+      const body = { attendance: 1 };
+      const result = await makeAltegioRequest(
+        `${ALTEGIO_BASE_URL}/record/${companyId}/${booking.altegioAppointmentId}`, "PUT", body, logCtx
       );
+      if (result.ok) return { success: true };
+      return {
+        success: false,
+        error: result.error,
+        errorType: (result.status === 0 || isTemporaryError(result.status)) ? "temporary" : "permanent",
+        httpStatus: result.status,
+      };
     }
+
     default:
       return { success: false, error: `Unknown action: ${action}` };
+  }
+}
+
+const pendingRetries = new Map<number, NodeJS.Timeout>();
+
+export function cancelRetry(bookingId: number) {
+  const timer = pendingRetries.get(bookingId);
+  if (timer) {
+    clearTimeout(timer);
+    pendingRetries.delete(bookingId);
+    console.log(`[ALTEGIO-SYNC] Cancelled retry for booking ${bookingId}`);
+  }
+}
+
+export async function syncWithRetry(
+  booking: {
+    id: number;
+    specialistId: number;
+    customerName: string;
+    customerPhone: string;
+    appointmentTime: Date;
+    altegioAppointmentId?: number | null;
+    status: string;
+    updatedFrom?: string | null;
+  },
+  specialist: {
+    altegioStaffId?: number | null;
+    altegioCompanyId?: number | null;
+  } | null,
+  action: SyncAction,
+  retryCount: number = 0,
+): Promise<SyncResult> {
+  const result = await syncBookingToAltegio(booking, specialist, action);
+
+  if (result.success) {
+    cancelRetry(booking.id);
+    const updateData: any = {
+      updatedFrom: "rateus",
+      altegioSyncStatus: "synced",
+      altegioSyncError: null,
+      altegioRetryCount: retryCount,
+    };
+    if (result.altegioId) {
+      updateData.altegioAppointmentId = result.altegioId;
+    }
+    await storage.updateBooking(booking.id, updateData);
+    return result;
+  }
+
+  if (result.error === "not_configured" || result.error === "no_altegio_staff_id") {
+    return result;
+  }
+
+  if (result.errorType === "permanent") {
+    cancelRetry(booking.id);
+    await storage.updateBooking(booking.id, {
+      updatedFrom: "rateus",
+      altegioSyncStatus: "error",
+      altegioSyncError: result.error || null,
+      altegioRetryCount: retryCount,
+    } as any);
+    console.log(
+      `[ALTEGIO-SYNC] Permanent error for booking ${booking.id}, action=${action}, error=${result.error} - no retry`
+    );
+    return result;
+  }
+
+  if (retryCount < MAX_RETRIES) {
+    const delay = RETRY_DELAYS[Math.min(retryCount, RETRY_DELAYS.length - 1)];
+    const nextRetry = retryCount + 1;
+
+    await storage.updateBooking(booking.id, {
+      updatedFrom: "rateus",
+      altegioSyncStatus: "pending",
+      altegioSyncError: result.error || null,
+      altegioRetryCount: retryCount,
+      altegioLastRetryAt: new Date(),
+    } as any);
+
+    console.log(
+      `[ALTEGIO-SYNC] Scheduling retry ${nextRetry}/${MAX_RETRIES} for booking ${booking.id}, ` +
+      `action=${action}, delay=${delay / 1000}s, error=${result.error}`
+    );
+
+    const timer = setTimeout(async () => {
+      pendingRetries.delete(booking.id);
+      try {
+        const freshBooking = await storage.getBooking(booking.id);
+        if (!freshBooking) {
+          console.log(`[ALTEGIO-SYNC] Booking ${booking.id} deleted, skipping retry`);
+          return;
+        }
+        if (freshBooking.status === "cancelled") {
+          console.log(`[ALTEGIO-SYNC] Booking ${booking.id} cancelled, skipping retry`);
+          return;
+        }
+
+        const spec = await storage.getSpecialist(freshBooking.specialistId);
+        if (!spec || !(spec as any).altegioStaffId) {
+          console.log(`[ALTEGIO-SYNC] Specialist disconnected for booking ${booking.id}, skipping retry`);
+          await storage.updateBooking(booking.id, {
+            altegioSyncStatus: "error",
+            altegioSyncError: "Specialist disconnected",
+          } as any);
+          return;
+        }
+
+        await syncWithRetry(
+          { ...freshBooking, appointmentTime: new Date(freshBooking.appointmentTime) },
+          { altegioStaffId: (spec as any).altegioStaffId, altegioCompanyId: (spec as any).altegioCompanyId },
+          action,
+          nextRetry,
+        );
+      } catch (err) {
+        console.error(`[ALTEGIO-SYNC] Retry ${nextRetry} error for booking ${booking.id}:`, err);
+        await storage.updateBooking(booking.id, {
+          altegioSyncStatus: "error",
+          altegioSyncError: `Retry ${nextRetry} failed`,
+          altegioRetryCount: nextRetry,
+        } as any);
+      }
+    }, delay);
+
+    pendingRetries.set(booking.id, timer);
+    return result;
+  }
+
+  cancelRetry(booking.id);
+  await storage.updateBooking(booking.id, {
+    updatedFrom: "rateus",
+    altegioSyncStatus: "error",
+    altegioSyncError: result.error || "Max retries exceeded",
+    altegioRetryCount: retryCount,
+    altegioLastRetryAt: new Date(),
+  } as any);
+
+  console.log(
+    `[ALTEGIO-SYNC] All ${MAX_RETRIES} retries exhausted for booking ${booking.id}, action=${action}, ` +
+    `marking as failed. Error: ${result.error}`
+  );
+
+  return result;
+}
+
+export async function manualRetrySync(bookingId: number): Promise<SyncResult> {
+  const booking = await storage.getBooking(bookingId);
+  if (!booking) return { success: false, error: "Booking not found" };
+
+  if (booking.status === "cancelled") {
+    return { success: false, error: "Booking is cancelled" };
+  }
+
+  const specialist = await storage.getSpecialist(booking.specialistId);
+  if (!specialist || !(specialist as any).altegioStaffId) {
+    return { success: false, error: "Specialist not connected to Altegio" };
+  }
+
+  const action: SyncAction = booking.altegioAppointmentId
+    ? (booking.status === "completed" ? "complete" : "update")
+    : "create";
+
+  console.log(`[ALTEGIO-SYNC] Manual retry for booking ${bookingId}, action=${action}`);
+
+  await storage.updateBooking(bookingId, {
+    altegioSyncStatus: "pending",
+    altegioSyncError: null,
+    altegioRetryCount: 0,
+  } as any);
+
+  return syncWithRetry(
+    { ...booking, appointmentTime: new Date(booking.appointmentTime) },
+    { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId },
+    action,
+    0,
+  );
+}
+
+export async function createAltegioAppointment(
+  staffId: number,
+  clientName: string,
+  clientPhone: string,
+  datetime: Date,
+  comment?: string,
+  rateusBookingId?: number,
+): Promise<{ success: boolean; altegioId?: number; error?: string }> {
+  const config = getConfig();
+  if (!config) return { success: false, error: "not_configured" };
+
+  const body: AltegioAppointmentData = {
+    staff_id: staffId,
+    client: { phone: clientPhone, name: clientName },
+    datetime: datetime.toISOString(),
+    save_if_busy: true,
+    comment: comment || undefined,
+  };
+  if (rateusBookingId) body.api_id = String(rateusBookingId);
+
+  try {
+    const response = await fetch(`${ALTEGIO_BASE_URL}/records/${config.companyId}`, {
+      method: "POST",
+      headers: getHeaders(config),
+      body: JSON.stringify(body),
+    });
+    const result = await response.json();
+    if (response.ok && result.success) {
+      const altegioId = Array.isArray(result.data) ? result.data[0]?.id : result.data?.id;
+      return { success: true, altegioId };
+    }
+    const errorMsg = result?.meta?.message || JSON.stringify(result).slice(0, 200);
+    return { success: false, error: errorMsg };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function completeAltegioAppointment(
+  altegioAppointmentId: number,
+  companyId: number | null,
+): Promise<{ success: boolean; error?: string }> {
+  const config = getConfig();
+  if (!config) return { success: false, error: "not_configured" };
+
+  const locationId = companyId || config.companyId;
+  try {
+    const response = await fetch(`${ALTEGIO_BASE_URL}/record/${locationId}/${altegioAppointmentId}`, {
+      method: "PUT",
+      headers: getHeaders(config),
+      body: JSON.stringify({ attendance: 1 }),
+    });
+    const result = await response.json();
+    if (response.ok && result.success) return { success: true };
+    const errorMsg = result?.meta?.message || `HTTP ${response.status}`;
+    return { success: false, error: errorMsg };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function deleteAltegioAppointment(
+  altegioAppointmentId: number,
+  companyId: number | null,
+): Promise<{ success: boolean; error?: string }> {
+  const config = getConfig();
+  if (!config) return { success: false, error: "not_configured" };
+
+  const locationId = companyId || config.companyId;
+  try {
+    const response = await fetch(`${ALTEGIO_BASE_URL}/record/${locationId}/${altegioAppointmentId}`, {
+      method: "DELETE",
+      headers: getHeaders(config),
+    });
+    if (response.status === 204 || response.ok) return { success: true };
+    let errorMsg = `HTTP ${response.status}`;
+    try { const result = await response.json(); errorMsg = result?.meta?.message || errorMsg; } catch {}
+    return { success: false, error: errorMsg };
+  } catch (err: any) {
+    return { success: false, error: err.message };
   }
 }
