@@ -18,6 +18,7 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import type { Specialist, Booking, Review, SpecialistPhoto } from '@shared/schema';
 import AltegioErrorScreen, { type AltegioErrorType } from '@/components/AltegioErrorScreen';
 import AltegioSyncBanner, { getBookingSyncBannerConfig, getGlobalAltegioBannerConfig } from '@/components/AltegioSyncBanner';
+import AltegioStatusCard from '@/components/AltegioStatusCard';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export default function SpecialistDashboard() {
@@ -703,90 +704,19 @@ export default function SpecialistDashboard() {
             />
           )}
 
-          <Card>
-            <CardHeader className="flex flex-row items-center gap-2">
-              <Link2 className="w-5 h-5" />
-              <CardTitle>Altegio</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {isAltegioConnected ? (
-                <>
-                  {(specialist as any)?.altegioConnectionStatus === 'error' ? (
-                    <div className="flex items-center gap-2" data-testid="altegio-status-error">
-                      <AlertTriangle className="w-5 h-5 text-amber-500" />
-                      <div>
-                        <p className="text-sm font-medium">Требуется переподключение</p>
-                        <p className="text-xs text-muted-foreground">Синхронизация приостановлена</p>
-                      </div>
-                    </div>
-                  ) : altegioHealth && !altegioHealth.ok ? (
-                    <div className="flex items-center gap-2" data-testid="altegio-status-warning">
-                      <Info className="w-5 h-5 text-amber-500" />
-                      <div>
-                        <p className="text-sm font-medium">Синхронизация временно недоступна</p>
-                        <p className="text-xs text-muted-foreground">Мы автоматически повторим попытку</p>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2" data-testid="altegio-status-connected">
-                      <CircleCheck className="w-5 h-5 text-green-500" />
-                      <div>
-                        <p className="text-sm font-medium">Синхронизировано с Altegio</p>
-                        <p className="text-xs text-muted-foreground">Синхронизация активна</p>
-                      </div>
-                    </div>
-                  )}
-                  {(specialist as any)?.altegioConnectionStatus === 'error' && (
-                    <div className="px-3 py-2 rounded-md bg-amber-50/80 dark:bg-amber-950/20" data-testid="banner-altegio-error">
-                      <div className="flex items-center gap-1.5 mb-2">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                        <span className="text-xs text-amber-700 dark:text-amber-400">Нужно переподключить Altegio, чтобы синхронизация продолжилась</span>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                        onClick={() => {
-                          handleAltegioDisconnect().then(() => handleAltegioConnect());
-                        }}
-                        data-testid="button-altegio-reconnect"
-                      >
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Переподключить
-                      </Button>
-                    </div>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleAltegioDisconnect}
-                    data-testid="button-altegio-disconnect"
-                  >
-                    <Unlink className="w-4 h-4 mr-2" />
-                    Отключить Altegio
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2" data-testid="altegio-status-disconnected">
-                    <Unlink className="w-5 h-5 text-muted-foreground" />
-                    <div>
-                      <p className="text-sm font-medium">Altegio не подключён</p>
-                      <p className="text-xs text-muted-foreground">Подключите для синхронизации визитов</p>
-                    </div>
-                  </div>
-                  <Button
-                    onClick={handleAltegioConnect}
-                    className="w-full"
-                    data-testid="button-altegio-connect"
-                  >
-                    <Link2 className="w-4 h-4 mr-2" />
-                    Подключить Altegio
-                  </Button>
-                </>
-              )}
-            </CardContent>
-          </Card>
+          <AltegioStatusCard
+            state={
+              altegioRetrying ? 'checking'
+              : !isAltegioConnected ? 'error'
+              : (specialist as any)?.altegioConnectionStatus === 'error' ? 'warning'
+              : altegioHealth && !altegioHealth.ok ? 'warning'
+              : 'connected'
+            }
+            onConnect={handleAltegioConnect}
+            onReconnect={() => {
+              handleAltegioDisconnect().then(() => handleAltegioConnect());
+            }}
+          />
         </>
       )}
 
