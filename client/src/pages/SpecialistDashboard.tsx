@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, CircleX, Loader2 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
@@ -13,6 +13,8 @@ import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import type { Specialist, Booking, Review, SpecialistPhoto } from '@shared/schema';
 
 export default function SpecialistDashboard() {
@@ -30,6 +32,11 @@ export default function SpecialistDashboard() {
   const [baseServiceName, setBaseServiceName] = useState('');
   const [baseServicePrice, setBaseServicePrice] = useState('');
   const [savingBaseService, setSavingBaseService] = useState(false);
+  const [altegioModalOpen, setAltegioModalOpen] = useState(false);
+  const [altegioManualMode, setAltegioManualMode] = useState(false);
+  const [altegioManualId, setAltegioManualId] = useState('');
+  const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
+  const [altegioConnecting, setAltegioConnecting] = useState(false);
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -69,6 +76,110 @@ export default function SpecialistDashboard() {
     },
     enabled: !!specialistId,
   });
+
+  const { data: altegioStatus } = useQuery<{ configured: boolean }>({
+    queryKey: ['/api/altegio/status'],
+    enabled: !!specialistId,
+  });
+
+  const { data: altegioStaffData, isLoading: loadingAltegioStaff, error: altegioStaffError, refetch: refetchStaff } = useQuery<{ staff: Array<{ id: number; name: string; avatar: string | null; specialization: string | null }>; companyId: number }>({
+    queryKey: ['/api/altegio/staff'],
+    queryFn: async () => {
+      if (!currentUser?.id) throw new Error('Not authorized');
+      const res = await fetch('/api/altegio/staff', {
+        headers: { 'x-user-id': currentUser.id },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to fetch staff');
+      }
+      return res.json();
+    },
+    enabled: false,
+  });
+
+  const isAltegioConnected = !!(specialist as any)?.altegioStaffId;
+
+  const handleAltegioConnect = async () => {
+    setAltegioModalOpen(true);
+    setSelectedStaffId(null);
+    setAltegioManualMode(false);
+    setAltegioManualId('');
+    refetchStaff();
+  };
+
+  const handleAltegioSelectStaff = async (staffId: number, companyId: number) => {
+    if (!currentUser?.id) return;
+    setAltegioConnecting(true);
+    try {
+      const res = await fetch('/api/altegio/connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({ altegioStaffId: staffId, altegioCompanyId: companyId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Connection failed');
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      setAltegioModalOpen(false);
+      toast({ title: 'Altegio подключён', description: 'Синхронизация визитов активна' });
+    } catch (err: any) {
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    } finally {
+      setAltegioConnecting(false);
+    }
+  };
+
+  const handleAltegioManualSave = async () => {
+    const id = parseInt(altegioManualId, 10);
+    if (!id || isNaN(id)) {
+      toast({ title: 'Ошибка', description: 'Введите корректный ID', variant: 'destructive' });
+      return;
+    }
+    if (!altegioStaffData?.companyId) {
+      toast({ title: 'Ошибка', description: 'Не удалось определить компанию Altegio. Попробуйте ещё раз.', variant: 'destructive' });
+      return;
+    }
+    await handleAltegioSelectStaff(id, altegioStaffData.companyId);
+  };
+
+  const handleAltegioDisconnect = async () => {
+    if (!currentUser?.id) return;
+    try {
+      const res = await fetch('/api/altegio/disconnect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+      });
+      if (!res.ok) throw new Error('Disconnect failed');
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      toast({ title: 'Altegio отключён' });
+    } catch (err: any) {
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    }
+  };
+
+  const altegioAutoSelectedRef = useRef(false);
+  useEffect(() => {
+    if (altegioStaffData?.staff && altegioStaffData.staff.length === 1 && altegioModalOpen && !altegioAutoSelectedRef.current && !altegioConnecting) {
+      altegioAutoSelectedRef.current = true;
+      const single = altegioStaffData.staff[0];
+      handleAltegioSelectStaff(single.id, altegioStaffData.companyId);
+      console.log('[ALTEGIO] Auto-selected single staff');
+    }
+  }, [altegioStaffData, altegioModalOpen]);
+
+  useEffect(() => {
+    if (!altegioModalOpen) {
+      altegioAutoSelectedRef.current = false;
+    }
+  }, [altegioModalOpen]);
 
   const uploadPhoto = async (file: File, photoType: 'avatar' | 'work') => {
     if (!specialistId || !currentUser?.id) return;
@@ -490,6 +601,178 @@ export default function SpecialistDashboard() {
         </CardContent>
       </Card>
 
+      {altegioStatus?.configured && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2">
+            <Link2 className="w-5 h-5" />
+            <CardTitle>Altegio</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {isAltegioConnected ? (
+              <>
+                <div className="flex items-center gap-2" data-testid="altegio-status-connected">
+                  <CircleCheck className="w-5 h-5 text-green-500" />
+                  <div>
+                    <p className="text-sm font-medium">Подключён</p>
+                    <p className="text-xs text-muted-foreground">Синхронизация активна</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAltegioDisconnect}
+                  data-testid="button-altegio-disconnect"
+                >
+                  <Unlink className="w-4 h-4 mr-2" />
+                  Отключить Altegio
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  Подключите Altegio для автоматической синхронизации визитов
+                </p>
+                <Button
+                  onClick={handleAltegioConnect}
+                  className="w-full"
+                  data-testid="button-altegio-connect"
+                >
+                  <Link2 className="w-4 h-4 mr-2" />
+                  Подключить Altegio
+                </Button>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={altegioModalOpen} onOpenChange={setAltegioModalOpen}>
+        <DialogContent className="max-w-md">
+          {altegioManualMode ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Указать ID сотрудника</DialogTitle>
+                <DialogDescription>
+                  Введите ваш ID сотрудника из Altegio вручную
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="altegioManualId">altegio_staff_id</Label>
+                  <Input
+                    id="altegioManualId"
+                    type="number"
+                    value={altegioManualId}
+                    onChange={(e) => setAltegioManualId(e.target.value)}
+                    placeholder="Например: 12345"
+                    data-testid="input-altegio-manual-id"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    onClick={handleAltegioManualSave}
+                    disabled={!altegioManualId.trim() || altegioConnecting}
+                    data-testid="button-altegio-manual-save"
+                  >
+                    {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Сохранить
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setAltegioManualMode(false)}
+                    data-testid="button-altegio-manual-cancel"
+                  >
+                    Назад
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Кто вы в Altegio?</DialogTitle>
+                <DialogDescription>
+                  Выберите себя из списка сотрудников
+                </DialogDescription>
+              </DialogHeader>
+              {loadingAltegioStaff ? (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                </div>
+              ) : altegioStaffError ? (
+                <div className="text-center py-6 space-y-3">
+                  <CircleX className="w-8 h-8 text-red-500 mx-auto" />
+                  <p className="text-sm font-medium">Ошибка загрузки сотрудников</p>
+                  <p className="text-xs text-muted-foreground">{(altegioStaffError as Error).message}</p>
+                  <Button variant="outline" size="sm" onClick={() => refetchStaff()} data-testid="button-altegio-retry">
+                    Повторить
+                  </Button>
+                </div>
+              ) : altegioStaffData?.staff && altegioStaffData.staff.length === 0 ? (
+                <div className="text-center py-6 space-y-2">
+                  <p className="text-sm font-medium">В Altegio нет сотрудников</p>
+                  <p className="text-xs text-muted-foreground">Добавьте сотрудника в Altegio и повторите подключение</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {altegioStaffData?.staff?.map((staff) => (
+                      <div
+                        key={staff.id}
+                        className={`flex items-center gap-3 p-3 rounded-md cursor-pointer transition-colors ${
+                          selectedStaffId === staff.id
+                            ? 'bg-primary/10 ring-1 ring-primary'
+                            : 'bg-muted/50 hover-elevate'
+                        }`}
+                        onClick={() => setSelectedStaffId(staff.id)}
+                        data-testid={`staff-item-${staff.id}`}
+                      >
+                        <Avatar className="h-10 w-10">
+                          {staff.avatar ? (
+                            <AvatarImage src={staff.avatar} alt={staff.name} />
+                          ) : null}
+                          <AvatarFallback>{staff.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1">
+                          <p className="text-sm font-medium">{staff.name}</p>
+                          {staff.specialization && (
+                            <p className="text-xs text-muted-foreground">{staff.specialization}</p>
+                          )}
+                        </div>
+                        {selectedStaffId === staff.id && (
+                          <CircleCheck className="w-5 h-5 text-primary" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    className="w-full"
+                    onClick={() => {
+                      if (selectedStaffId && altegioStaffData?.companyId) {
+                        handleAltegioSelectStaff(selectedStaffId, altegioStaffData.companyId);
+                      }
+                    }}
+                    disabled={!selectedStaffId || altegioConnecting}
+                    data-testid="button-altegio-select-confirm"
+                  >
+                    {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Выбрать
+                  </Button>
+                  <button
+                    className="text-sm text-muted-foreground underline w-full text-center"
+                    onClick={() => setAltegioManualMode(true)}
+                    data-testid="button-altegio-not-found"
+                  >
+                    Не нашли себя?
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">
           <UserPlus className="w-5 h-5" />
@@ -677,9 +960,17 @@ export default function SpecialistDashboard() {
                           <User className="w-4 h-4 text-muted-foreground" />
                           <span data-testid={`text-customer-${booking.id}`}>{booking.customerName}</span>
                         </div>
-                        <Badge variant="outline" data-testid={`badge-time-${booking.id}`}>
-                          {format(new Date(booking.appointmentTime), 'MMM d, h:mm a')}
-                        </Badge>
+                        <div className="flex items-center gap-1.5">
+                          {(booking as any).altegioSyncStatus === 'synced' && (
+                            <RefreshCw className="w-3.5 h-3.5 text-green-500" data-testid={`icon-sync-ok-${booking.id}`} />
+                          )}
+                          {(booking as any).altegioSyncStatus === 'error' && (
+                            <CircleX className="w-3.5 h-3.5 text-red-500" data-testid={`icon-sync-error-${booking.id}`} />
+                          )}
+                          <Badge variant="outline" data-testid={`badge-time-${booking.id}`}>
+                            {format(new Date(booking.appointmentTime), 'MMM d, h:mm a')}
+                          </Badge>
+                        </div>
                       </div>
                       {isStale && (
                         <div className="flex items-center gap-1.5 text-xs text-amber-600" data-testid={`text-stale-hint-${booking.id}`}>
@@ -813,6 +1104,12 @@ export default function SpecialistDashboard() {
                     <span>{booking.customerName}</span>
                   </div>
                   <div className="flex items-center gap-2">
+                    {(booking as any).altegioSyncStatus === 'synced' && (
+                      <RefreshCw className="w-3.5 h-3.5 text-green-500" />
+                    )}
+                    {(booking as any).altegioSyncStatus === 'error' && (
+                      <CircleX className="w-3.5 h-3.5 text-red-500" />
+                    )}
                     <Badge variant="secondary">
                       {format(new Date(booking.appointmentTime), 'MMM d')}
                     </Badge>

@@ -7,7 +7,7 @@ import { bookings, type Review, specialistSignupSchema, claimRequestSchema } fro
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
-import { syncBookingToAltegio, isAltegioConfigured } from "./altegio";
+import { syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList } from "./altegio";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -1899,6 +1899,105 @@ ${magicLink}`;
         specialistId 
       });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ==========================================
+  // Altegio Connection Management
+  // ==========================================
+
+  app.get("/api/altegio/status", async (req, res) => {
+    try {
+      res.json({ configured: isAltegioConfigured() });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/altegio/staff", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== "specialist") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (!isAltegioConfigured()) {
+        return res.status(503).json({ message: "Altegio не настроен на сервере" });
+      }
+
+      const result = await fetchAltegioStaffList();
+      if (!result.success) {
+        return res.status(502).json({ message: result.error || "Ошибка загрузки списка сотрудников" });
+      }
+
+      res.json({ staff: result.staff, companyId: result.companyId });
+    } catch (err: any) {
+      console.error("[ALTEGIO] Staff list API error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/altegio/connect", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== "specialist" || !user.specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { altegioStaffId, altegioCompanyId } = req.body;
+      if (!altegioStaffId || typeof altegioStaffId !== "number") {
+        return res.status(400).json({ message: "altegioStaffId обязателен" });
+      }
+
+      await storage.updateSpecialist(user.specialistId, {
+        altegioStaffId,
+        altegioCompanyId: altegioCompanyId || null,
+      } as any);
+
+      console.log(`[ALTEGIO] Staff selected: specialist=${user.specialistId}, altegioStaffId=${altegioStaffId}, companyId=${altegioCompanyId}`);
+
+      const updated = await storage.getSpecialist(user.specialistId);
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[ALTEGIO] Connect error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/altegio/disconnect", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== "specialist" || !user.specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      await storage.updateSpecialist(user.specialistId, {
+        altegioStaffId: null,
+        altegioCompanyId: null,
+      } as any);
+
+      console.log(`[ALTEGIO] Disconnected: specialist=${user.specialistId}`);
+
+      const updated = await storage.getSpecialist(user.specialistId);
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[ALTEGIO] Disconnect error:", err);
       res.status(500).json({ message: err.message });
     }
   });

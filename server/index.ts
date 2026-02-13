@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-13-v57-altegio-bidirectional-sync";
+const BUILD_VERSION = "2026-02-13-v58-altegio-connection-ui";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();

@@ -47,6 +47,41 @@ export function isAltegioConfigured(): boolean {
   return getConfig() !== null;
 }
 
+export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff?: Array<{ id: number; name: string; avatar: string | null; specialization: string | null }>; companyId?: number; error?: string }> {
+  const config = getConfig();
+  if (!config) {
+    return { success: false, error: "not_configured" };
+  }
+
+  try {
+    console.log(`[ALTEGIO] Fetching staff list for company ${config.companyId}`);
+    const response = await fetch(`${ALTEGIO_BASE_URL}/book_staff/${config.companyId}`, {
+      method: "GET",
+      headers: getHeaders(config),
+    });
+
+    const result = await response.json();
+
+    if (response.ok && result.success) {
+      const staffList = (result.data || []).map((s: any) => ({
+        id: s.id,
+        name: s.name,
+        avatar: s.avatar || null,
+        specialization: s.specialization || null,
+      }));
+      console.log(`[ALTEGIO] Staff list loaded: ${staffList.length} members`);
+      return { success: true, staff: staffList, companyId: config.companyId };
+    } else {
+      const errorMsg = result?.meta?.message || JSON.stringify(result).slice(0, 200);
+      console.error(`[ALTEGIO] Staff list fetch failed: ${response.status} - ${errorMsg}`);
+      return { success: false, error: errorMsg };
+    }
+  } catch (err: any) {
+    console.error(`[ALTEGIO] Staff list fetch error:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function createAltegioAppointment(
   staffId: number,
   clientName: string,
