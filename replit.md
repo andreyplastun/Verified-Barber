@@ -101,7 +101,9 @@ Language: Russian (Русский) - all UI text is in Russian.
 - **Silent Retry System**: `syncWithRetry` wrapper with exponential backoff (5min, 15min, 60min) for temporary errors (5xx, 429, network). Permanent errors (401, 403) fail immediately. `altegioRetryCount` and `altegioLastRetryAt` fields on bookings track retry state. Retries auto-cancel for deleted/cancelled bookings.
 - **Manual Retry**: `POST /api/altegio/retry-sync/:bookingId` endpoint for user-triggered sync recovery
 - **Connection Status**: `altegioConnectionStatus` on specialists ('connected' | 'error' | 'disconnected') auto-updated on API responses. Displayed in profile card with banners and reconnect option.
-- **Inline Sync Banners**: `AltegioSyncBanner` component with severity-based styling (info/warning/error/blocking), framer-motion fade+slide animations (200ms), 1.5s debounce for pending, immediate show for errors, mass failure detection (>= 3 errors shows global banner, suppresses individual)
+- **Inline Sync Banners**: `AltegioSyncBanner` component with severity-based styling (info/warning/error/blocking), framer-motion fade+slide animations (240ms appear, 180ms exit), 400ms debounce for pending, immediate show for errors, 3s dedup for same text, mass failure detection (>= 3 errors shows global banner, suppresses individual)
+- **Altegio Status Card**: `AltegioStatusCard` component with 4 states (connected/warning/error/checking), exact HEX colors per design spec, 220ms opacity fade, tooltip on warning state, mobile-friendly layout
+- **Toast System**: Auto-dismiss after 2.5s, bottom-positioned with safe area padding, slide-up animation (240ms appear, 160ms exit)
 - **Specialist Fields**: `altegioStaffId`, `altegioCompanyId`, `altegioConnectionStatus` on specialists table for mapping
 - **API**: Uses Altegio V1 API (`POST /records/{company_id}`, `PUT /record/{company_id}/{id}`, `DELETE /record/{company_id}/{id}`)
 - **Auth**: Requires `ALTEGIO_PARTNER_TOKEN`, `ALTEGIO_USER_TOKEN`, `ALTEGIO_COMPANY_ID` env vars

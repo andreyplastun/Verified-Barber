@@ -88,7 +88,7 @@ export default function AltegioStatusCard({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        transition={{ duration: 0.18 }}
+        transition={{ duration: 0.22, ease: [0, 0, 0.2, 1] }}
         className={`w-full rounded-xl border p-3 ${config.bg} ${config.border}`}
         data-testid={testId}
         data-state={state}
@@ -97,6 +97,7 @@ export default function AltegioStatusCard({
           <div className="flex-shrink-0 mt-0.5">
             <Icon
               className={`w-[18px] h-[18px] ${config.iconColor} ${isSpinner ? 'animate-spin' : ''}`}
+              style={isSpinner ? { animationDuration: '1s' } : undefined}
               strokeWidth={1.5}
             />
           </div>

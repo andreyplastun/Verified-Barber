@@ -1081,7 +1081,6 @@ export default function SpecialistDashboard() {
                             () => retrySyncMutation.mutate(booking.id),
                             retryingSyncId === booking.id,
                           )}
-                          debounceMs={1500}
                           loading={retryingSyncId === booking.id}
                           testId={`banner-sync-${booking.id}`}
                         />
@@ -1262,7 +1261,6 @@ export default function SpecialistDashboard() {
                         () => retrySyncMutation.mutate(booking.id),
                         retryingSyncId === booking.id,
                       )}
-                      debounceMs={1500}
                       loading={retryingSyncId === booking.id}
                       testId={`banner-sync-completed-${booking.id}`}
                     />

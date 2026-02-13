@@ -48,10 +48,13 @@ const SEVERITY_STYLES: Record<SyncSeverity, {
 };
 
 const bannerVariants = {
-  hidden: { opacity: 0, y: 8, height: 0, marginTop: 0 },
+  hidden: { opacity: 0, y: -6, height: 0, marginTop: 0 },
   visible: { opacity: 1, y: 0, height: 'auto', marginTop: 8 },
-  exit: { opacity: 0, y: -4, height: 0, marginTop: 0 },
+  exit: { opacity: 0, y: -6, height: 0, marginTop: 0 },
 };
+
+const DEBOUNCE_MS = 400;
+const DEDUP_MS = 3000;
 
 interface AltegioSyncBannerProps {
   config: SyncBannerConfig | null;
@@ -62,7 +65,7 @@ interface AltegioSyncBannerProps {
 
 export default function AltegioSyncBanner({
   config,
-  debounceMs = 0,
+  debounceMs = DEBOUNCE_MS,
   loading = false,
   testId,
 }: AltegioSyncBannerProps) {
@@ -70,6 +73,7 @@ export default function AltegioSyncBanner({
   const [displayConfig, setDisplayConfig] = useState<SyncBannerConfig | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastShownRef = useRef<{ title: string; time: number } | null>(null);
 
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -80,16 +84,23 @@ export default function AltegioSyncBanner({
       return;
     }
 
-    const showDelay = debounceMs > 0 ? debounceMs : 0;
+    const now = Date.now();
+    const isDuplicate = lastShownRef.current
+      && lastShownRef.current.title === config.title
+      && (now - lastShownRef.current.time) < DEDUP_MS;
+
+    if (isDuplicate) return;
 
     if (config.severity === 'error' || config.severity === 'blocking') {
       setDisplayConfig(config);
       setVisible(true);
+      lastShownRef.current = { title: config.title, time: now };
     } else {
       timerRef.current = setTimeout(() => {
         setDisplayConfig(config);
         setVisible(true);
-      }, showDelay);
+        lastShownRef.current = { title: config.title, time: Date.now() };
+      }, debounceMs);
     }
 
     const autoHideMs = config.autoHide && config.autoHide > 0
@@ -97,7 +108,7 @@ export default function AltegioSyncBanner({
       : 0;
 
     if (autoHideMs > 0) {
-      const totalDelay = (config.severity === 'error' || config.severity === 'blocking' ? 0 : showDelay) + autoHideMs;
+      const totalDelay = (config.severity === 'error' || config.severity === 'blocking' ? 0 : debounceMs) + autoHideMs;
       autoHideRef.current = setTimeout(() => {
         setVisible(false);
       }, totalDelay);
@@ -119,6 +130,7 @@ export default function AltegioSyncBanner({
 
   const style = SEVERITY_STYLES[displayConfig.severity];
   const Icon = displayConfig.showSpinner ? Loader2 : style.icon;
+  const spinnerDuration = displayConfig.showSpinner ? '1s' : undefined;
 
   return (
     <AnimatePresence mode="wait">
@@ -129,12 +141,19 @@ export default function AltegioSyncBanner({
           initial="hidden"
           animate="visible"
           exit="exit"
-          transition={{ duration: 0.2, ease: 'easeOut' }}
+          transition={{
+            duration: 0.24,
+            ease: [0, 0, 0.2, 1],
+            exit: { duration: 0.18 },
+          }}
           data-testid={testId}
         >
           <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md ${style.bg}`}>
             <div className="flex items-center gap-2 min-w-0">
-              <Icon className={`w-3.5 h-3.5 flex-shrink-0 ${displayConfig.showSpinner ? 'animate-spin ' : ''}${style.iconColor}`} />
+              <Icon
+                className={`w-3.5 h-3.5 flex-shrink-0 ${displayConfig.showSpinner ? 'animate-spin ' : ''}${style.iconColor}`}
+                style={spinnerDuration ? { animationDuration: spinnerDuration } : undefined}
+              />
               <div className="min-w-0">
                 <span className={`text-xs font-medium ${style.text}`}>
                   {displayConfig.title}
@@ -234,7 +253,7 @@ export function getGlobalAltegioBannerConfig(
   if (errorCount >= threshold) {
     return {
       severity: 'warning',
-      title: 'Altegio временно недоступен',
+      title: 'Проблема соединения. Повторяем попытку…',
       description: 'Синхронизация будет выполнена автоматически',
     };
   }
