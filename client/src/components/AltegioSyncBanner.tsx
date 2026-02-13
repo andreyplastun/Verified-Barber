@@ -22,28 +22,28 @@ const SEVERITY_STYLES: Record<SyncSeverity, {
   iconColor: string;
 }> = {
   info: {
-    bg: 'bg-sky-50/80 dark:bg-sky-950/20',
-    text: 'text-sky-700 dark:text-sky-400',
+    bg: 'bg-[#F4F5F7] dark:bg-[#2A2D33]',
+    text: 'text-[#2A2A2A] dark:text-[#D4D5D7]',
     icon: RefreshCw,
-    iconColor: 'text-sky-500',
+    iconColor: 'text-[#6B7280]',
   },
   warning: {
-    bg: 'bg-amber-50/80 dark:bg-amber-950/20',
-    text: 'text-amber-700 dark:text-amber-400',
+    bg: 'bg-[#FFFAF2] dark:bg-[#332D1F]',
+    text: 'text-[#2A2A2A] dark:text-[#D4D5D7]',
     icon: AlertTriangle,
-    iconColor: 'text-amber-500',
+    iconColor: 'text-[#D4930D]',
   },
   error: {
-    bg: 'bg-orange-50/80 dark:bg-orange-950/20',
-    text: 'text-orange-700 dark:text-orange-400',
+    bg: 'bg-[#FFF5F5] dark:bg-[#332222]',
+    text: 'text-[#2A2A2A] dark:text-[#D4D5D7]',
     icon: KeyRound,
-    iconColor: 'text-orange-500',
+    iconColor: 'text-[#C0392B]',
   },
   blocking: {
-    bg: 'bg-red-50/80 dark:bg-red-950/20',
-    text: 'text-red-700 dark:text-red-400',
+    bg: 'bg-[#FFF5F5] dark:bg-[#332222]',
+    text: 'text-[#2A2A2A] dark:text-[#D4D5D7]',
     icon: ShieldOff,
-    iconColor: 'text-red-400',
+    iconColor: 'text-[#C0392B]',
   },
 };
 
@@ -148,18 +148,19 @@ export default function AltegioSyncBanner({
           }}
           data-testid={testId}
         >
-          <div className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md ${style.bg}`}>
-            <div className="flex items-center gap-2 min-w-0">
+          <div className={`flex items-center justify-between gap-2.5 px-3.5 py-2.5 min-h-[40px] rounded-[11px] shadow-[0_1px_10px_rgba(0,0,0,0.07)] ${style.bg}`}>
+            <div className="flex items-center gap-2.5 min-w-0">
               <Icon
-                className={`w-3.5 h-3.5 flex-shrink-0 ${displayConfig.showSpinner ? 'animate-spin ' : ''}${style.iconColor}`}
+                className={`w-4 h-4 flex-shrink-0 ${displayConfig.showSpinner ? 'animate-spin ' : ''}${style.iconColor}`}
+                strokeWidth={1.5}
                 style={spinnerDuration ? { animationDuration: spinnerDuration } : undefined}
               />
               <div className="min-w-0">
-                <span className={`text-xs font-medium ${style.text}`}>
+                <span className={`text-[13px] font-medium leading-snug ${style.text}`}>
                   {displayConfig.title}
                 </span>
                 {displayConfig.description && (
-                  <p className={`text-[11px] ${style.text} opacity-80 mt-0.5`}>
+                  <p className={`text-[12px] ${style.text} opacity-70 mt-0.5 leading-snug`}>
                     {displayConfig.description}
                   </p>
                 )}
@@ -174,7 +175,7 @@ export default function AltegioSyncBanner({
                 className="flex-shrink-0"
               >
                 {loading ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   displayConfig.buttonLabel
                 )}

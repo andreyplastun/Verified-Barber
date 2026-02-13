@@ -118,7 +118,7 @@ export default function AltegioStatusCard({
                       data-testid={`${testId}-info`}
                       type="button"
                     >
-                      <Info className={`w-3.5 h-3.5 ${config.subtitleColor}`} />
+                      <Info className={`w-3.5 h-3.5 ${config.subtitleColor}`} strokeWidth={1.5} />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="max-w-[220px] text-xs">
