@@ -105,7 +105,7 @@ export default function SpecialistOnboarding() {
     <div className="min-h-screen bg-background p-4 flex flex-col items-center justify-center">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
-          <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+          <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
             <Banknote className="w-8 h-8 text-amber-600" />
           </div>
           <h1 className="text-2xl font-bold" data-testid="text-onboarding-title">

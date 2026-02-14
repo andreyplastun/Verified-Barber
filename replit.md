@@ -13,14 +13,15 @@ Language: Russian (Русский) - all UI text is in Russian.
 
 ### Color System
 - **Approach**: Semantic CSS variables in `index.css`, mapped through Tailwind config
-- **Background**: #F7F8FA (App), #FFFFFF (Card/Surface)
-- **Primary**: #2B2F36 (Brand buttons/active elements)
-- **Text**: #111827 (Primary), #6B7280 (Secondary/Muted), #9CA3AF (Disabled)
-- **Accent**: #EEF2FF (Soft), #4F46E5 (Strong — chips, highlights)
-- **Status**: #16A34A (Success), #D97706 (Warning), #DC2626 (Error)
-- **Border**: #E5E7EB, Divider: #F1F5F9
-- **Toast**: Dark graphite #1E1E1E with white text (separate spec)
+- **Dark Mode**: `darkMode: ["class"]` in Tailwind; `.dark` class on `<html>` toggles palette
+- **Theme Provider**: `client/src/contexts/ThemeContext.tsx` — auto-detects system theme, manual override, localStorage persistence, 200ms fade transition
+- **Light Palette**: Background #F7F8FA, Card #FFFFFF, Primary #2B2F36, Text #111827/#6B7280/#9CA3AF, Accent #4F46E5, Border #E5E7EB
+- **Dark Palette**: Background #0F1115, Card #1A1D24, Primary #E5E7EB, Text #F9FAFB/#9CA3AF/#6B7280, Accent #818CF8, Border #2A2F3A
+- **Status (Light)**: Success #16A34A, Warning #D97706, Error #DC2626
+- **Status (Dark)**: Success #22C55E, Warning #F59E0B, Error #EF4444
+- **Toast**: Dark graphite #1E1E1E with white text (both themes)
 - **Rule**: No hardcoded hex colors in pages — use semantic classes (text-foreground, text-muted-foreground, bg-background, bg-card, bg-muted, bg-primary, border-border)
+- **Rule**: Status tints (bg-amber-50, bg-green-100, etc.) must include dark: variants
 
 ### Frontend
 - **Framework**: React 18 with TypeScript, built using Vite.

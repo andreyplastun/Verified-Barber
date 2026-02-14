@@ -985,15 +985,15 @@ export default function SpecialistDashboard() {
       </Card>
 
       {upcomingBookings.length > 0 && (
-        <Card className="border-amber-200 bg-amber-50/50">
+        <Card className="border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/30">
           <CardContent className="py-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-amber-800" data-testid="text-uncompleted-warning">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200" data-testid="text-uncompleted-warning">
                   Есть незавершённые визиты
                 </p>
-                <p className="text-xs text-amber-600 mt-0.5">
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
                   Отзывы и чаевые недоступны до завершения визита
                 </p>
               </div>
@@ -1086,7 +1086,7 @@ export default function SpecialistDashboard() {
                         />
                       )}
                       {isStale && (
-                        <div className="flex items-center gap-1.5 text-xs text-amber-600" data-testid={`text-stale-hint-${booking.id}`}>
+                        <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400" data-testid={`text-stale-hint-${booking.id}`}>
                           <Clock className="w-3 h-3" />
                           <span>Клиент был сегодня. Завершите визит</span>
                         </div>

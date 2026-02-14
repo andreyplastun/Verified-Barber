@@ -45,6 +45,41 @@
   --error: 0 72% 51%;              /* #DC2626 */
 }
 
+.dark {
+  --background: 225 20% 7%;        /* #0F1115 — App Background */
+  --foreground: 210 20% 98%;       /* #F9FAFB — Text Primary */
+
+  --card: 220 16% 12%;             /* #1A1D24 — Surface */
+  --card-foreground: 210 20% 98%;  /* #F9FAFB */
+
+  --popover: 220 16% 12%;          /* #1A1D24 */
+  --popover-foreground: 210 20% 98%;
+
+  --primary: 220 13% 91%;          /* #E5E7EB */
+  --primary-foreground: 225 20% 7%;/* #0F1115 */
+
+  --secondary: 230 20% 14%;        /* Dark indigo tint ≈ rgba(129,140,248,0.15) on dark bg */
+  --secondary-foreground: 210 20% 98%;
+
+  --muted: 220 16% 16%;            /* slightly lighter than card */
+  --muted-foreground: 220 9% 64%;  /* #9CA3AF — Text Secondary */
+
+  --accent: 230 20% 14%;           /* Dark indigo tint ≈ rgba(129,140,248,0.15) on dark bg */
+  --accent-foreground: 234 89% 74%;/* #818CF8 — Accent Strong */
+
+  --destructive: 0 84% 60%;        /* #EF4444 */
+  --destructive-foreground: 210 20% 98%;
+
+  --border: 220 18% 19%;           /* #2A2F3A */
+  --input: 220 18% 19%;
+  --ring: 234 89% 74%;             /* #818CF8 */
+
+  /* Dark status tokens */
+  --success: 142 71% 45%;          /* #22C55E */
+  --warning: 38 92% 50%;           /* #F59E0B */
+  --error: 0 84% 60%;              /* #EF4444 */
+}
+
 @layer base {
   * {
     @apply border-border;
@@ -80,6 +115,14 @@
   body {
     @apply bg-background text-foreground antialiased selection:bg-primary/30;
     font-family: var(--font-body);
+  }
+  /* Theme transition — smooth 200ms fade */
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, box-shadow 200ms ease !important;
+    transition-delay: 0ms !important;
   }
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-display);

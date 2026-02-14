@@ -695,7 +695,7 @@ export default function AdminDashboard() {
                       Ожидают активации ({specialists.filter(s => s.status === 'pending').length})
                     </h3>
                     {specialists.filter(s => s.status === 'pending').map((s) => (
-                      <div key={s.id} className="flex items-center justify-between p-3 border rounded-lg mb-2 bg-yellow-50">
+                      <div key={s.id} className="flex items-center justify-between p-3 border rounded-lg mb-2 bg-yellow-50 dark:bg-yellow-900/20">
                         <div className="flex items-center gap-3">
                           <UserX className="h-5 w-5 text-yellow-500" />
                           <div>
