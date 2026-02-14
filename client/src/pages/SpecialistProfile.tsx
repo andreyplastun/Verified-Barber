@@ -7,6 +7,7 @@ import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info } from "
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { motion } from "framer-motion";
+import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn } from "@/components/ui/animations";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
 
 export default function SpecialistProfile() {
@@ -133,8 +134,10 @@ export default function SpecialistProfile() {
             {/* Right block - Trust (pinned to top) */}
             <div className="flex-shrink-0 flex flex-col items-end text-right">
               <div className="flex items-center gap-1">
-                <Star size={16} className="text-yellow-400 fill-yellow-400" />
-                <span className="text-lg font-semibold text-foreground">{rating.toFixed(1)}</span>
+                <AnimatedStar ratingValue={specialist.averageRating}>
+                  <Star size={16} className="text-yellow-400 fill-yellow-400" />
+                </AnimatedStar>
+                <AnimatedRating value={rating.toFixed(1)} className="text-lg font-semibold text-foreground" />
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {reviewCount} {(() => {
@@ -259,7 +262,7 @@ export default function SpecialistProfile() {
                       : review.customerName);
 
                 return (
-                  <div key={review.id} className="bg-card border border-border rounded-xl p-4" data-testid={`public-review-${review.id}`}>
+                  <motion.div key={review.id} className="bg-card border border-border rounded-xl p-4" data-testid={`public-review-${review.id}`} custom={sortedReviews.indexOf(review)} variants={reviewCardVariants} initial="hidden" animate="visible">
                     <div className="flex justify-between mb-2">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
@@ -290,7 +293,7 @@ export default function SpecialistProfile() {
                     {review.comment && (
                       <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>{review.comment}</p>
                     )}
-                  </div>
+                  </motion.div>
                 );
               });
             })()}

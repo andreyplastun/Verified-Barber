@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { TipPulse, TipBadge, SlideUp } from "@/components/ui/animations";
 
 function toDativeCase(name: string): string {
   const n = name.trim();
@@ -284,20 +285,22 @@ export default function MagicReviewPage() {
   if (showThankYouScreen) {
     return (
       <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
-        <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6">
-          <Heart className="w-8 h-8 text-green-600" />
-        </div>
-        <h2 className="text-2xl font-bold mb-2">Спасибо!</h2>
-        <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          Если вы оставили чаевые — мастеру будет приятно
-        </p>
-        <button 
-          onClick={() => setLocation(`/specialist/${linkData?.specialistId}`)}
-          className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-opacity"
-          data-testid="button-return-after-tips"
-        >
-          Вернуться
-        </button>
+        <SlideUp>
+          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6 mx-auto">
+            <Heart className="w-8 h-8 text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Спасибо!</h2>
+          <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
+            Если вы оставили чаевые — мастеру будет приятно
+          </p>
+          <button 
+            onClick={() => setLocation(`/specialist/${linkData?.specialistId}`)}
+            className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-opacity"
+            data-testid="button-return-after-tips"
+          >
+            Вернуться
+          </button>
+        </SlideUp>
       </div>
     );
   }
@@ -315,35 +318,37 @@ export default function MagicReviewPage() {
         
         {!kaspiOpened ? (
           <>
-            <div className="flex flex-wrap justify-center gap-3 mb-6 max-w-sm">
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => handleTipClick(500)}
-                className="min-w-[100px]"
-                data-testid="button-tip-500"
-              >
-                500 ₸
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => handleTipClick(1000)}
-                className="min-w-[100px]"
-                data-testid="button-tip-1000"
-              >
-                1 000 ₸
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={() => handleTipClick(2000)}
-                className="min-w-[100px]"
-                data-testid="button-tip-2000"
-              >
-                2 000 ₸
-              </Button>
-            </div>
+            <TipPulse trigger={showTipsScreen}>
+              <div className="flex flex-wrap justify-center gap-3 mb-6 max-w-sm">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => handleTipClick(500)}
+                  className="min-w-[100px]"
+                  data-testid="button-tip-500"
+                >
+                  500 ₸
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => handleTipClick(1000)}
+                  className="min-w-[100px]"
+                  data-testid="button-tip-1000"
+                >
+                  1 000 ₸
+                </Button>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  onClick={() => handleTipClick(2000)}
+                  className="min-w-[100px]"
+                  data-testid="button-tip-2000"
+                >
+                  2 000 ₸
+                </Button>
+              </div>
+            </TipPulse>
 
             <div className="flex items-center gap-2 mb-8 max-w-xs w-full">
               <Input

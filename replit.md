@@ -28,7 +28,7 @@ Language: Russian (Русский) - all UI text is in Russian.
 - **Routing**: Wouter for client-side routing.
 - **State Management**: TanStack React Query for server state caching.
 - **Styling**: Tailwind CSS with shadcn/ui components (New York style).
-- **Animations**: Framer Motion for transitions.
+- **Animations**: Framer Motion for transitions. Reusable animation components in `client/src/components/ui/animations.tsx` (AnimatedRating, AnimatedStar, reviewCardVariants, TipPulse, TipBadge, SlideUp, FadeIn).
 - **Component Pattern**: Custom UI components built on Radix UI primitives for accessibility.
 
 ### Backend

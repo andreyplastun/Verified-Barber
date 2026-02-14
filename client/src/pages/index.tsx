@@ -2,6 +2,7 @@ import { useSpecialists } from "@/hooks/use-specialists";
 import { Link, useLocation, useRoute } from "wouter";
 import { MapPin, ArrowRight, Filter, ChevronDown, Star, Info } from "lucide-react";
 import { motion } from "framer-motion";
+import { AnimatedRating, AnimatedStar } from "@/components/ui/animations";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -313,10 +314,10 @@ export default function SpecialistList() {
                   <div className="flex-shrink-0 flex flex-col items-end gap-1">
                     {/* Rating */}
                     <div className="flex items-center gap-1">
-                      <Star size={14} className="text-amber-400 fill-amber-400" />
-                      <span className="text-base font-semibold text-foreground">
-                        {(specialist.averageRating / 10).toFixed(1)}
-                      </span>
+                      <AnimatedStar ratingValue={specialist.averageRating}>
+                        <Star size={14} className="text-amber-400 fill-amber-400" />
+                      </AnimatedStar>
+                      <AnimatedRating value={(specialist.averageRating / 10).toFixed(1)} className="text-base font-semibold text-foreground" />
                     </div>
                     
                     {/* Review count */}
