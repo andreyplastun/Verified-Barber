@@ -30,7 +30,7 @@ export default function LoginPage() {
       <div className="h-full w-full flex flex-col items-center justify-center p-4 overflow-y-auto">
         {/* Logo */}
         <div className="mb-12">
-          <span className="text-5xl font-bold tracking-tight text-[#1F2933]" data-testid="text-logo">
+          <span className="text-5xl font-bold tracking-tight text-foreground" data-testid="text-logo">
             Who
           </span>
         </div>

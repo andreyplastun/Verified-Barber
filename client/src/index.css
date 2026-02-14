@@ -8,36 +8,41 @@
   --font-display: 'Outfit', sans-serif;
   --font-body: 'Plus Jakarta Sans', sans-serif;
 
-  /* Light, Calm, Professional Theme */
-  --background: 0 0% 100%;
-  --foreground: 210 24% 16%;
-  
-  --card: 0 0% 100%;
-  --card-foreground: 210 24% 16%;
-  
+  /* Rateus Color System — Light */
+  --background: 220 16% 97%;       /* #F7F8FA — App Background */
+  --foreground: 222 47% 11%;       /* #111827 — Text Primary */
+
+  --card: 0 0% 100%;               /* #FFFFFF — Surface */
+  --card-foreground: 222 47% 11%;  /* #111827 */
+
   --popover: 0 0% 100%;
-  --popover-foreground: 210 24% 16%;
-  
-  --primary: 210 24% 16%; /* Neutral graphite */
+  --popover-foreground: 222 47% 11%;
+
+  --primary: 216 12% 19%;          /* #2B2F36 — Brand Primary */
   --primary-foreground: 0 0% 100%;
-  
-  --secondary: 214 32% 91%;
-  --secondary-foreground: 210 24% 16%;
-  
-  --muted: 214 32% 91%;
-  --muted-foreground: 215 16% 47%;
-  
-  --accent: 214 32% 91%;
-  --accent-foreground: 210 24% 16%;
-  
-  --destructive: 0 84% 60%;
+
+  --secondary: 226 100% 97%;       /* #EEF2FF — Accent Soft */
+  --secondary-foreground: 222 47% 11%;
+
+  --muted: 210 40% 96%;            /* #F1F5F9 — Divider / Subtle bg */
+  --muted-foreground: 220 9% 46%;  /* #6B7280 — Text Secondary */
+
+  --accent: 226 100% 97%;          /* #EEF2FF — Accent Soft */
+  --accent-foreground: 244 76% 58%; /* #4F46E5 — Accent Strong */
+
+  --destructive: 0 72% 51%;        /* #DC2626 — Error */
   --destructive-foreground: 0 0% 100%;
-  
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 210 24% 16%;
-  
+
+  --border: 220 13% 91%;           /* #E5E7EB */
+  --input: 220 13% 91%;            /* #E5E7EB */
+  --ring: 216 12% 19%;             /* #2B2F36 */
+
   --radius: 0.5rem;
+
+  /* Semantic status tokens */
+  --success: 142 72% 36%;          /* #16A34A */
+  --warning: 32 95% 44%;           /* #D97706 */
+  --error: 0 72% 51%;              /* #DC2626 */
 }
 
 @layer base {

@@ -109,29 +109,29 @@ export default function SpecialistList() {
   }, [specialists, sortBy, ratingFilter, categoryFilter, cityFilter, districtFilter]);
 
   if (loading) {
-    return <div className="p-5 text-[#6B7280]">Загрузка...</div>;
+    return <div className="p-5 text-muted-foreground">Загрузка...</div>;
   }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen pt-20 px-4 space-y-3 bg-[#FAFAFA]">
+      <div className="min-h-screen pt-20 px-4 space-y-3 bg-background">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="bg-white h-24 rounded-xl border border-gray-100 animate-pulse" />
+          <div key={i} className="bg-card h-24 rounded-xl border border-border animate-pulse" />
         ))}
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-24 bg-[#FAFAFA]">
+    <div className="min-h-screen pb-24 bg-background">
       {/* Header */}
-      <header className="pt-12 pb-4 px-6 bg-white border-b border-gray-100">
+      <header className="pt-12 pb-4 px-6 bg-card border-b border-border">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-display font-bold text-[#1F2933]">
+            <h1 className="text-2xl font-display font-bold text-foreground">
               {categoryFilter !== 'all' ? categoryLabels[categoryFilter] || 'Специалисты' : 'Специалисты'}
             </h1>
-            <p className="mt-1 text-[#6B7280] text-sm">
+            <p className="mt-1 text-muted-foreground text-sm">
               Запишись к проверенным мастерам
             </p>
           </div>
@@ -139,7 +139,7 @@ export default function SpecialistList() {
             variant="ghost"
             size="sm"
             onClick={() => setShowFilters(!showFilters)}
-            className="text-[#6B7280]"
+            className="text-muted-foreground"
             data-testid="button-toggle-filters"
           >
             <Filter size={16} className="mr-1" />
@@ -150,10 +150,10 @@ export default function SpecialistList() {
         
         {/* Filters panel */}
         {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-100 space-y-4">
+          <div className="mt-4 pt-4 border-t border-border space-y-4">
             {/* Category filter */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#6B7280] w-20">Категория:</span>
+              <span className="text-xs text-muted-foreground w-20">Категория:</span>
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                 <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-category">
                   <SelectValue placeholder="Все категории" />
@@ -171,7 +171,7 @@ export default function SpecialistList() {
             
             {/* City filter */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#6B7280] w-20">Город:</span>
+              <span className="text-xs text-muted-foreground w-20">Город:</span>
               <Select value={cityFilter} onValueChange={(v) => { setCityFilter(v); setDistrictFilter('all'); }}>
                 <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-city">
                   <SelectValue placeholder="Все города" />
@@ -188,7 +188,7 @@ export default function SpecialistList() {
             {/* District filter */}
             {filterOptions?.districts && filterOptions.districts.length > 0 && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-[#6B7280] w-20">Район:</span>
+                <span className="text-xs text-muted-foreground w-20">Район:</span>
                 <Select value={districtFilter} onValueChange={setDistrictFilter}>
                   <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-district">
                     <SelectValue placeholder="Все районы" />
@@ -205,7 +205,7 @@ export default function SpecialistList() {
             
             {/* Rating filter */}
             <div className="flex flex-wrap gap-2">
-              <span className="text-xs text-[#6B7280] mr-2 self-center">Статус:</span>
+              <span className="text-xs text-muted-foreground mr-2 self-center">Статус:</span>
               {[
                 { value: 'all', label: 'Все' },
                 { value: 'formed', label: 'Сформированный' },
@@ -216,8 +216,8 @@ export default function SpecialistList() {
                   onClick={() => setRatingFilter(opt.value as RatingFilter)}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                     ratingFilter === opt.value
-                      ? 'bg-[#1F2933] text-white'
-                      : 'bg-[#F1F5F9] text-[#475569] hover:bg-gray-200'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-border'
                   }`}
                   data-testid={`filter-rating-${opt.value}`}
                 >
@@ -228,7 +228,7 @@ export default function SpecialistList() {
             
             {/* Sort */}
             <div className="flex flex-wrap gap-2">
-              <span className="text-xs text-[#6B7280] mr-2 self-center">Сортировка:</span>
+              <span className="text-xs text-muted-foreground mr-2 self-center">Сортировка:</span>
               {[
                 { value: 'default', label: 'По умолчанию' },
                 { value: 'rating', label: 'По рейтингу' },
@@ -239,8 +239,8 @@ export default function SpecialistList() {
                   onClick={() => setSortBy(opt.value as SortOption)}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                     sortBy === opt.value
-                      ? 'bg-[#1F2933] text-white'
-                      : 'bg-[#F1F5F9] text-[#475569] hover:bg-gray-200'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-border'
                   }`}
                   data-testid={`sort-${opt.value}`}
                 >
@@ -262,11 +262,11 @@ export default function SpecialistList() {
             transition={{ delay: index * 0.05 }}
           >
             <Link href={`/specialist/${specialist.id}`}>
-              <div className="group bg-white rounded-xl border border-gray-100 shadow-sm active:scale-[0.99] transition-transform duration-150 p-3">
+              <div className="group bg-card rounded-xl border border-border shadow-sm active:scale-[0.99] transition-transform duration-150 p-3">
                 {/* Top row: Avatar + Basic info + Trust block */}
                 <div className="flex gap-3">
                   {/* Avatar */}
-                  <div className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-gray-100">
+                  <div className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
                     <img 
                       src={specialist.imageUrl} 
                       alt={specialist.name}
@@ -276,15 +276,15 @@ export default function SpecialistList() {
 
                   {/* Block 1 - Identification */}
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base font-semibold text-[#1F2933] truncate">
+                    <h3 className="text-base font-semibold text-foreground truncate">
                       {specialist.name}
                     </h3>
-                    <p className="text-sm text-[#6B7280]">
+                    <p className="text-sm text-muted-foreground">
                       {categoryLabels[(specialist as any).category] || specialist.specialty}
                       {(specialist as any).subcategory && ` · ${(specialist as any).subcategory}`}
                     </p>
                     {/* Location */}
-                    <div className="flex items-center text-xs text-[#9CA3AF] mt-1">
+                    <div className="flex items-center text-xs text-muted-foreground/60 mt-1">
                       <MapPin size={11} className="mr-1" />
                       <span>
                         {(specialist as any).city || 'Алматы'}
@@ -296,7 +296,7 @@ export default function SpecialistList() {
                       <div className="flex items-center gap-1 mt-1" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
                         <Popover>
                           <PopoverTrigger asChild>
-                            <span className="inline-flex items-center gap-1 text-xs text-[#9CA3AF] whitespace-nowrap cursor-pointer" data-testid={`text-price-${specialist.id}`}>
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 whitespace-nowrap cursor-pointer" data-testid={`text-price-${specialist.id}`}>
                               {(specialist as any).baseServiceName}{'\u00A0'}—{'\u00A0'}{Number((specialist as any).baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
                               <Info size={10} className="opacity-60" />
                             </span>
@@ -314,13 +314,13 @@ export default function SpecialistList() {
                     {/* Rating */}
                     <div className="flex items-center gap-1">
                       <Star size={14} className="text-amber-400 fill-amber-400" />
-                      <span className="text-base font-semibold text-[#1F2933]">
+                      <span className="text-base font-semibold text-foreground">
                         {(specialist.averageRating / 10).toFixed(1)}
                       </span>
                     </div>
                     
                     {/* Review count */}
-                    <span className="text-sm text-[#6B7280]">
+                    <span className="text-sm text-muted-foreground">
                       {specialist.reviewCount} {(() => {
                         const n = specialist.reviewCount % 100;
                         if (n >= 11 && n <= 19) return 'отзывов';
@@ -338,7 +338,7 @@ export default function SpecialistList() {
                       <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
                         <Popover>
                           <PopoverTrigger asChild>
-                            <span className="inline-flex items-center gap-0.5 text-xs text-[#9CA3AF] cursor-pointer" data-testid="badge-rating-forming">
+                            <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground/60 cursor-pointer" data-testid="badge-rating-forming">
                               Формируется
                               <Info size={10} className="opacity-60" />
                             </span>
@@ -352,18 +352,18 @@ export default function SpecialistList() {
                   </div>
 
                   {/* Arrow */}
-                  <div className="flex items-center justify-center text-[#9CA3AF] group-hover:text-[#6B7280] transition-colors">
+                  <div className="flex items-center justify-center text-muted-foreground/60 group-hover:text-muted-foreground transition-colors">
                     <ArrowRight size={18} />
                   </div>
                 </div>
 
                 {/* Description block (below, separated) */}
                 {specialist.bio && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-wide mb-1">
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wide mb-1">
                       О мастере
                     </p>
-                    <p className="text-xs text-[#9CA3AF] line-clamp-2">
+                    <p className="text-xs text-muted-foreground/60 line-clamp-2">
                       {specialist.bio}
                     </p>
                   </div>
@@ -375,7 +375,7 @@ export default function SpecialistList() {
 
         {filteredAndSortedSpecialists.length === 0 && (
           <div className="text-center py-16 px-4">
-            <p className="text-[#6B7280]">
+            <p className="text-muted-foreground">
               {ratingFilter === 'formed' 
                 ? 'В этом районе пока нет специалистов со сформированным рейтингом'
                 : specialists && specialists.length === 0
@@ -383,15 +383,15 @@ export default function SpecialistList() {
                 : 'По выбранным параметрам специалисты не найдены'}
             </p>
             {ratingFilter === 'formed' && specialists && specialists.length > 0 && (
-              <p className="text-sm text-[#9CA3AF] mt-2">
+              <p className="text-sm text-muted-foreground/60 mt-2">
                 Показаны специалисты, у которых рейтинг формируется
               </p>
             )}
           </div>
         )}
 
-        <footer className="text-center py-8 text-xs text-[#9CA3AF]">
-          <Link href="/privacy" className="hover:text-[#6B7280] underline">
+        <footer className="text-center py-8 text-xs text-muted-foreground/60">
+          <Link href="/privacy" className="hover:text-muted-foreground underline">
             Политика конфиденциальности
           </Link>
         </footer>

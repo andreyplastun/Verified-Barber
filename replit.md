@@ -11,6 +11,17 @@ Language: Russian (Русский) - all UI text is in Russian.
 
 ## System Architecture
 
+### Color System
+- **Approach**: Semantic CSS variables in `index.css`, mapped through Tailwind config
+- **Background**: #F7F8FA (App), #FFFFFF (Card/Surface)
+- **Primary**: #2B2F36 (Brand buttons/active elements)
+- **Text**: #111827 (Primary), #6B7280 (Secondary/Muted), #9CA3AF (Disabled)
+- **Accent**: #EEF2FF (Soft), #4F46E5 (Strong — chips, highlights)
+- **Status**: #16A34A (Success), #D97706 (Warning), #DC2626 (Error)
+- **Border**: #E5E7EB, Divider: #F1F5F9
+- **Toast**: Dark graphite #1E1E1E with white text (separate spec)
+- **Rule**: No hardcoded hex colors in pages — use semantic classes (text-foreground, text-muted-foreground, bg-background, bg-card, bg-muted, bg-primary, border-border)
+
 ### Frontend
 - **Framework**: React 18 with TypeScript, built using Vite.
 - **Routing**: Wouter for client-side routing.

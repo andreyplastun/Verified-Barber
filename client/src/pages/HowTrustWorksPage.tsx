@@ -93,7 +93,7 @@ export default function HowTrustWorksPage() {
             <h2 className="text-lg font-semibold">Статус рейтинга</h2>
             <div className="space-y-2">
               <div className="flex items-start gap-3">
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-[#F1F5F9] text-[#475569]">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">
                   Формируется
                 </span>
                 <span className="text-sm text-muted-foreground">— данных пока мало</span>

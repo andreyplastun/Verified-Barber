@@ -63,7 +63,7 @@ const ERROR_CONFIGS: Record<AltegioErrorType, ErrorConfig> = {
   },
   staff_not_found: {
     icon: UserX,
-    iconColor: 'text-purple-500',
+    iconColor: 'text-muted-foreground',
     title: 'Специалист не найден в Altegio',
     description: 'Не удаётся сопоставить вашу запись с сотрудником в Altegio.',
     hint: 'Откройте настройки интеграции и выберите сотрудника.',

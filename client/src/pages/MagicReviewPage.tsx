@@ -560,13 +560,13 @@ export default function MagicReviewPage() {
           }}
         >
           <div 
-            className="bg-white rounded-lg p-6 w-full max-w-sm shadow-xl"
+            className="bg-card rounded-lg p-6 w-full max-w-sm shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-semibold text-[#1F2933] mb-4">
+            <h3 className="text-base font-semibold text-foreground mb-4">
               Почему этот отзыв может не влиять на рейтинг?
             </h3>
-            <div className="text-sm text-[#6B7280] space-y-3">
+            <div className="text-sm text-muted-foreground space-y-3">
               <p>
                 Мы показываем все отзывы.
                 Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.

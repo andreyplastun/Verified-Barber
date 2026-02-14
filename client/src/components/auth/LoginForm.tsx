@@ -71,12 +71,12 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
         {loading ? 'Вход...' : 'Войти'}
       </Button>
 
-      <p className="text-center text-sm text-[#6B7280]">
+      <p className="text-center text-sm text-muted-foreground">
         Нет аккаунта?{' '}
         <button
           type="button"
           onClick={onSwitchToSignUp}
-          className="text-[#1F2933] underline font-medium"
+          className="text-foreground underline font-medium"
           data-testid="link-switch-to-signup"
         >
           Зарегистрироваться

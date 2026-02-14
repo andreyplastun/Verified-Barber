@@ -106,18 +106,18 @@ export default function SpecialistProfile() {
 
       {/* Content Container */}
       <div className="-mt-12 relative px-6 z-10">
-        <div className="bg-white dark:bg-[#FAFAFA] rounded-2xl p-4 shadow-sm border border-gray-100">
+        <div className="bg-card rounded-2xl p-4 shadow-sm border border-border">
           {/* Two-column layout: Left (identity) + Right (trust) */}
           <div className="flex justify-between items-start gap-4">
             {/* Left block - Identity */}
             <div className="flex-1 min-w-0">
-              <h1 className="text-lg font-semibold text-[#1F2933] dark:text-[#1F2933]">{specialist.name}</h1>
-              <p className="mt-1 text-sm text-[#6B7280]">{specialist.specialty}</p>
+              <h1 className="text-lg font-semibold text-foreground">{specialist.name}</h1>
+              <p className="mt-1 text-sm text-muted-foreground">{specialist.specialty}</p>
               {specialist.baseServiceName && specialist.baseServicePrice && (
                 <div className="mt-2">
                   <Popover>
                     <PopoverTrigger asChild>
-                      <span className="inline-flex items-center gap-1 text-xs text-[#9CA3AF] whitespace-nowrap cursor-pointer" data-testid="text-base-service-price">
+                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 whitespace-nowrap cursor-pointer" data-testid="text-base-service-price">
                         {specialist.baseServiceName}{'\u00A0'}—{'\u00A0'}{Number(specialist.baseServicePrice).toLocaleString('ru-RU')}{'\u00A0'}₸
                         <Info size={10} className="opacity-60" />
                       </span>
@@ -134,9 +134,9 @@ export default function SpecialistProfile() {
             <div className="flex-shrink-0 flex flex-col items-end text-right">
               <div className="flex items-center gap-1">
                 <Star size={16} className="text-yellow-400 fill-yellow-400" />
-                <span className="text-lg font-semibold text-[#1F2933] dark:text-[#1F2933]">{rating.toFixed(1)}</span>
+                <span className="text-lg font-semibold text-foreground">{rating.toFixed(1)}</span>
               </div>
-              <p className="mt-0.5 text-xs text-[#6B7280]">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {reviewCount} {(() => {
                   const n = reviewCount % 100;
                   if (n >= 11 && n <= 19) return 'отзывов';
@@ -154,7 +154,7 @@ export default function SpecialistProfile() {
               >
                 <Popover>
                   <PopoverTrigger asChild>
-                    <span className="inline-flex items-center gap-1 text-xs text-[#9CA3AF] cursor-pointer" data-testid="link-rating-status">
+                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 cursor-pointer" data-testid="link-rating-status">
                       {ratingStatus.label}
                       <Info size={10} className="opacity-60" />
                     </span>
@@ -169,11 +169,11 @@ export default function SpecialistProfile() {
 
           {/* Bio section - full width, separated */}
           {specialist.bio && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <p className="text-[10px] font-medium text-[#9CA3AF] uppercase tracking-wide mb-1.5">
+            <div className="mt-4 pt-4 border-t border-border">
+              <p className="text-[10px] font-medium text-muted-foreground/60 uppercase tracking-wide mb-1.5">
                 О мастере
               </p>
-              <p className="text-xs text-[#9CA3AF] leading-relaxed">
+              <p className="text-xs text-muted-foreground/60 leading-relaxed">
                 {specialist.bio}
               </p>
             </div>
@@ -181,11 +181,11 @@ export default function SpecialistProfile() {
 
           {/* Service tags */}
           <div className="mt-4 flex gap-3">
-            <div className="flex items-center gap-1 text-xs text-[#9CA3AF]">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground/60">
               <MapPin size={11} />
               Алматы
             </div>
-            <div className="flex items-center gap-1 text-xs text-[#9CA3AF]">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground/60">
               <Calendar size={11} />
               Пн-Сб
             </div>
@@ -196,14 +196,14 @@ export default function SpecialistProfile() {
         {workPhotos.length > 0 && (
           <div className="mt-6">
             <div className="flex items-center gap-2 mb-3">
-              <Image size={16} className="text-[#6B7280]" />
-              <h2 className="text-base font-semibold text-[#1F2933]">Работы</h2>
+              <Image size={16} className="text-muted-foreground" />
+              <h2 className="text-base font-semibold text-foreground">Работы</h2>
             </div>
             <div className="grid grid-cols-3 gap-2">
               {workPhotos.map((photo) => (
                 <div 
                   key={photo.id} 
-                  className="aspect-square rounded-lg overflow-hidden border border-gray-100"
+                  className="aspect-square rounded-lg overflow-hidden border border-border"
                   data-testid={`work-photo-display-${photo.id}`}
                 >
                   <img
@@ -220,9 +220,9 @@ export default function SpecialistProfile() {
         {/* Reviews Section */}
         <div className="mt-8 mb-8">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-[#1F2933]">Отзывы</h2>
+            <h2 className="text-base font-semibold text-foreground">Отзывы</h2>
             <Link href={`/specialist/${id}/reviews`}>
-              <span className="text-sm text-[#475569] hover:underline cursor-pointer">Все отзывы</span>
+              <span className="text-sm text-muted-foreground hover:underline cursor-pointer">Все отзывы</span>
             </Link>
           </div>
 
@@ -233,7 +233,7 @@ export default function SpecialistProfile() {
               
               if (publicReviews.length === 0) {
                 return (
-                  <div className="text-center py-8 text-[#6B7280] text-sm bg-[#F1F5F9] rounded-xl">
+                  <div className="text-center py-8 text-muted-foreground text-sm bg-muted rounded-xl">
                     Пока нет отзывов. Будьте первым!
                   </div>
                 );
@@ -259,16 +259,16 @@ export default function SpecialistProfile() {
                       : review.customerName);
 
                 return (
-                  <div key={review.id} className="bg-white border border-gray-100 rounded-xl p-4" data-testid={`public-review-${review.id}`}>
+                  <div key={review.id} className="bg-card border border-border rounded-xl p-4" data-testid={`public-review-${review.id}`}>
                     <div className="flex justify-between mb-2">
                       <div className="flex flex-col">
                         <div className="flex items-center gap-2">
-                          <User size={14} className="text-[#6B7280]" />
-                          <span className="font-semibold text-sm text-[#1F2933]" data-testid={`text-reviewer-name-${review.id}`}>
+                          <User size={14} className="text-muted-foreground" />
+                          <span className="font-semibold text-sm text-foreground" data-testid={`text-reviewer-name-${review.id}`}>
                             {displayName}
                           </span>
                         </div>
-                        <span className="text-[10px] text-[#6B7280] mt-1">
+                        <span className="text-[10px] text-muted-foreground mt-1">
                           {new Date(review.createdAt || "").toLocaleDateString()}
                         </span>
                       </div>
@@ -279,7 +279,7 @@ export default function SpecialistProfile() {
                         {review.triggers.map((trigger: string, idx: number) => (
                           <span 
                             key={idx}
-                            className="px-2 py-0.5 rounded-md bg-[#F1F5F9] text-[#475569] text-xs font-medium"
+                            className="px-2 py-0.5 rounded-md bg-muted text-muted-foreground text-xs font-medium"
                             data-testid={`trigger-chip-${review.id}-${idx}`}
                           >
                             {trigger}
@@ -288,7 +288,7 @@ export default function SpecialistProfile() {
                       </div>
                     )}
                     {review.comment && (
-                      <p className="text-sm text-[#6B7280]" data-testid={`text-review-comment-${review.id}`}>{review.comment}</p>
+                      <p className="text-sm text-muted-foreground" data-testid={`text-review-comment-${review.id}`}>{review.comment}</p>
                     )}
                   </div>
                 );
