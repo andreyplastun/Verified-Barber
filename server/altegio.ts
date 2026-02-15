@@ -1,4 +1,7 @@
 import { storage } from "./storage";
+import { db } from "./db";
+import { appConfig } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 const ALTEGIO_BASE_URL = "https://api.alteg.io/api/v1";
 
@@ -24,28 +27,66 @@ interface AltegioAppointmentData {
   api_id?: string;
 }
 
-function getConfig(): AltegioConfig | null {
+let cachedDbConfig: AltegioConfig | null = null;
+let dbConfigLoaded = false;
+
+async function loadConfigFromDb(): Promise<AltegioConfig | null> {
+  try {
+    const rows = await db.select().from(appConfig);
+    const configMap: Record<string, string> = {};
+    for (const row of rows) {
+      configMap[row.key] = row.value;
+    }
+    const partnerToken = configMap["ALTEGIO_PARTNER_TOKEN"];
+    const userToken = configMap["ALTEGIO_USER_TOKEN"];
+    const companyId = configMap["ALTEGIO_COMPANY_ID"];
+    if (partnerToken && userToken && companyId) {
+      console.log(`[ALTEGIO] Loaded config from database (app_config table)`);
+      return { partnerToken, userToken, companyId: parseInt(companyId, 10) };
+    }
+    return null;
+  } catch (err) {
+    console.warn(`[ALTEGIO] Failed to load config from database:`, err);
+    return null;
+  }
+}
+
+export async function initAltegioConfig(): Promise<void> {
+  if (getConfigFromEnv()) {
+    console.log(`[ALTEGIO] Config loaded from environment variables`);
+    dbConfigLoaded = true;
+    return;
+  }
+  cachedDbConfig = await loadConfigFromDb();
+  dbConfigLoaded = true;
+  if (cachedDbConfig) {
+    console.log(`[ALTEGIO] Config loaded from database fallback`);
+  } else {
+    console.warn(`[ALTEGIO] No config found in env vars or database`);
+  }
+}
+
+export function clearConfigCache(): void {
+  cachedDbConfig = null;
+  dbConfigLoaded = false;
+}
+
+function getConfigFromEnv(): AltegioConfig | null {
   const partnerToken = process.env.ALTEGIO_PARTNER_TOKEN;
   const userToken = process.env.ALTEGIO_USER_TOKEN;
   const companyId = process.env.ALTEGIO_COMPANY_ID;
+  if (!partnerToken || !userToken || !companyId) return null;
+  return { partnerToken, userToken, companyId: parseInt(companyId, 10) };
+}
 
-  if (!partnerToken || !userToken || !companyId) {
-    const missing = [];
-    if (!partnerToken) missing.push("ALTEGIO_PARTNER_TOKEN");
-    if (!userToken) missing.push("ALTEGIO_USER_TOKEN");
-    if (!companyId) missing.push("ALTEGIO_COMPANY_ID");
-    console.warn(`[ALTEGIO] Config missing env vars: ${missing.join(", ")}`);
-    const altegioKeys = Object.keys(process.env).filter(k => k.toUpperCase().includes("ALTEGIO"));
-    console.warn(`[ALTEGIO] Available ALTEGIO-related env vars: ${altegioKeys.length > 0 ? altegioKeys.join(", ") : "NONE"}`);
-    console.warn(`[ALTEGIO] PARTNER_TOKEN present: ${!!partnerToken}, USER_TOKEN present: ${!!userToken}, COMPANY_ID present: ${!!companyId}, COMPANY_ID value: ${companyId || "empty"}`);
-    return null;
+function getConfig(): AltegioConfig | null {
+  const envConfig = getConfigFromEnv();
+  if (envConfig) return envConfig;
+  if (cachedDbConfig) return cachedDbConfig;
+  if (!dbConfigLoaded) {
+    console.warn(`[ALTEGIO] Config not yet loaded - call initAltegioConfig() first`);
   }
-
-  return {
-    partnerToken,
-    userToken,
-    companyId: parseInt(companyId, 10),
-  };
+  return null;
 }
 
 function getHeaders(config: AltegioConfig) {

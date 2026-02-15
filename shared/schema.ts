@@ -367,12 +367,18 @@ export type CreateClaimRequest = z.infer<typeof claimRequestSchema>;
 export type User = typeof users.$inferSelect;
 export type Specialist = typeof specialists.$inferSelect;
 export type Booking = typeof bookings.$inferSelect;
+export const appConfig = pgTable("app_config", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
 export type Review = typeof reviews.$inferSelect;
 export type SpecialistPhoto = typeof specialistPhotos.$inferSelect;
 export type MagicLink = typeof magicLinks.$inferSelect;
 export type ClaimRequest = typeof claimRequests.$inferSelect;
 export type TipsEvent = typeof tipsEvents.$inferSelect;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
+export type AppConfig = typeof appConfig.$inferSelect;
 
 export type CreateBookingRequest = z.infer<typeof insertBookingSchema>;
 export type CreateReviewRequest = z.infer<typeof insertReviewSchema>;

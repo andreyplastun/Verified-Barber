@@ -7,7 +7,9 @@ import { bookings, type Review, specialistSignupSchema, claimRequestSchema } fro
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
-import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments } from "./altegio";
+import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig } from "./altegio";
+import { db } from "./db";
+import { appConfig } from "@shared/schema";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -2082,6 +2084,47 @@ ${magicLink}`;
   });
 
   // ==========================================
+  // Altegio Config (DB-based, for Railway env var workaround)
+  // ==========================================
+  app.post("/api/altegio/config", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const { partnerToken, userToken, companyId } = req.body;
+      if (!partnerToken || !userToken || !companyId) {
+        return res.status(400).json({ message: "Missing required fields: partnerToken, userToken, companyId" });
+      }
+
+      const entries = [
+        { key: "ALTEGIO_PARTNER_TOKEN", value: String(partnerToken) },
+        { key: "ALTEGIO_USER_TOKEN", value: String(userToken) },
+        { key: "ALTEGIO_COMPANY_ID", value: String(companyId) },
+      ];
+
+      for (const entry of entries) {
+        await db.insert(appConfig).values(entry).onConflictDoUpdate({
+          target: appConfig.key,
+          set: { value: entry.value },
+        });
+      }
+
+      clearConfigCache();
+      await initAltegioConfig();
+
+      res.json({ success: true, configured: isAltegioConfigured() });
+    } catch (err: any) {
+      console.error("[API] altegio config error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ==========================================
   // Altegio Webhook
   // ==========================================
   app.post("/api/altegio/webhook", async (req, res) => {
@@ -2339,6 +2382,7 @@ ${magicLink}`;
       console.log("[STARTUP] Deferring specialist mapping sync for faster cold-start...");
       setTimeout(async () => {
         try {
+          await initAltegioConfig();
           await storage.syncSpecialistMappings();
           await autoMapAltegioStaff();
           console.log("[STARTUP] Recalculating all specialist ratings...");
@@ -2353,6 +2397,7 @@ ${magicLink}`;
       }, 5000);
     } else {
       console.log("[STARTUP] Running automatic specialist mapping sync...");
+      await initAltegioConfig();
       storage.syncSpecialistMappings().catch(err => {
         console.error("[STARTUP] Failed to sync specialist mappings:", err);
       });
