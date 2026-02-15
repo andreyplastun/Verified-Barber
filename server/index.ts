@@ -6,8 +6,10 @@ import { storage } from "./storage";
 import { pool } from "./db";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-15-v71-prod-specialist-seed";
+const BUILD_VERSION = "2026-02-16-v72-altegio-env-debug";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
+const envKeys = Object.keys(process.env).sort();
+console.log(`[STARTUP] Total env vars: ${envKeys.length}, keys: ${envKeys.join(", ")}`);
 
 const app = express();
 const httpServer = createServer(app);
