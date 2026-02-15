@@ -91,7 +91,7 @@ export async function registerRoutes(
     specialistId: z.number().int().positive().optional(),
   });
 
-  // Create user - ALWAYS creates as 'client' role (no privilege escalation)
+  // Create user - checks specialist ownership for automatic role assignment
   app.post("/api/users", async (req, res) => {
     try {
       const parsed = createUserSchema.safeParse(req.body);
@@ -102,14 +102,29 @@ export async function registerRoutes(
       const { id, email } = parsed.data;
       
       // Check if user already exists
-      const existing = await storage.getUser(id);
+      let existing = await storage.getUser(id);
       if (existing) {
+        // Auto-fix: if user is 'client' but owns a specialist, upgrade role
+        if (existing.role === "client") {
+          const ownedSpec = await storage.getSpecialistByOwnerUserId(id);
+          if (ownedSpec) {
+            existing = await storage.updateUserRole(id, "specialist", ownedSpec.id) as typeof existing;
+            console.log(`[AUTO-ROLE] Upgraded ${email} to specialist (owns specialist ${ownedSpec.id} "${ownedSpec.name}")`);
+          }
+        }
         return res.json(existing);
       }
       
-      // Force role to 'client' on creation - cannot self-assign specialist role
-      const user = await storage.createUser({ id, email, role: "client" });
-      res.status(201).json(user);
+      // Check if this user owns a specialist before defaulting to 'client'
+      const ownedSpec = await storage.getSpecialistByOwnerUserId(id);
+      if (ownedSpec) {
+        const user = await storage.createUser({ id, email, role: "specialist", specialistId: ownedSpec.id });
+        console.log(`[AUTO-ROLE] Created ${email} as specialist (owns specialist ${ownedSpec.id} "${ownedSpec.name}")`);
+        res.status(201).json(user);
+      } else {
+        const user = await storage.createUser({ id, email, role: "client" });
+        res.status(201).json(user);
+      }
     } catch (err: any) {
       console.error("Error creating user:", err);
       res.status(500).json({ message: err.message });
@@ -123,16 +138,21 @@ export async function registerRoutes(
         return res.status(404).json({ message: "User not found" });
       }
 
-      const beforeUser = { ...user };
+      // Auto-fix: if user is 'client' but owns a specialist, upgrade role
+      if (user.role === "client") {
+        const ownedSpec = await storage.getSpecialistByOwnerUserId(user.id);
+        if (ownedSpec) {
+          user = await storage.updateUserRole(user.id, "specialist", ownedSpec.id) as typeof user;
+          console.log(`[AUTO-ROLE] Upgraded ${user.email} to specialist (owns specialist ${ownedSpec.id} "${ownedSpec.name}")`);
+        }
+      }
 
+      // Legacy: if specialist role but no specialist_id, try to bind
       if (user.role === "specialist" && !user.specialistId) {
-        const firstSpecialist = await storage.getFirstSpecialist();
-        
-        if (firstSpecialist) {
-          user = await storage.updateUserRole(user.id, "specialist", firstSpecialist.id) as typeof user;
-          console.log("AUTO-BIND:", beforeUser, user);
-        } else {
-          console.log("AUTO-BIND: No specialists found to bind");
+        const ownedSpec = await storage.getSpecialistByOwnerUserId(user.id);
+        if (ownedSpec) {
+          user = await storage.updateUserRole(user.id, "specialist", ownedSpec.id) as typeof user;
+          console.log(`[AUTO-BIND] Bound ${user.email} to specialist ${ownedSpec.id}`);
         }
       }
 

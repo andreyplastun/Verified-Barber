@@ -18,6 +18,9 @@ export interface IStorage {
   findSpecialistByEmail(email: string): Promise<Specialist | undefined>;
   syncSpecialistMappings(): Promise<{ updated: number; warnings: string[] }>;
 
+  // Specialist by owner
+  getSpecialistByOwnerUserId(userId: string): Promise<Specialist | undefined>;
+
   // Specialists
   getSpecialists(): Promise<Specialist[]>;
   getSpecialist(id: number): Promise<Specialist | undefined>;
@@ -164,6 +167,11 @@ export class DatabaseStorage implements IStorage {
     
     console.log(`[SYNC] Specialist mapping complete: ${updated} updated, ${warnings.length} warnings`);
     return { updated, warnings };
+  }
+
+  async getSpecialistByOwnerUserId(userId: string): Promise<Specialist | undefined> {
+    const [spec] = await db.select().from(specialists).where(eq(specialists.ownerUserId, userId));
+    return spec;
   }
 
   // Users
