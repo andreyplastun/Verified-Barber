@@ -302,9 +302,29 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
     }
 
     if (!match) {
-      const msg = `No specialist match for Altegio staff "${staff.name}" (id=${staff.id})`;
-      console.log(`[ALTEGIO-AUTOMAP] ${msg}`);
-      errors.push(msg);
+      try {
+        const newSpecialist = await storage.createSpecialist({
+          name: staff.name,
+          specialty: staff.specialization || "Специалист",
+          bio: "",
+          imageUrl: staff.avatar || "",
+          category: "barber",
+          city: "Алматы",
+          status: "active",
+          isActive: true,
+          altegioStaffId: staff.id,
+          altegioCompanyId: config.companyId,
+          altegioConnectionStatus: "connected",
+        } as any);
+        mappedStaffIds.add(staff.id);
+        mappedSpecialistIds.add(newSpecialist.id);
+        console.log(`[ALTEGIO-AUTOMAP] Created new specialist "${staff.name}" (id=${newSpecialist.id}) from Altegio staff (staffId=${staff.id})`);
+        mapped++;
+      } catch (err: any) {
+        const msg = `Failed to create specialist for Altegio staff "${staff.name}" (id=${staff.id}): ${err.message}`;
+        console.error(`[ALTEGIO-AUTOMAP] ${msg}`);
+        errors.push(msg);
+      }
       continue;
     }
 
