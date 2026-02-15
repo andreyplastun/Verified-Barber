@@ -1012,9 +1012,16 @@ export default function SpecialistDashboard() {
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <Calendar className="w-5 h-5" />
-            <CardTitle>Предстоящие записи</CardTitle>
+          <CardHeader className="flex flex-row items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Calendar className="w-5 h-5" />
+              <CardTitle>Предстоящие записи</CardTitle>
+            </div>
+            {upcomingBookings.length > 0 && (
+              <Badge variant="secondary" data-testid="badge-upcoming-count">
+                {upcomingBookings.length}
+              </Badge>
+            )}
           </CardHeader>
           <CardContent>
             {loadingBookings ? (
@@ -1025,7 +1032,7 @@ export default function SpecialistDashboard() {
             ) : upcomingBookings.length === 0 ? (
               <p className="text-muted-foreground text-sm">Нет предстоящих записей</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                 {upcomingBookings.map((booking) => {
                   const appointmentTime = new Date(booking.appointmentTime).getTime();
                   const hoursSince = (Date.now() - appointmentTime) / (1000 * 60 * 60);
@@ -1196,17 +1203,36 @@ export default function SpecialistDashboard() {
       </div>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle>Завершённые визиты</CardTitle>
+          {completedBookings.length > 0 && (
+            <Badge variant="secondary" data-testid="badge-completed-count">
+              {completedBookings.length}
+            </Badge>
+          )}
         </CardHeader>
+        {completedBookings.length > 0 && (() => {
+          const sorted = [...completedBookings].sort((a, b) => new Date(a.appointmentTime).getTime() - new Date(b.appointmentTime).getTime());
+          const earliest = sorted[0];
+          const latest = sorted[sorted.length - 1];
+          const earliestDate = format(new Date(earliest.appointmentTime), 'd MMM');
+          const latestDate = format(new Date(latest.appointmentTime), 'd MMM');
+          return (
+            <div className="px-6 pb-2">
+              <p className="text-xs text-muted-foreground" data-testid="text-completed-period">
+                {earliestDate === latestDate ? earliestDate : `${earliestDate} — ${latestDate}`}
+              </p>
+            </div>
+          );
+        })()}
         <CardContent>
           {loadingBookings ? (
             <Skeleton className="h-16 w-full" />
           ) : completedBookings.length === 0 ? (
             <p className="text-muted-foreground text-sm">Пока нет завершённых визитов</p>
           ) : (
-            <div className="space-y-2">
-              {completedBookings.slice(0, 10).map((booking) => (
+            <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1">
+              {completedBookings.map((booking) => (
                 <div 
                   key={booking.id}
                   className="p-3 rounded-md bg-muted/50 space-y-2"
