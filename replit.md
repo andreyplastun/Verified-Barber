@@ -106,7 +106,9 @@ Language: Russian (Русский) - all UI text is in Russian.
 - **Flow**: User submits a claim request, admin approves, a magic link is sent, and the user binds their profile after authentication, gaining specialist role.
 
 #### Altegio Bidirectional Sync
-- **Webhook (Altegio → Rateus)**: `POST /api/altegio/webhook` handles appointment lifecycle events
+- **Webhook (Altegio → Rateus)**: `POST /api/altegio/webhook` handles appointment lifecycle events (new bookings, updates, cancellations)
+- **Initial Appointment Sync**: `syncUpcomingAppointments()` runs at startup to fetch all upcoming appointments (next 30 days) from Altegio API `GET /records/{company_id}` with pagination. Imports bookings that don't exist yet, skips deleted/no-show, deduplicates by `altegioAppointmentId`.
+- **Manual Sync**: `POST /api/altegio/sync-appointments` endpoint for admin/specialist-triggered sync
 - **Sync (Rateus → Altegio)**: `server/altegio.ts` client syncs booking create/update/cancel/complete to Altegio API
 - **Loop Protection**: `updatedFrom` field on bookings ('rateus' | 'altegio') prevents infinite sync loops
 - **Sync Status**: `altegioSyncStatus` ('synced' | 'error' | 'pending') + `altegioSyncError` for diagnostics

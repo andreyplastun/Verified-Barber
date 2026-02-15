@@ -819,6 +819,192 @@ export async function completeAltegioAppointment(
   }
 }
 
+export interface AltegioAppointmentRecord {
+  id: number;
+  company_id: number;
+  staff_id: number;
+  datetime: string;
+  attendance: number;
+  visit_attendance: number;
+  deleted: boolean;
+  client?: {
+    id?: number;
+    name?: string;
+    phone?: string;
+    email?: string;
+  } | null;
+  services?: Array<{
+    id: number;
+    title: string;
+    cost: number;
+  }>;
+  comment?: string;
+  seance_length?: number;
+}
+
+export async function fetchUpcomingAppointments(companyId: number, options?: { staffId?: number; startDate?: string; endDate?: string; page?: number; count?: number }): Promise<{ success: boolean; appointments?: AltegioAppointmentRecord[]; total?: number; error?: string }> {
+  const config = getConfig();
+  if (!config) return { success: false, error: "not_configured" };
+
+  const params = new URLSearchParams();
+  if (options?.staffId) params.set("staff_id", String(options.staffId));
+  if (options?.startDate) params.set("start_date", options.startDate);
+  if (options?.endDate) params.set("end_date", options.endDate);
+  params.set("page", String(options?.page || 1));
+  params.set("count", String(options?.count || 200));
+
+  const url = `${ALTEGIO_BASE_URL}/records/${companyId}?${params.toString()}`;
+
+  try {
+    console.log(`[ALTEGIO-FETCH] Fetching appointments for company ${companyId}, staff=${options?.staffId || "all"}, range=${options?.startDate}..${options?.endDate}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(url, {
+      method: "GET",
+      headers: getHeaders(config),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    let result: any = null;
+    try { result = await response.json(); } catch {}
+
+    if (response.ok && result?.success && Array.isArray(result.data)) {
+      const appointments = result.data as AltegioAppointmentRecord[];
+      console.log(`[ALTEGIO-FETCH] Got ${appointments.length} appointments for company ${companyId}`);
+      return { success: true, appointments, total: result.meta?.total_count || appointments.length };
+    }
+
+    const errorMsg = result?.meta?.message || `HTTP ${response.status}`;
+    console.error(`[ALTEGIO-FETCH] Error fetching appointments: ${errorMsg}`);
+    return { success: false, error: errorMsg };
+  } catch (err: any) {
+    console.error(`[ALTEGIO-FETCH] Network error: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
+export async function syncUpcomingAppointments(): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
+  const config = getConfig();
+  if (!config) {
+    console.log("[ALTEGIO-SYNC-APPTS] Not configured, skipping");
+    return { imported: 0, updated: 0, skipped: 0, errors: ["not_configured"] };
+  }
+
+  const allSpecialists = await storage.getSpecialists();
+  const connectedSpecialists = allSpecialists.filter((s: any) => s.altegioStaffId && s.altegioCompanyId);
+
+  if (connectedSpecialists.length === 0) {
+    console.log("[ALTEGIO-SYNC-APPTS] No connected specialists, skipping");
+    return { imported: 0, updated: 0, skipped: 0, errors: [] };
+  }
+
+  const companyIds = await fetchAllCompanyIds();
+  if (companyIds.length === 0) {
+    return { imported: 0, updated: 0, skipped: 0, errors: ["no_companies"] };
+  }
+
+  const today = new Date();
+  const startDate = today.toISOString().slice(0, 10);
+  const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  let imported = 0;
+  let updated = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  for (const companyId of companyIds) {
+    let allAppointments: AltegioAppointmentRecord[] = [];
+    let page = 1;
+    const pageSize = 200;
+
+    while (true) {
+      const result = await fetchUpcomingAppointments(companyId, { startDate, endDate, count: pageSize, page });
+      if (!result.success || !result.appointments) {
+        errors.push(`company ${companyId} page ${page}: ${result.error}`);
+        break;
+      }
+      allAppointments = allAppointments.concat(result.appointments);
+      const total = result.total || 0;
+      if (allAppointments.length >= total || result.appointments.length < pageSize) {
+        break;
+      }
+      page++;
+      await new Promise(r => setTimeout(r, 200));
+    }
+
+    console.log(`[ALTEGIO-SYNC-APPTS] Company ${companyId}: fetched ${allAppointments.length} appointments (${page} pages)`);
+
+    for (const appt of allAppointments) {
+      if (appt.deleted) { skipped++; continue; }
+      if (appt.attendance === -1) { skipped++; continue; }
+
+      const existing = await storage.getBookingByAltegioId(appt.id);
+      if (existing) {
+        const apptTime = new Date(appt.datetime);
+        const clientName = appt.client?.name || "Клиент Altegio";
+        const clientPhone = appt.client?.phone || "";
+        const needsUpdate = existing.customerName === "Клиент Altegio" && clientName !== "Клиент Altegio";
+        if (needsUpdate) {
+          await storage.updateBooking(existing.id, {
+            customerName: clientName,
+            customerPhone: clientPhone,
+            updatedFrom: "altegio",
+          });
+          updated++;
+        } else {
+          skipped++;
+        }
+        continue;
+      }
+
+      let specialistId: number | null = null;
+      if (appt.staff_id) {
+        const matched = appt.company_id
+          ? connectedSpecialists.find((s: any) => s.altegioStaffId === appt.staff_id && s.altegioCompanyId === appt.company_id)
+          : null;
+        const fallback = matched || connectedSpecialists.find((s: any) => s.altegioStaffId === appt.staff_id);
+        if (fallback) specialistId = fallback.id;
+      }
+
+      if (!specialistId) {
+        skipped++;
+        continue;
+      }
+
+      const appointmentTime = new Date(appt.datetime);
+      const clientName = appt.client?.name || "Клиент Altegio";
+      const clientPhone = appt.client?.phone || "";
+
+      try {
+        const newBooking = await storage.createBooking({
+          specialistId,
+          customerName: clientName,
+          customerPhone: clientPhone,
+          appointmentTime,
+        });
+
+        let status: "confirmed" | "completed" = "confirmed";
+        if (appt.attendance === 1) status = "completed";
+
+        await storage.updateBooking(newBooking.id, {
+          altegioAppointmentId: appt.id,
+          altegioStaffId: appt.staff_id || null,
+          status,
+          updatedFrom: "altegio",
+        });
+        imported++;
+      } catch (err: any) {
+        errors.push(`appt ${appt.id}: ${err.message}`);
+      }
+    }
+  }
+
+  console.log(`[ALTEGIO-SYNC-APPTS] Complete: ${imported} imported, ${updated} updated, ${skipped} skipped, ${errors.length} errors`);
+  return { imported, updated, skipped, errors };
+}
+
 export async function deleteAltegioAppointment(
   altegioAppointmentId: number,
   companyId: number | null,

@@ -7,7 +7,7 @@ import { bookings, type Review, specialistSignupSchema, claimRequestSchema } fro
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
-import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff } from "./altegio";
+import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments } from "./altegio";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -2061,6 +2061,27 @@ ${magicLink}`;
   });
 
   // ==========================================
+  // Altegio Sync Appointments
+  // ==========================================
+  app.post("/api/altegio/sync-appointments", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+      const user = await storage.getUser(userId);
+      if (!user || (user.role !== "admin" && user.role !== "specialist")) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const result = await syncUpcomingAppointments();
+      res.json(result);
+    } catch (err: any) {
+      console.error("[API] sync-appointments error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ==========================================
   // Altegio Webhook
   // ==========================================
   app.post("/api/altegio/webhook", async (req, res) => {
@@ -2335,8 +2356,13 @@ ${magicLink}`;
       storage.syncSpecialistMappings().catch(err => {
         console.error("[STARTUP] Failed to sync specialist mappings:", err);
       });
-      autoMapAltegioStaff().catch(err => {
-        console.error("[STARTUP] Failed to auto-map Altegio staff:", err);
+      autoMapAltegioStaff().then(() => {
+        console.log("[STARTUP] Running upcoming appointments sync...");
+        return syncUpcomingAppointments();
+      }).then(result => {
+        console.log(`[STARTUP] Appointments sync: ${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped`);
+      }).catch(err => {
+        console.error("[STARTUP] Failed to auto-map/sync:", err);
       });
     }
 
