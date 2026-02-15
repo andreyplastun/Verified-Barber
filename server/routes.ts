@@ -2394,6 +2394,98 @@ ${magicLink}`;
     } catch (err) {
       console.error("[SEED] Error seeding specialists:", err);
     }
+
+    // Seed specialists with Altegio mappings and owner_user_id bindings
+    // These are real Supabase Auth user IDs that own these specialist profiles
+    try {
+      const existing = await storage.getSpecialists();
+      const altegioSpecialists = [
+        { name: "Богдан", specialty: "Барбер", imageUrl: "https://assets.alteg.io/masters/sm/5/5e/5e33f608858e9d6_20260206102353.png", ownerUserId: "e1020988-7c7c-44ac-beaf-19046bc09255", altegioStaffId: 2982463, altegioCompanyId: 25692 },
+        { name: "Икрам", specialty: "Шеф-барбер", imageUrl: "https://assets.alteg.io/masters/sm/3/35/351a1a6ef312d43_20170814101519.png", ownerUserId: "d99f7f9c-00d1-4479-b52e-43f14e9a2e62", altegioStaffId: 130240, altegioCompanyId: 28196 },
+        { name: "Рустам", specialty: "Барбер", imageUrl: "https://assets.alteg.io/masters/sm/8/83/83296218602f7d7_20251111203547.png", ownerUserId: "ff2bc513-f736-4d02-84dd-92b212f56132", altegioStaffId: 2902494, altegioCompanyId: 37245 },
+        { name: "Богдан", specialty: "Барбер", imageUrl: "https://assets.alteg.io/masters/sm/5/50/50806b5907fe0a1_20260209101103.png", ownerUserId: "9525d22f-b3c7-4d1f-9d8c-65d07cd33a99", altegioStaffId: 2982468, altegioCompanyId: 37245 },
+        { name: "Евгений", specialty: "Signature барбер", imageUrl: "https://assets.alteg.io/masters/sm/20160804163214_7537.jpg", ownerUserId: "8534a9cb-b882-4cc2-9777-3a0a3098aeff", altegioStaffId: 57457, altegioCompanyId: 37245 },
+        { name: "Гүлсезім", specialty: "Старший барбер", imageUrl: "https://assets.alteg.io/masters/sm/7/7a/7a4f12e284177ba_20220917231206.png", ownerUserId: "fd86348e-6ab3-429e-b1f6-1adf64d2a4a3", altegioStaffId: 2105120, altegioCompanyId: 37245 },
+        { name: "Евгения", specialty: "Барбер", imageUrl: "https://assets.alteg.io/masters/sm/6/6f/6fa7ca17dceab34_20251028120317.png", ownerUserId: "81a55a8c-fbfb-47b6-975b-0ef08c165f0b", altegioStaffId: 2904098, altegioCompanyId: 64381 },
+        { name: "Ерназар", specialty: "Старший барбер", imageUrl: "https://assets.alteg.io/masters/sm/b/bc/bcdcae0e305e594_20211211122410.png", ownerUserId: "ab2112ba-6101-4098-9f90-7a7d8e509488", altegioStaffId: 1650107, altegioCompanyId: 64381 },
+        { name: "Кристина", specialty: "Барбер", imageUrl: "https://assets.alteg.io/masters/sm/4/45/4552c6684a568d5_20251217193409.png", ownerUserId: "ee62ced4-9282-4286-8524-8c850413c4c1", altegioStaffId: 2925837, altegioCompanyId: 64381 },
+        { name: "Ксения", specialty: "Старший барбер", imageUrl: "https://assets.alteg.io/masters/sm/1/1f/1f530fa5fc4377b_20230320121616.png", ownerUserId: "03fafe34-e096-4c73-98cd-95168e3901bc", altegioStaffId: 2156091, altegioCompanyId: 64381 },
+        { name: "Тилеген", specialty: "Старший барбер", imageUrl: "https://assets.alteg.io/masters/sm/2/2e/2e2d18925af157a_20211209095239.png", ownerUserId: "bae6a08d-49fb-4732-b1ea-1a65b0e39046", altegioStaffId: 1794009, altegioCompanyId: 64381 },
+        { name: "Андрей", specialty: "Шеф-барбер", imageUrl: "https://assets.alteg.io/masters/sm/0/0a/0a9b28052c0483b_20260130141808.png", ownerUserId: "fbab117f-ccb7-489d-bb90-74cb9cc35a19", altegioStaffId: 2979093, altegioCompanyId: 86692 },
+        { name: "Евгений", specialty: "Signature барбер", imageUrl: "https://assets.alteg.io/masters/sm/3/31/31035de4f83d1ca_20210409114335.png", ownerUserId: "8b0f0c55-57f5-47a1-939d-a9f4c7bfc235", altegioStaffId: 1394519, altegioCompanyId: 469919 },
+        { name: "Армин", specialty: "Шеф-барбер", imageUrl: "https://assets.alteg.io/masters/sm/f/fc/fc6a9531e2d52e0_20210405141414.png", ownerUserId: "48e2913d-cd60-4781-9758-863cbff38b0a", altegioStaffId: 1367428, altegioCompanyId: 469919 },
+        { name: "Танирберген", specialty: "Барбер", imageUrl: "https://assets.alteg.io/masters/sm/8/8a/8a7bb8a1e54c7e2_20250812130216.png", ownerUserId: "fad17c87-3f6e-4b19-9a47-da9847782ab2", altegioStaffId: 2874603, altegioCompanyId: 766817 },
+        { name: "Евгений", specialty: "Signature барбер", imageUrl: "https://assets.alteg.io/masters/sm/5/51/513ae6a8070c341_20230821172015.png", ownerUserId: "6815ac61-5e2b-40ec-9d71-1f2d0ca4444b", altegioStaffId: 2194088, altegioCompanyId: 766817 },
+        { name: "Светлана", specialty: "Старший барбер", imageUrl: "https://assets.alteg.io/masters/sm/9/91/91ed4c2212137c1_20230821135330.png", ownerUserId: "9840737b-8e19-4ea3-a0a4-bcfc4d1856ee", altegioStaffId: 2193885, altegioCompanyId: 766817 },
+        { name: "Иван", specialty: "Старший барбер", imageUrl: "https://assets.alteg.io/masters/sm/a/a2/a26544e62a50f1f_20240714115715.png", ownerUserId: "6f9714e7-b0f7-44a2-9168-93f5513255dd", altegioStaffId: 2668559, altegioCompanyId: 766817 },
+      ];
+
+      let seeded = 0;
+      const usedOwnerIds = new Set<string>();
+      for (const spec of altegioSpecialists) {
+        // 1. Match by altegio staff+company (strongest match)
+        let match = existing.find((s: any) => s.altegioStaffId === spec.altegioStaffId && s.altegioCompanyId === spec.altegioCompanyId);
+        
+        // 2. Match by owner_user_id
+        if (!match) {
+          match = existing.find((s: any) => s.ownerUserId === spec.ownerUserId);
+        }
+        
+        // 3. Match by unique name+specialty (only if name is unique among seed entries for that specialty)
+        if (!match) {
+          const sameNameInSeed = altegioSpecialists.filter(s => s.name === spec.name);
+          if (sameNameInSeed.length === 1) {
+            const nameMatch = existing.find((s: any) => s.name === spec.name && !s.ownerUserId);
+            if (nameMatch) match = nameMatch;
+          }
+        }
+
+        if (match) {
+          // Update missing fields on existing specialist
+          const updates: Record<string, any> = {};
+          if (!match.ownerUserId && spec.ownerUserId) updates.ownerUserId = spec.ownerUserId;
+          if (!match.altegioStaffId) updates.altegioStaffId = spec.altegioStaffId;
+          if (!match.altegioCompanyId) updates.altegioCompanyId = spec.altegioCompanyId;
+          if (!match.altegioConnectionStatus || match.altegioConnectionStatus === "disconnected") updates.altegioConnectionStatus = "connected";
+          if (match.imageUrl === "" && spec.imageUrl) updates.imageUrl = spec.imageUrl;
+          
+          if (Object.keys(updates).length > 0) {
+            await storage.updateSpecialist(match.id, updates as any);
+            console.log(`[SEED-ALTEGIO] Updated "${match.name}" (id=${match.id}): ${Object.keys(updates).join(", ")}`);
+            seeded++;
+          }
+          usedOwnerIds.add(spec.ownerUserId);
+          continue;
+        }
+
+        // No match found — create new specialist
+        if (usedOwnerIds.has(spec.ownerUserId)) continue;
+        await storage.createSpecialist({
+          name: spec.name,
+          specialty: spec.specialty,
+          bio: "",
+          imageUrl: spec.imageUrl,
+          category: "barber",
+          city: "Алматы",
+          status: "active",
+          isActive: true,
+          altegioStaffId: spec.altegioStaffId,
+          altegioCompanyId: spec.altegioCompanyId,
+          altegioConnectionStatus: "connected",
+          ownerUserId: spec.ownerUserId,
+        } as any);
+        usedOwnerIds.add(spec.ownerUserId);
+        seeded++;
+        console.log(`[SEED-ALTEGIO] Created specialist "${spec.name}" (staffId=${spec.altegioStaffId}, company=${spec.altegioCompanyId}, owner=${spec.ownerUserId})`);
+      }
+      if (seeded > 0) {
+        console.log(`[SEED-ALTEGIO] Seeded/updated ${seeded} specialists with Altegio + owner bindings`);
+      } else {
+        console.log(`[SEED-ALTEGIO] All Altegio specialists already exist`);
+      }
+    } catch (err) {
+      console.error("[SEED-ALTEGIO] Error seeding Altegio specialists:", err);
+    }
   });
 
   return httpServer;

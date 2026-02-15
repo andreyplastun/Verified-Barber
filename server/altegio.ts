@@ -30,6 +30,11 @@ function getConfig(): AltegioConfig | null {
   const companyId = process.env.ALTEGIO_COMPANY_ID;
 
   if (!partnerToken || !userToken || !companyId) {
+    const missing = [];
+    if (!partnerToken) missing.push("ALTEGIO_PARTNER_TOKEN");
+    if (!userToken) missing.push("ALTEGIO_USER_TOKEN");
+    if (!companyId) missing.push("ALTEGIO_COMPANY_ID");
+    console.warn(`[ALTEGIO] Config missing env vars: ${missing.join(", ")}`);
     return null;
   }
 
