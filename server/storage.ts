@@ -133,8 +133,18 @@ export class DatabaseStorage implements IStorage {
     const specialistUsers = await db.select().from(users).where(eq(users.role, "specialist"));
     let updated = 0;
     const warnings: string[] = [];
+    const allSpecs = await db.select().from(specialists);
     
     for (const user of specialistUsers) {
+      // If user already has a valid specialist_id, skip re-mapping
+      if (user.specialistId) {
+        const existing = allSpecs.find(s => s.id === user.specialistId);
+        if (existing) {
+          console.log(`[SYNC] Skipping ${user.email}: already mapped to "${existing.name}" (id=${existing.id})`);
+          continue;
+        }
+      }
+      
       const specialist = await this.findSpecialistByEmail(user.email);
       
       if (specialist) {
