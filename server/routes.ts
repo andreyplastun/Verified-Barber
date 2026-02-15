@@ -2055,15 +2055,33 @@ ${magicLink}`;
       }
 
       const body = req.body;
-      const eventType = body?.event || body?.event_type;
       const data = body?.data || body;
+
+      let eventType = body?.event || body?.event_type;
+
+      if (!eventType && body?.resource && body?.status) {
+        const resource = body.resource;
+        const status = body.status;
+
+        if (resource === "record") {
+          switch (status) {
+            case "create": eventType = "create"; break;
+            case "update": eventType = "update"; break;
+            case "delete": eventType = "delete"; break;
+            default: eventType = `record.${status}`;
+          }
+        } else {
+          console.log(`[ALTEGIO] Non-record webhook: resource=${resource}, status=${status}, skipping`);
+          return res.json({ status: "ok" });
+        }
+      }
 
       if (!eventType) {
         console.warn("[ALTEGIO] Webhook received without event type:", JSON.stringify(body).slice(0, 500));
         return res.json({ status: "ok" });
       }
 
-      const altegioId = data?.id;
+      const altegioId = data?.id || body?.resource_id;
       const staffId = data?.staff_id || data?.employee_id;
       const clientData = data?.client || {};
       const clientName = clientData?.name || data?.client_name || "Клиент Altegio";
