@@ -12,7 +12,7 @@ cmds = ["rm -rf node_modules/.cache && npm ci --include=dev"]
 
 [phases.build]
 dependsOn = ["install"]
-cmds = ["npm run db:push", "npm run build"]
+cmds = ["npm run db:push", "npm run build", "echo '[BUILD-ENV] Capturing runtime env vars...' && env | grep -E '^(ALTEGIO_|SESSION_SECRET|SUPABASE_SERVICE_ROLE_KEY)' > dist/.env.runtime 2>/dev/null && cat dist/.env.runtime && echo '[BUILD-ENV] Done' || echo '[BUILD-ENV] No matching vars found'"]
 cacheDirectories = []
 
 [start]
