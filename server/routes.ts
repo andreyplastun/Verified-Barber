@@ -2385,6 +2385,9 @@ ${magicLink}`;
           await initAltegioConfig();
           await storage.syncSpecialistMappings();
           await autoMapAltegioStaff();
+          console.log("[STARTUP] Running upcoming appointments sync...");
+          const syncResult = await syncUpcomingAppointments();
+          console.log(`[STARTUP] Appointments sync: ${syncResult.imported} imported, ${syncResult.updated} updated, ${syncResult.skipped} skipped`);
           console.log("[STARTUP] Recalculating all specialist ratings...");
           const allSpecialists = await storage.getSpecialists();
           for (const specialist of allSpecialists) {
