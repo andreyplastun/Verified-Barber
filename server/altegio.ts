@@ -223,6 +223,112 @@ export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff
   }
 }
 
+export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: number; errors: string[] }> {
+  const config = getConfig();
+  if (!config) {
+    console.log("[ALTEGIO-AUTOMAP] Altegio not configured, skipping auto-mapping");
+    return { mapped: 0, skipped: 0, errors: [] };
+  }
+
+  const result = await fetchAltegioStaffList();
+  if (!result.success || !result.staff) {
+    console.error(`[ALTEGIO-AUTOMAP] Failed to fetch staff: ${result.error}`);
+    return { mapped: 0, skipped: 0, errors: [result.error || "Failed to fetch staff"] };
+  }
+
+  const allSpecialists = await storage.getSpecialists();
+  let mapped = 0;
+  let skipped = 0;
+  const errors: string[] = [];
+
+  function normalizeName(name: string): string {
+    return name.toLowerCase().trim().replace(/\s+/g, " ");
+  }
+
+  const mappedStaffIds = new Set<number>();
+  const mappedSpecialistIds = new Set<number>();
+
+  for (const s of allSpecialists as any[]) {
+    if (s.altegioStaffId) {
+      mappedStaffIds.add(s.altegioStaffId);
+      mappedSpecialistIds.add(s.id);
+    }
+  }
+
+  for (const staff of result.staff) {
+    const staffNameNorm = normalizeName(staff.name);
+
+    const alreadyMapped = allSpecialists.find((s: any) => s.altegioStaffId === staff.id);
+    if (alreadyMapped) {
+      if ((alreadyMapped as any).altegioCompanyId === config.companyId) {
+        skipped++;
+      } else {
+        try {
+          await storage.updateSpecialist(alreadyMapped.id, { altegioCompanyId: config.companyId } as any);
+          console.log(`[ALTEGIO-AUTOMAP] Updated companyId for "${alreadyMapped.name}" (id=${alreadyMapped.id})`);
+          mapped++;
+        } catch (err: any) {
+          errors.push(`Failed to update companyId for ${alreadyMapped.id}: ${err.message}`);
+        }
+      }
+      continue;
+    }
+
+    if (mappedStaffIds.has(staff.id)) {
+      skipped++;
+      continue;
+    }
+
+    let match = allSpecialists.find((s: any) =>
+      !mappedSpecialistIds.has(s.id) && normalizeName(s.name) === staffNameNorm
+    );
+
+    if (!match) {
+      const staffFirstName = staffNameNorm.split(" ")[0];
+      if (staffFirstName.length >= 4) {
+        const candidates = allSpecialists.filter((s: any) => {
+          if (mappedSpecialistIds.has(s.id)) return false;
+          const specFirst = normalizeName(s.name).split(" ")[0];
+          return specFirst === staffFirstName;
+        });
+        if (candidates.length === 1) {
+          match = candidates[0];
+        } else if (candidates.length > 1) {
+          console.log(`[ALTEGIO-AUTOMAP] Multiple candidates for "${staff.name}" (id=${staff.id}), skipping auto-map`);
+          errors.push(`Ambiguous match for "${staff.name}" (id=${staff.id}): ${candidates.map(c => c.name).join(", ")}`);
+          continue;
+        }
+      }
+    }
+
+    if (!match) {
+      const msg = `No specialist match for Altegio staff "${staff.name}" (id=${staff.id})`;
+      console.log(`[ALTEGIO-AUTOMAP] ${msg}`);
+      errors.push(msg);
+      continue;
+    }
+
+    try {
+      await storage.updateSpecialist(match.id, {
+        altegioStaffId: staff.id,
+        altegioCompanyId: config.companyId,
+        altegioConnectionStatus: "connected",
+      } as any);
+      mappedStaffIds.add(staff.id);
+      mappedSpecialistIds.add(match.id);
+      console.log(`[ALTEGIO-AUTOMAP] Mapped "${staff.name}" (staffId=${staff.id}) → specialist "${match.name}" (id=${match.id})`);
+      mapped++;
+    } catch (err: any) {
+      const msg = `Failed to update specialist ${match.id}: ${err.message}`;
+      console.error(`[ALTEGIO-AUTOMAP] ${msg}`);
+      errors.push(msg);
+    }
+  }
+
+  console.log(`[ALTEGIO-AUTOMAP] Complete: ${mapped} mapped, ${skipped} already mapped, ${errors.length} unmatched`);
+  return { mapped, skipped, errors };
+}
+
 async function makeAltegioRequest(
   url: string,
   method: string,

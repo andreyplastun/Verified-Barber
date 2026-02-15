@@ -6,7 +6,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-15-v63-webhook-fix";
+const BUILD_VERSION = "2026-02-15-v64-altegio-automap";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 
 const app = express();

@@ -7,7 +7,7 @@ import { bookings, type Review, specialistSignupSchema, claimRequestSchema } fro
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
-import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry } from "./altegio";
+import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff } from "./altegio";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -2290,7 +2290,7 @@ ${magicLink}`;
       setTimeout(async () => {
         try {
           await storage.syncSpecialistMappings();
-          // Auto-recalculate all ratings on startup
+          await autoMapAltegioStaff();
           console.log("[STARTUP] Recalculating all specialist ratings...");
           const allSpecialists = await storage.getSpecialists();
           for (const specialist of allSpecialists) {
@@ -2300,11 +2300,14 @@ ${magicLink}`;
         } catch (err) {
           console.error("[STARTUP] Failed to sync/recalculate:", err);
         }
-      }, 5000); // Run sync 5 seconds after startup
+      }, 5000);
     } else {
       console.log("[STARTUP] Running automatic specialist mapping sync...");
       storage.syncSpecialistMappings().catch(err => {
         console.error("[STARTUP] Failed to sync specialist mappings:", err);
+      });
+      autoMapAltegioStaff().catch(err => {
+        console.error("[STARTUP] Failed to auto-map Altegio staff:", err);
       });
     }
 
