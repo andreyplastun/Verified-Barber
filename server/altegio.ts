@@ -181,9 +181,46 @@ export async function checkAltegioHealth(specialistStaffId?: number | null, spec
   }
 }
 
-function getCompanyIds(): number[] {
+function getConfiguredCompanyIds(): number[] {
   const raw = process.env.ALTEGIO_COMPANY_ID || "";
   return raw.split(",").map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n) && n > 0);
+}
+
+async function fetchAllCompanyIds(): Promise<number[]> {
+  const config = getConfig();
+  if (!config) return [];
+
+  const configured = getConfiguredCompanyIds();
+
+  try {
+    console.log(`[ALTEGIO] Discovering all branches via API...`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(`${ALTEGIO_BASE_URL}/companies?my=1&count=100`, {
+      method: "GET",
+      headers: getHeaders(config),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    let result: any = null;
+    try { result = await response.json(); } catch {}
+
+    if (response.ok && result?.success && Array.isArray(result.data)) {
+      const discovered = result.data.map((c: any) => c.id).filter((id: number) => id > 0);
+      const merged = [...new Set([...configured, ...discovered])];
+      console.log(`[ALTEGIO] Discovered ${discovered.length} branches: ${discovered.join(", ")}`);
+      console.log(`[ALTEGIO] Total branches (configured + discovered): ${merged.join(", ")}`);
+      return merged;
+    } else {
+      console.warn(`[ALTEGIO] Branch discovery failed (${response.status}), using configured IDs only: ${configured.join(", ")}`);
+      return configured;
+    }
+  } catch (err: any) {
+    console.warn(`[ALTEGIO] Branch discovery error: ${err.message}, using configured IDs only: ${configured.join(", ")}`);
+    return configured;
+  }
 }
 
 export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff?: Array<{ id: number; name: string; avatar: string | null; specialization: string | null; companyId: number }>; companyId?: number; error?: string; errorType?: AltegioErrorType }> {
@@ -192,7 +229,7 @@ export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff
     return { success: false, error: "not_configured", errorType: "invalid_keys" };
   }
 
-  const companyIds = getCompanyIds();
+  const companyIds = await fetchAllCompanyIds();
   if (companyIds.length === 0) {
     return { success: false, error: "no_company_ids", errorType: "invalid_keys" };
   }
