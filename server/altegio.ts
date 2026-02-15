@@ -35,6 +35,9 @@ function getConfig(): AltegioConfig | null {
     if (!userToken) missing.push("ALTEGIO_USER_TOKEN");
     if (!companyId) missing.push("ALTEGIO_COMPANY_ID");
     console.warn(`[ALTEGIO] Config missing env vars: ${missing.join(", ")}`);
+    const altegioKeys = Object.keys(process.env).filter(k => k.toUpperCase().includes("ALTEGIO"));
+    console.warn(`[ALTEGIO] Available ALTEGIO-related env vars: ${altegioKeys.length > 0 ? altegioKeys.join(", ") : "NONE"}`);
+    console.warn(`[ALTEGIO] PARTNER_TOKEN present: ${!!partnerToken}, USER_TOKEN present: ${!!userToken}, COMPANY_ID present: ${!!companyId}, COMPANY_ID value: ${companyId || "empty"}`);
     return null;
   }
 
