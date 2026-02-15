@@ -380,9 +380,9 @@ export default function SpecialistDashboard() {
     },
   });
 
-  const upcomingBookings = bookings?.filter(b => 
+  const upcomingBookings = (bookings?.filter(b => 
     b.status !== 'completed' && b.status !== 'cancelled'
-  ) || [];
+  ) || []).sort((a, b) => new Date(a.appointmentTime).getTime() - new Date(b.appointmentTime).getTime());
 
   const completedBookings = bookings?.filter(b => b.status === 'completed') || [];
 
