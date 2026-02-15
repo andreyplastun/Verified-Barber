@@ -2083,12 +2083,14 @@ ${magicLink}`;
 
       const altegioId = data?.id || body?.resource_id;
       const staffId = data?.staff_id || data?.employee_id;
+      const companyId = data?.company_id || body?.company_id || null;
       const clientData = data?.client || {};
       const clientName = clientData?.name || data?.client_name || "Клиент Altegio";
       const clientPhone = clientData?.phone || data?.client_phone || "";
       const datetime = data?.datetime || data?.date;
       const attendance = data?.attendance ?? data?.visit_attendance ?? null;
 
+      console.log(`[ALTEGIO] Webhook accepted: company_id=${companyId}`);
       console.log(`[ALTEGIO] Event: ${eventType}, appointmentId: ${altegioId}, staffId: ${staffId}, client: ${clientName}, attendance: ${attendance}`);
 
       if (!altegioId) {
@@ -2110,13 +2112,16 @@ ${magicLink}`;
           let specialistId: number | null = null;
           if (staffId) {
             const allSpecialists = await storage.getSpecialists();
-            const matched = allSpecialists.find((s: any) => s.altegioStaffId === staffId);
-            if (matched) specialistId = matched.id;
+            const matched = companyId
+              ? allSpecialists.find((s: any) => s.altegioStaffId === staffId && s.altegioCompanyId === companyId)
+              : null;
+            const fallback = matched || allSpecialists.find((s: any) => s.altegioStaffId === staffId);
+            if (fallback) specialistId = fallback.id;
           }
           if (!specialistId) {
             const firstSpecialist = await storage.getFirstSpecialist();
             specialistId = firstSpecialist?.id || 1;
-            console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, using default id=${specialistId}`);
+            console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId}, using default id=${specialistId}`);
           }
 
           const appointmentTime = datetime ? new Date(datetime) : new Date();
@@ -2132,7 +2137,7 @@ ${magicLink}`;
             status: "confirmed",
             updatedFrom: "altegio",
           });
-          console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}`);
+          console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}`);
           break;
         }
 
@@ -2145,12 +2150,16 @@ ${magicLink}`;
             let specialistId: number | null = null;
             if (staffId) {
               const allSpecialists = await storage.getSpecialists();
-              const matched = allSpecialists.find((s: any) => s.altegioStaffId === staffId);
-              if (matched) specialistId = matched.id;
+              const matched = companyId
+                ? allSpecialists.find((s: any) => s.altegioStaffId === staffId && s.altegioCompanyId === companyId)
+                : null;
+              const fallback = matched || allSpecialists.find((s: any) => s.altegioStaffId === staffId);
+              if (fallback) specialistId = fallback.id;
             }
             if (!specialistId) {
               const firstSpecialist = await storage.getFirstSpecialist();
               specialistId = firstSpecialist?.id || 1;
+              console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId}, using default id=${specialistId}`);
             }
             const appointmentTime = datetime ? new Date(datetime) : new Date();
             const newBooking = await storage.createBooking({
