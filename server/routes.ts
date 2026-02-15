@@ -2069,8 +2069,9 @@ ${magicLink}`;
       const clientName = clientData?.name || data?.client_name || "Клиент Altegio";
       const clientPhone = clientData?.phone || data?.client_phone || "";
       const datetime = data?.datetime || data?.date;
+      const attendance = data?.attendance ?? data?.visit_attendance ?? null;
 
-      console.log(`[ALTEGIO] Event: ${eventType}, appointmentId: ${altegioId}, staffId: ${staffId}, client: ${clientName}`);
+      console.log(`[ALTEGIO] Event: ${eventType}, appointmentId: ${altegioId}, staffId: ${staffId}, client: ${clientName}, attendance: ${attendance}`);
 
       if (!altegioId) {
         console.warn("[ALTEGIO] No appointment ID in payload");
@@ -2121,7 +2122,8 @@ ${magicLink}`;
         case "record.updated":
         case "update": {
           if (!existing) {
-            console.warn(`[ALTEGIO] Appointment ${altegioId} not found for update, creating new`);
+            const isNewVisitCompleted = attendance === 1 || attendance === "1";
+            console.warn(`[ALTEGIO] Appointment ${altegioId} not found for update, creating new (attendance=${attendance}, completed=${isNewVisitCompleted})`);
             let specialistId: number | null = null;
             if (staffId) {
               const allSpecialists = await storage.getSpecialists();
@@ -2142,12 +2144,27 @@ ${magicLink}`;
             await storage.updateBooking(newBooking.id, {
               altegioAppointmentId: altegioId,
               altegioStaffId: staffId || null,
-              status: "confirmed",
+              status: isNewVisitCompleted ? "completed" : "confirmed",
               updatedFrom: "altegio",
             });
-            console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}`);
+            console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}`);
+
+            if (isNewVisitCompleted && newBooking.clientId) {
+              try {
+                const magicLink = await storage.createMagicLink(
+                  newBooking.clientId,
+                  newBooking.id,
+                  specialistId!,
+                );
+                console.log(`[ALTEGIO] Magic link generated: booking=${newBooking.id}, specialist=${specialistId}, token=${magicLink.token.slice(0, 8)}...`);
+              } catch (mlErr) {
+                console.error(`[ALTEGIO] Failed to create magic link for new booking ${newBooking.id}:`, mlErr);
+              }
+            }
             break;
           }
+
+          const isVisitCompleted = (attendance === 1 || attendance === "1") && existing.status !== "completed";
 
           const updateData: any = {};
           if (datetime) updateData.appointmentTime = new Date(datetime);
@@ -2156,9 +2173,34 @@ ${magicLink}`;
           if (staffId) updateData.altegioStaffId = staffId;
           updateData.updatedFrom = "altegio";
 
+          if (isVisitCompleted) {
+            updateData.status = "completed";
+            console.log(`[ALTEGIO] Visit completed via attendance=1 for booking ${existing.id}, appointment ${altegioId}`);
+          }
+
           if (Object.keys(updateData).length > 0) {
             await storage.updateBooking(existing.id, updateData);
-            console.log(`[ALTEGIO] Updated booking ${existing.id} for appointment ${altegioId}`);
+            console.log(`[ALTEGIO] Updated booking ${existing.id} for appointment ${altegioId}${isVisitCompleted ? ' (marked completed)' : ''}`);
+          }
+
+          if (isVisitCompleted && existing.clientId) {
+            try {
+              const existingLink = await storage.getMagicLinkByBookingId(existing.id);
+              if (existingLink) {
+                console.log(`[ALTEGIO] Magic link already exists for booking ${existing.id}, skipping creation`);
+              } else {
+                const magicLink = await storage.createMagicLink(
+                  existing.clientId,
+                  existing.id,
+                  existing.specialistId,
+                );
+                console.log(`[ALTEGIO] Magic link generated: booking=${existing.id}, specialist=${existing.specialistId}, token=${magicLink.token.slice(0, 8)}...`);
+              }
+            } catch (mlErr) {
+              console.error(`[ALTEGIO] Failed to create magic link for booking ${existing.id}:`, mlErr);
+            }
+          } else if (isVisitCompleted && !existing.clientId) {
+            console.warn(`[ALTEGIO] Visit completed but no clientId on booking ${existing.id}, cannot create magic link`);
           }
           break;
         }
@@ -2190,15 +2232,22 @@ ${magicLink}`;
 
           if (existing.clientId) {
             try {
-              const magicLink = await storage.createMagicLink(
-                existing.clientId,
-                existing.id,
-                existing.specialistId,
-              );
-              console.log(`[ALTEGIO] Auto-created magic link for booking ${existing.id}, token: ${magicLink.token.slice(0, 8)}...`);
+              const existingLink = await storage.getMagicLinkByBookingId(existing.id);
+              if (existingLink) {
+                console.log(`[ALTEGIO] Magic link already exists for booking ${existing.id}, skipping creation`);
+              } else {
+                const magicLink = await storage.createMagicLink(
+                  existing.clientId,
+                  existing.id,
+                  existing.specialistId,
+                );
+                console.log(`[ALTEGIO] Magic link generated: booking=${existing.id}, specialist=${existing.specialistId}, token=${magicLink.token.slice(0, 8)}...`);
+              }
             } catch (mlErr) {
               console.error(`[ALTEGIO] Failed to create magic link for booking ${existing.id}:`, mlErr);
             }
+          } else {
+            console.warn(`[ALTEGIO] Booking ${existing.id} completed but no clientId, cannot create magic link`);
           }
           break;
         }
