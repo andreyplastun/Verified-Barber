@@ -1,6 +1,6 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
-import { rm, readFile } from "fs/promises";
+import { rm, readFile, writeFile, mkdir } from "fs/promises";
 import { execSync } from "child_process";
 
 // server deps to bundle to reduce openat(2) syscalls
@@ -145,6 +145,29 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  const runtimeEnvKeys = [
+    "ALTEGIO_PARTNER_TOKEN",
+    "ALTEGIO_USER_TOKEN",
+    "ALTEGIO_COMPANY_ID",
+    "ALTEGIO_WEBHOOK_SECRET",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SESSION_SECRET",
+  ];
+  const envLines: string[] = [];
+  for (const key of runtimeEnvKeys) {
+    const val = process.env[key];
+    if (val) {
+      envLines.push(`${key}=${val}`);
+      console.log(`[BUILD] Captured ${key} (${val.length} chars)`);
+    }
+  }
+  if (envLines.length > 0) {
+    await writeFile("dist/.env.runtime", envLines.join("\n"), "utf-8");
+    console.log(`[BUILD] Wrote dist/.env.runtime with ${envLines.length} vars`);
+  } else {
+    console.log("[BUILD] No runtime env vars to capture (dev build or vars not set)");
+  }
 }
 
 buildAll().catch((err) => {

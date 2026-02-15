@@ -4,12 +4,36 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
+
+// Load runtime env vars baked during build (Railway workaround)
+try {
+  const envPath = join(process.cwd(), "dist", ".env.runtime");
+  if (existsSync(envPath)) {
+    const content = readFileSync(envPath, "utf-8");
+    let loaded = 0;
+    for (const line of content.split("\n")) {
+      const eqIdx = line.indexOf("=");
+      if (eqIdx === -1) continue;
+      const key = line.slice(0, eqIdx).trim();
+      const value = line.slice(eqIdx + 1).trim();
+      if (key && value && !process.env[key]) {
+        process.env[key] = value;
+        loaded++;
+      }
+    }
+    console.log(`[STARTUP] Loaded ${loaded} env vars from .env.runtime`);
+  }
+} catch (e) {
+  // ignore - file may not exist in dev
+}
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-16-v72-altegio-env-debug";
+const BUILD_VERSION = "2026-02-16-v73-env-bake";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 const envKeys = Object.keys(process.env).sort();
-console.log(`[STARTUP] Total env vars: ${envKeys.length}, keys: ${envKeys.join(", ")}`);
+console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);
 
 const app = express();
 const httpServer = createServer(app);
