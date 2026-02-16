@@ -1392,12 +1392,7 @@ export default function SpecialistDashboard() {
                       )}
                     </div>
                   </div>
-                  {(booking as any).paymentStatus !== 'paid' && (
-                    <Badge variant="outline" className="text-amber-600 dark:text-amber-400" data-testid={`badge-awaiting-payment-completed-${booking.id}`}>
-                      <Clock className="w-3 h-3 mr-1" />
-                      Ожидается оплата
-                    </Badge>
-                  )}
+                  
                   {!suppressIndividualBanners && (
                     <AltegioSyncBanner
                       config={getBookingSyncBannerConfig(

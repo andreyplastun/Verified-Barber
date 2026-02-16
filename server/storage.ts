@@ -364,31 +364,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSpecialistRating(id: number): Promise<void> {
-    const reviewsList = await db.select()
+    const reviewsWithBookings = await db.select({
+      reviewId: reviews.id,
+      rating: reviews.rating,
+      isRatingLimited: reviews.isRatingLimited,
+      bookingId: reviews.bookingId,
+      visitTrustWeight: bookings.visitTrustWeight,
+      paymentStatus: bookings.paymentStatus,
+      notCompletedAt: bookings.notCompletedAt,
+      createdAt: reviews.createdAt,
+    })
       .from(reviews)
+      .leftJoin(bookings, eq(reviews.bookingId, bookings.id))
       .where(and(
         eq(reviews.specialistId, id),
         eq(reviews.isFinalized, true),
         eq(reviews.publishReview, true)
       ));
     
-    const totalCount = reviewsList.length;
+    const totalCount = reviewsWithBookings.length;
     
-    const validReviews = reviewsList.filter(r => !r.isRatingLimited);
+    const validReviews = reviewsWithBookings.filter(r => !r.isRatingLimited);
     const validCount = validReviews.length;
     
     const validTotal = validReviews.reduce((acc, r) => acc + r.rating, 0);
     const averageRating = validCount > 0 ? Math.round((validTotal / validCount) * 10) : 0;
-
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const refundedBookings = await db.select()
-      .from(bookings)
-      .where(and(
-        eq(bookings.specialistId, id),
-        eq(bookings.paymentStatus, 'refunded'),
-        sql`${bookings.refundDetectedAt} >= ${thirtyDaysAgo}`
-      ));
-    const refundCount30d = refundedBookings.length;
 
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const notCompletedBookings = await db.select()
@@ -400,27 +400,64 @@ export class DatabaseStorage implements IStorage {
       ));
     const notCompletedCount7d = notCompletedBookings.length;
 
-    let notCompletedMultiplier = 1.0;
+    let notCompletedPenalty = 1.0;
     if (notCompletedCount7d >= 5) {
-      notCompletedMultiplier = 0.6;
+      notCompletedPenalty = 0.6;
     } else if (notCompletedCount7d >= 3) {
-      notCompletedMultiplier = 0.8;
+      notCompletedPenalty = 0.8;
     }
 
-    let trustedRating = averageRating;
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const refundedBookings = await db.select()
+      .from(bookings)
+      .where(and(
+        eq(bookings.specialistId, id),
+        eq(bookings.paymentStatus, 'refunded'),
+        sql`${bookings.refundDetectedAt} >= ${thirtyDaysAgo}`
+      ));
+    const refundCount30d = refundedBookings.length;
+
+    let weightedSum = 0;
+    let totalWeight = 0;
+    const sortedReviews = [...validReviews].sort((a, b) => 
+      new Date(a.createdAt!).getTime() - new Date(b.createdAt!).getTime()
+    );
+    const lastReviewIdx = sortedReviews.length - 1;
+
+    for (let i = 0; i < sortedReviews.length; i++) {
+      const r = sortedReviews[i];
+      let visitWeight: number;
+      if (r.visitTrustWeight !== null && r.visitTrustWeight !== undefined) {
+        visitWeight = r.visitTrustWeight;
+      } else if (r.paymentStatus === 'refunded') {
+        visitWeight = 0;
+      } else if (r.notCompletedAt) {
+        visitWeight = 0;
+      } else if (r.paymentStatus === 'paid') {
+        visitWeight = 1.0;
+      } else {
+        visitWeight = 0.65;
+      }
+      let reviewWeight = 1.0 * visitWeight;
+
+      if (i === lastReviewIdx && notCompletedPenalty < 1.0) {
+        reviewWeight *= notCompletedPenalty;
+      }
+
+      weightedSum += r.rating * reviewWeight;
+      totalWeight += reviewWeight;
+    }
+
+    const trustedRatingRaw = totalWeight > 0 ? (weightedSum / totalWeight) : 0;
+    let trustedRating = Math.round(trustedRatingRaw * 10);
+
     if (refundCount30d >= 5) {
-      trustedRating = Math.round(averageRating * 0.75);
+      trustedRating = Math.round(trustedRating * 0.75 * 0.97);
     } else if (refundCount30d >= 3) {
-      trustedRating = Math.round(averageRating * 0.9);
+      trustedRating = Math.round(trustedRating * 0.9);
     }
 
-    if (refundCount30d >= 5) {
-      trustedRating = Math.round(trustedRating * 0.97);
-    }
-
-    trustedRating = Math.round(trustedRating * notCompletedMultiplier);
-
-    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, AvgRating: ${averageRating/10}, TrustedRating: ${trustedRating/10}, Refunds30d: ${refundCount30d}, NotCompleted7d: ${notCompletedCount7d}, NCMultiplier: ${notCompletedMultiplier}`);
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, AvgRating: ${averageRating/10}, TrustedRating: ${trustedRating/10}, Refunds30d: ${refundCount30d}, NotCompleted7d: ${notCompletedCount7d}, NCPenalty: ${notCompletedPenalty}`);
 
     await db.update(specialists)
       .set({ 

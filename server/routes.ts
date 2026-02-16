@@ -1340,6 +1340,7 @@ ${magicLink}`;
         status: "payment_pending",
         paymentRequestedAt: new Date(),
         completionType: "with_payment",
+        visitTrustWeight: 0.65,
       } as any);
 
       const specialist = await storage.getSpecialist(booking.specialistId);
@@ -1396,6 +1397,7 @@ ${magicLink}`;
       const updated = await storage.updateBooking(bookingId, {
         status: "completed",
         completionType: "with_review",
+        visitTrustWeight: 0.65,
       } as any);
 
       await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
@@ -1526,8 +1528,12 @@ ${magicLink}`;
     bookingId: number,
   ): Promise<{ eligible: boolean; reason: string }> {
     const booking = await storage.getBooking(bookingId);
-    if (!booking || (booking.status !== 'completed' && booking.status !== 'payment_pending')) {
+    if (!booking || booking.status !== 'completed') {
       return { eligible: false, reason: 'VISIT_NOT_COMPLETED' };
+    }
+
+    if ((booking as any).paymentStatus === 'refunded') {
+      return { eligible: false, reason: 'REFUNDED' };
     }
 
     const lastReview = await storage.getLastReviewByClientForSpecialist(clientId, specialistId);
@@ -1582,6 +1588,7 @@ ${magicLink}`;
     const updateData: any = {
       paymentStatus: 'paid',
       paymentReceivedAt: new Date(),
+      visitTrustWeight: 1.0,
     };
     if (opts?.externalPaymentId) updateData.externalPaymentId = opts.externalPaymentId;
     if (opts?.altegioOperationId) updateData.altegioOperationId = opts.altegioOperationId;
@@ -1663,6 +1670,7 @@ ${magicLink}`;
     await storage.updateBooking(bookingId, {
       paymentStatus: 'refunded',
       refundDetectedAt: new Date(),
+      visitTrustWeight: 0,
     } as any);
 
     const hasReview = booking.hasReview;

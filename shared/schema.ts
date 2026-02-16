@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, uuid, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, uuid, pgEnum, real } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -122,6 +122,7 @@ export const bookings = pgTable("bookings", {
   readyToCompleteAt: timestamp("ready_to_complete_at"),
   paymentRequestedAt: timestamp("payment_requested_at"),
   completionType: text("completion_type", { enum: ["with_payment", "with_review"] }),
+  visitTrustWeight: real("visit_trust_weight"),
   notCompletedAt: timestamp("not_completed_at"),
   externalPaymentId: text("external_payment_id"),
   altegioOperationId: text("altegio_operation_id"),

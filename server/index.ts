@@ -118,10 +118,18 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ready_to_complete_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_requested_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS completion_type text;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_trust_weight real;
     `);
 
     await pool.query(`
       UPDATE bookings SET status = 'scheduled' WHERE status IN ('pending', 'confirmed');
+    `);
+
+    await pool.query(`
+      UPDATE bookings SET visit_trust_weight = 1.0 WHERE visit_trust_weight IS NULL AND payment_status = 'paid';
+      UPDATE bookings SET visit_trust_weight = 0 WHERE visit_trust_weight IS NULL AND payment_status = 'refunded';
+      UPDATE bookings SET visit_trust_weight = 0 WHERE visit_trust_weight IS NULL AND not_completed_at IS NOT NULL;
+      UPDATE bookings SET visit_trust_weight = 0.65 WHERE visit_trust_weight IS NULL AND status = 'completed' AND payment_status = 'unpaid';
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
@@ -140,23 +148,23 @@ app.use((req, res, next) => {
   }
 
   const TRANSITION_INTERVAL_MS = 5 * 60 * 1000;
-  const GRACE_PERIOD_MINUTES = 20;
   const NOT_COMPLETED_HOURS = 24;
+  const PAYMENT_PENDING_TIMEOUT_HOURS = 24;
 
   async function transitionScheduledToReady() {
     try {
-      const cutoff = new Date(Date.now() - GRACE_PERIOD_MINUTES * 60 * 1000);
+      const now = new Date();
       const result = await pool.query(
         `UPDATE bookings
          SET status = 'ready_to_complete', ready_to_complete_at = NOW()
          WHERE status = 'scheduled'
            AND appointment_time <= $1
          RETURNING id, appointment_time`,
-        [cutoff]
+        [now]
       );
       if (result.rows.length > 0) {
         for (const row of result.rows) {
-          console.log(`[VISIT_STATUS_AUTO] booking=${row.id} status=ready_to_complete reason=grace_period_passed appointmentTime=${row.appointment_time}`);
+          console.log(`[VISIT_STATUS_AUTO] booking=${row.id} status=ready_to_complete reason=visit_time_passed appointmentTime=${row.appointment_time}`);
         }
         console.log(`[VISIT_STATUS_AUTO] transitioned ${result.rows.length} bookings to ready_to_complete`);
       }
@@ -170,7 +178,7 @@ app.use((req, res, next) => {
       const cutoff = new Date(Date.now() - NOT_COMPLETED_HOURS * 60 * 60 * 1000);
       const result = await pool.query(
         `UPDATE bookings
-         SET not_completed_at = NOW()
+         SET not_completed_at = NOW(), visit_trust_weight = 0
          WHERE status = 'ready_to_complete'
            AND not_completed_at IS NULL
            AND appointment_time <= $1
@@ -179,7 +187,7 @@ app.use((req, res, next) => {
       );
       if (result.rows.length > 0) {
         for (const row of result.rows) {
-          console.log(`[NOT_COMPLETED_FLAGGED] booking=${row.id} appointmentTime=${row.appointment_time}`);
+          console.log(`[NOT_COMPLETED_FLAGGED] booking=${row.id} appointmentTime=${row.appointment_time} trustWeight=0`);
         }
         console.log(`[VISIT_STATUS_AUTO] flagged ${result.rows.length} bookings as not_completed`);
       }
@@ -188,13 +196,38 @@ app.use((req, res, next) => {
     }
   }
 
+  async function transitionPaymentPendingToCompleted() {
+    try {
+      const cutoff = new Date(Date.now() - PAYMENT_PENDING_TIMEOUT_HOURS * 60 * 60 * 1000);
+      const result = await pool.query(
+        `UPDATE bookings
+         SET status = 'completed', visit_trust_weight = COALESCE(visit_trust_weight, 0.65)
+         WHERE status = 'payment_pending'
+           AND payment_requested_at IS NOT NULL
+           AND payment_requested_at <= $1
+         RETURNING id, payment_requested_at, payment_status`,
+        [cutoff]
+      );
+      if (result.rows.length > 0) {
+        for (const row of result.rows) {
+          console.log(`[VISIT_STATUS_AUTO] booking=${row.id} status=completed reason=payment_pending_timeout paymentStatus=${row.payment_status} paymentRequestedAt=${row.payment_requested_at}`);
+        }
+        console.log(`[VISIT_STATUS_AUTO] transitioned ${result.rows.length} payment_pending bookings to completed (24h timeout)`);
+      }
+    } catch (err) {
+      console.error("[VISIT_STATUS_AUTO] transitionPaymentPendingToCompleted error:", err);
+    }
+  }
+
   await transitionScheduledToReady();
   await flagNotCompletedBookings();
+  await transitionPaymentPendingToCompleted();
   setInterval(async () => {
     await transitionScheduledToReady();
     await flagNotCompletedBookings();
+    await transitionPaymentPendingToCompleted();
   }, TRANSITION_INTERVAL_MS);
-  console.log(`[STARTUP] Background jobs started (every ${TRANSITION_INTERVAL_MS / 60000} min, grace=${GRACE_PERIOD_MINUTES}min, not_completed=${NOT_COMPLETED_HOURS}h)`);
+  console.log(`[STARTUP] Background jobs started (every ${TRANSITION_INTERVAL_MS / 60000} min, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
