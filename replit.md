@@ -93,9 +93,18 @@ Language: Russian (Русский) - all UI text is in Russian.
   - Checks review eligibility (first review OK, <60 days block, ignored ≥2 block, visit must be completed)
   - If eligible: generates magic link automatically
   - If not eligible: payment still recorded, score added, no magic link
-- **Logging**: `[REVIEW_ELIGIBILITY]` with visit/client/specialist/eligible/reason, `[MAGIC_LINK_CREATED]` with visit/client/link
+- **Logging**: Structured Railway-friendly prefixes:
+  - `[VISIT_STATUS_AUTO]` — status transitions (completed/cancelled/not_completed flagging)
+  - `[NOT_COMPLETED_FLAGGED]` — individual booking flagged by background job
+  - `[NOT_COMPLETED_RESTORED]` — not_completed reversed by Altegio attendance=1
+  - `[PAYMENT_DETECTED]` — any payment event (webhook, callback, paid flag)
+  - `[DUPLICATE_PAYMENT_IGNORED]` — dedup hit (ALREADY_PAID, DUPLICATE_EXTERNAL_ID, DUPLICATE_ALTEGIO_OP)
+  - `[REFUND_DETECTED]` — refund detected in financial_operation (log only, no UI downgrade)
+  - `[REVIEW_ELIGIBILITY]` — visit/client/specialist/eligible/reason
+  - `[MAGIC_LINK_CREATED]` — visit/client/link
 - **Idempotency**: Duplicate payment events safely ignored via: paymentStatus check (ALREADY_PAID), `externalPaymentId` dedup (DUPLICATE_EXTERNAL_ID), `altegioOperationId` dedup (DUPLICATE_ALTEGIO_OP)
-- **Paid After Cancelled**: Logs `[PAID_AFTER_CANCELLED]`, records payment, adds score, no magic link
+- **Paid After Cancelled**: Logged via `[PAYMENT_DETECTED]` with result=PAID_AFTER_CANCELLED, records payment, adds score, no magic link
+- **Refund**: Detected in `financial_operation` webhook (negative amount, type=refund/return, title contains возврат/refund). Log only via `[REFUND_DETECTED]`, no UI/status downgrade.
 - **Guards**: Backend rejects reviews if booking status != "completed". Payment requires completed status for magic link. `notCompleted` flag blocks review/tip.
 - **UI Status Matrix**: Scheduled (future) → "Запланирован" badge; ReadyToComplete (past, not completed/cancelled/flagged) → amber bg + "Отметить как состоявшийся" + cancel buttons; NotCompleted (flagged after 24h) → dimmed + "Не состоялся" badge; Completed+Unpaid → "Ожидается оплата"; Completed+Paid → "Оплачено". No manual payment buttons.
 - **NOT_COMPLETED Auto-Flag**: `flagNotCompletedBookings()` background job runs every 10 minutes via `setInterval` in `server/index.ts`. Sets `not_completed_at` timestamp on bookings 24h+ past appointment with no completion. Reversible on Altegio `attendance=1` webhook (sets `notCompletedAt = null`). Blocks review/tip creation.

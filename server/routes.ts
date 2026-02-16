@@ -1352,7 +1352,7 @@ ${magicLink}`;
         );
       }
 
-      console.log(`[SPECIALIST] Visit ${bookingId} completed by user ${userId} (status-only, no magic link)`);
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=completed source=specialist_manual userId=${userId}`);
 
       res.json({
         booking: updated,
@@ -1409,7 +1409,7 @@ ${magicLink}`;
         );
       }
 
-      console.log(`[SPECIALIST] Booking ${bookingId} cancelled by user ${userId}`);
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=cancelled source=specialist_manual userId=${userId}`);
 
       res.json({ booking: updated });
     } catch (err: any) {
@@ -1465,21 +1465,21 @@ ${magicLink}`;
   ): Promise<{ success: boolean; magicLinkCreated: boolean; reason?: string }> {
     const booking = await storage.getBooking(bookingId);
     if (!booking) {
-      console.warn(`[PAYMENT] Booking ${bookingId} not found (source: ${source})`);
+      console.warn(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=NOT_FOUND`);
       return { success: false, magicLinkCreated: false, reason: 'BOOKING_NOT_FOUND' };
     }
 
     if ((booking as any).paymentStatus === 'paid') {
-      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} source=${source}`);
+      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} source=${source} reason=ALREADY_PAID`);
       return { success: true, magicLinkCreated: false, reason: 'ALREADY_PAID' };
     }
 
     if (opts?.externalPaymentId && (booking as any).externalPaymentId === opts.externalPaymentId) {
-      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} externalPaymentId=${opts.externalPaymentId} already processed`);
+      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} source=${source} externalPaymentId=${opts.externalPaymentId} reason=DUPLICATE_EXTERNAL_ID`);
       return { success: true, magicLinkCreated: false, reason: 'DUPLICATE_EXTERNAL_ID' };
     }
     if (opts?.altegioOperationId && (booking as any).altegioOperationId === opts.altegioOperationId) {
-      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} altegioOperationId=${opts.altegioOperationId} already processed`);
+      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} source=${source} altegioOperationId=${opts.altegioOperationId} reason=DUPLICATE_ALTEGIO_OP`);
       return { success: true, magicLinkCreated: false, reason: 'DUPLICATE_ALTEGIO_OP' };
     }
 
@@ -1491,26 +1491,27 @@ ${magicLink}`;
     if (opts?.altegioOperationId) updateData.altegioOperationId = opts.altegioOperationId;
 
     await storage.updateBooking(bookingId, updateData);
+    console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} specialist=${booking.specialistId} status=${booking.status}`);
 
     if (booking.status === 'cancelled') {
-      console.log(`[PAID_AFTER_CANCELLED] booking=${bookingId} source=${source} — payment recorded, score added, no magic link`);
+      console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=PAID_AFTER_CANCELLED — payment recorded, score added, no magic link`);
       await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
       return { success: true, magicLinkCreated: false, reason: 'PAID_AFTER_CANCELLED' };
     }
 
     if (booking.status !== 'completed') {
-      console.warn(`[PAYMENT] Booking ${bookingId} paid but status=${booking.status}, payment recorded, no magic link (source: ${source})`);
+      console.warn(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=NOT_COMPLETED — status=${booking.status}, payment recorded, no magic link`);
       return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED' };
     }
 
     if ((booking as any).notCompletedAt) {
-      console.log(`[PAYMENT] Booking ${bookingId} paid but flagged not_completed, payment recorded, no magic link (source: ${source})`);
+      console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=NOT_COMPLETED_FLAG — payment recorded, score added, no magic link`);
       await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
       return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED_FLAG' };
     }
 
     await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
-    console.log(`[PAYMENT] Payment.success booking=${bookingId} specialist=${booking.specialistId} score+2 (source: ${source})`);
+    console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=SUCCESS specialist=${booking.specialistId} score+2`);
 
     if (!booking.clientId) {
       console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=null specialist_id=${booking.specialistId} eligible=false reason=NO_CLIENT`);
@@ -1560,11 +1561,11 @@ ${magicLink}`;
         source || 'payment_callback',
         { externalPaymentId: externalPaymentId || undefined }
       );
-      console.log(`[PAYMENT] Payment callback processed: booking=${bookingId}, result=${JSON.stringify(result)}`);
+      console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source || 'payment_callback'} result=${JSON.stringify(result)}`);
 
       return res.json({ status: "ok", ...result });
     } catch (err: any) {
-      console.error("[PAYMENT] Payment callback error:", err);
+      console.error("[PAYMENT_DETECTED] callback_error:", err);
       return res.status(500).json({ message: err.message });
     }
   });
@@ -2477,7 +2478,8 @@ ${magicLink}`;
             break;
           }
 
-          const isVisitCompleted = (attendance === 1 || attendance === "1") && existing.status !== "completed";
+          const attendanceConfirmed = attendance === 1 || attendance === "1";
+          const isVisitCompleted = attendanceConfirmed && existing.status !== "completed";
 
           const updateData: any = {};
           if (datetime) updateData.appointmentTime = new Date(datetime);
@@ -2490,9 +2492,9 @@ ${magicLink}`;
             updateData.status = "completed";
             if ((existing as any).notCompletedAt) {
               updateData.notCompletedAt = null;
-              console.log(`[ALTEGIO] Reversing not_completed flag for booking ${existing.id} (attendance=1 received)`);
+              console.log(`[NOT_COMPLETED_RESTORED] booking=${existing.id} reason=attendance_1 appointmentId=${altegioId}`);
             }
-            console.log(`[ALTEGIO] Visit completed via attendance=1 for booking ${existing.id}, appointment ${altegioId}`);
+            console.log(`[VISIT_STATUS_AUTO] booking=${existing.id} status=completed source=altegio_attendance_1 appointmentId=${altegioId}`);
           }
 
           if (Object.keys(updateData).length > 0) {
@@ -2507,9 +2509,9 @@ ${magicLink}`;
           const isPaid = data?.paid === true || data?.paid === 1 || data?.paid === "1" ||
             data?.payment_status === "paid" || data?.finance_status === "paid";
           if (isPaid && (existing as any).paymentStatus !== 'paid') {
-            console.log(`[ALTEGIO] Payment detected in update event for booking ${existing.id}`);
+            console.log(`[PAYMENT_DETECTED] booking=${existing.id} source=altegio_update_paid_flag appointmentId=${altegioId}`);
             const payResult = await processPaymentSuccess(existing.id, 'altegio_update_paid_flag');
-            console.log(`[ALTEGIO] Payment.success result for booking ${existing.id}: ${JSON.stringify(payResult)}`);
+            console.log(`[PAYMENT_DETECTED] booking=${existing.id} result=${JSON.stringify(payResult)}`);
           }
           break;
         }
@@ -2544,32 +2546,46 @@ ${magicLink}`;
         case "record.paid":
         case "appointment.paid": {
           if (!existing) {
-            console.warn(`[ALTEGIO] Appointment ${altegioId} not found for payment`);
+            console.warn(`[PAYMENT_DETECTED] appointmentId=${altegioId} source=altegio_webhook_paid result=APPOINTMENT_NOT_FOUND`);
             break;
           }
-          console.log(`[ALTEGIO] Payment event for booking ${existing.id}, appointment ${altegioId}`);
+          console.log(`[PAYMENT_DETECTED] booking=${existing.id} source=altegio_webhook_paid appointmentId=${altegioId}`);
           const paidResult = await processPaymentSuccess(existing.id, 'altegio_webhook_paid');
-          console.log(`[ALTEGIO] Payment.success result for booking ${existing.id}: ${JSON.stringify(paidResult)}`);
+          console.log(`[PAYMENT_DETECTED] booking=${existing.id} result=${JSON.stringify(paidResult)}`);
           break;
         }
 
         case "financial_operation": {
           const recordId = data?.record_id || data?.appointment_id || data?.object_id;
           const operationId = data?.id || data?.operation_id;
-          console.log(`[ALTEGIO] Financial operation: record_id=${recordId}, operation_id=${operationId}, data_keys=${Object.keys(data || {}).join(',')}`);
+          const amount = data?.amount || data?.value || data?.sum;
+          const operationType = data?.type || data?.operation_type || data?.expense_type;
+
+          const isRefund = amount < 0 ||
+            operationType === 'refund' ||
+            operationType === 'return' ||
+            (data?.title || '').toLowerCase().includes('возврат') ||
+            (data?.title || '').toLowerCase().includes('refund');
+
+          if (isRefund) {
+            console.log(`[REFUND_DETECTED] record_id=${recordId} operation_id=${operationId} amount=${amount} type=${operationType} — log only, no UI downgrade`);
+            break;
+          }
+
+          console.log(`[PAYMENT_DETECTED] source=altegio_financial_operation record_id=${recordId} operation_id=${operationId} amount=${amount}`);
           if (recordId) {
             const linkedBooking = await storage.getBookingByAltegioId(recordId);
             if (linkedBooking) {
-              console.log(`[ALTEGIO] Financial operation linked to booking ${linkedBooking.id}`);
+              console.log(`[PAYMENT_DETECTED] booking=${linkedBooking.id} source=altegio_financial_operation operation_id=${operationId}`);
               const finResult = await processPaymentSuccess(linkedBooking.id, 'altegio_financial_operation', {
                 altegioOperationId: operationId ? String(operationId) : undefined,
               });
-              console.log(`[ALTEGIO] Payment.success result for booking ${linkedBooking.id}: ${JSON.stringify(finResult)}`);
+              console.log(`[PAYMENT_DETECTED] booking=${linkedBooking.id} result=${JSON.stringify(finResult)}`);
             } else {
-              console.log(`[ALTEGIO] Financial operation: no booking found for record_id=${recordId}`);
+              console.log(`[PAYMENT_DETECTED] source=altegio_financial_operation record_id=${recordId} result=BOOKING_NOT_FOUND`);
             }
           } else {
-            console.log(`[ALTEGIO] Financial operation: no record_id in payload, skipping`);
+            console.log(`[PAYMENT_DETECTED] source=altegio_financial_operation result=NO_RECORD_ID`);
           }
           break;
         }

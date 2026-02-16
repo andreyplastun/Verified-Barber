@@ -145,10 +145,13 @@ app.use((req, res, next) => {
         [cutoff]
       );
       if (result.rows.length > 0) {
-        console.log(`[NOT_COMPLETED_JOB] Flagged ${result.rows.length} bookings: ${result.rows.map((r: any) => r.id).join(', ')}`);
+        for (const row of result.rows) {
+          console.log(`[NOT_COMPLETED_FLAGGED] booking=${row.id} appointmentTime=${row.appointment_time}`);
+        }
+        console.log(`[VISIT_STATUS_AUTO] flagged ${result.rows.length} bookings as not_completed`);
       }
     } catch (err) {
-      console.error("[NOT_COMPLETED_JOB] Error:", err);
+      console.error("[VISIT_STATUS_AUTO] flagNotCompletedBookings error:", err);
     }
   }
 
