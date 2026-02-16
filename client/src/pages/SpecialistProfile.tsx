@@ -63,12 +63,21 @@ export default function SpecialistProfile() {
     (r: any) => reviewedBooking && r.bookingId === reviewedBooking.id && !r.isFinalized && new Date() < new Date(r.editableUntil)
   );
 
-  const rating = specialist.averageRating / 10;
+  const trustedRating = (specialist as any).trustedRating || 0;
+  const trustedReviewsCount = (specialist as any).trustedReviewsCount || 0;
   const reviewCount = specialist.reviewCount;
   const validReviewCount = (specialist as any).validReviewCount || 0;
 
-  const getRatingStatus = (count: number) => {
-    if (count >= 10) return { 
+  const isNewProfile = trustedReviewsCount < 3;
+  const hasNoData = trustedRating === 0;
+  const displayRating = trustedRating > 0 ? trustedRating.toFixed(1) : '0.0';
+
+  const getRatingStatus = () => {
+    if (isNewProfile) return {
+      label: "Новый профиль",
+      tooltip: "Рейтинг появится после 3 подтверждённых визитов"
+    };
+    if (validReviewCount >= 10) return { 
       label: "Сформированный рейтинг", 
       tooltip: "Рейтинг основан на достаточном количестве подтверждённых визитов"
     };
@@ -78,7 +87,7 @@ export default function SpecialistProfile() {
     };
   };
 
-  const ratingStatus = getRatingStatus(validReviewCount);
+  const ratingStatus = getRatingStatus();
 
   return (
     <div className="min-h-screen bg-background pb-32">
@@ -133,22 +142,30 @@ export default function SpecialistProfile() {
 
             {/* Right block - Trust (pinned to top) */}
             <div className="flex-shrink-0 flex flex-col items-end text-right">
-              <div className="flex items-center gap-1">
-                <AnimatedStar ratingValue={specialist.averageRating}>
-                  <Star size={16} className="text-yellow-400 fill-yellow-400" />
-                </AnimatedStar>
-                <AnimatedRating value={rating.toFixed(1)} className="text-lg font-semibold text-foreground" />
-              </div>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {reviewCount} {(() => {
-                  const n = reviewCount % 100;
-                  if (n >= 11 && n <= 19) return 'отзывов';
-                  const last = n % 10;
-                  if (last === 1) return 'отзыв';
-                  if (last >= 2 && last <= 4) return 'отзыва';
-                  return 'отзывов';
-                })()}
-              </p>
+              {isNewProfile ? (
+                <span className="text-sm text-muted-foreground" data-testid="text-new-profile">Новый профиль</span>
+              ) : hasNoData ? (
+                <span className="text-sm text-muted-foreground" data-testid="text-no-data">Недостаточно данных</span>
+              ) : (
+                <>
+                  <div className="flex items-center gap-1">
+                    <AnimatedStar ratingValue={trustedRating}>
+                      <Star size={16} className="text-yellow-400 fill-yellow-400" />
+                    </AnimatedStar>
+                    <AnimatedRating value={displayRating} className="text-lg font-semibold text-foreground" />
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {reviewCount} {(() => {
+                      const n = reviewCount % 100;
+                      if (n >= 11 && n <= 19) return 'отзывов';
+                      const last = n % 10;
+                      if (last === 1) return 'отзыв';
+                      if (last >= 2 && last <= 4) return 'отзыва';
+                      return 'отзывов';
+                    })()}
+                  </p>
+                </>
+              )}
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

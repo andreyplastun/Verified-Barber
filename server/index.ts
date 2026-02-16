@@ -119,6 +119,13 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_requested_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS completion_type text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_trust_weight real;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS trusted_reviews_count integer DEFAULT 0;
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='specialists' AND column_name='average_rating' AND data_type='integer') THEN
+          ALTER TABLE specialists ALTER COLUMN average_rating TYPE real USING (average_rating::real / 10.0);
+          ALTER TABLE specialists ALTER COLUMN trusted_rating TYPE real USING (trusted_rating::real / 10.0);
+        END IF;
+      END $$;
     `);
 
     await pool.query(`

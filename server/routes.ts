@@ -1598,6 +1598,7 @@ ${magicLink}`;
     }
 
     await storage.updateBooking(bookingId, updateData);
+    await storage.updateSpecialistRating(booking.specialistId);
     console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} specialist=${booking.specialistId} status=${booking.status}`);
 
     if (booking.status === 'cancelled') {
@@ -2814,8 +2815,14 @@ ${magicLink}`;
       autoMapAltegioStaff().then(() => {
         console.log("[STARTUP] Running upcoming appointments sync...");
         return syncUpcomingAppointments();
-      }).then(result => {
+      }).then(async result => {
         console.log(`[STARTUP] Appointments sync: ${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped`);
+        console.log("[STARTUP] Recalculating all specialist ratings...");
+        const allSpecialists = await storage.getSpecialists();
+        for (const specialist of allSpecialists) {
+          await storage.updateSpecialistRating(specialist.id);
+        }
+        console.log(`[STARTUP] Recalculated ratings for ${allSpecialists.length} specialists`);
       }).catch(err => {
         console.error("[STARTUP] Failed to auto-map/sync:", err);
       });

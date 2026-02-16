@@ -312,44 +312,56 @@ export default function SpecialistList() {
 
                   {/* Trust Block (right) */}
                   <div className="flex-shrink-0 flex flex-col items-end gap-1">
-                    {/* Rating */}
-                    <div className="flex items-center gap-1">
-                      <AnimatedStar ratingValue={specialist.averageRating}>
-                        <Star size={14} className="text-amber-400 fill-amber-400" />
-                      </AnimatedStar>
-                      <AnimatedRating value={(specialist.averageRating / 10).toFixed(1)} className="text-base font-semibold text-foreground" />
-                    </div>
-                    
-                    {/* Review count */}
-                    <span className="text-sm text-muted-foreground">
-                      {specialist.reviewCount} {(() => {
-                        const n = specialist.reviewCount % 100;
-                        if (n >= 11 && n <= 19) return 'отзывов';
-                        const last = n % 10;
-                        if (last === 1) return 'отзыв';
-                        if (last >= 2 && last <= 4) return 'отзыва';
-                        return 'отзывов';
-                      })()}
-                    </span>
-                    
-                    {/* Rating status badge */}
-                    {((specialist as any).validReviewCount || 0) >= 10 ? (
-                      <span className="text-xs text-emerald-600" data-testid="badge-rating-formed">Сформированный</span>
-                    ) : (
-                      <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground/60 cursor-pointer" data-testid="badge-rating-forming">
-                              Формируется
-                              <Info size={10} className="opacity-60" />
-                            </span>
-                          </PopoverTrigger>
-                          <PopoverContent side="bottom" className="max-w-[200px] text-sm p-3 text-center">
-                            <p className="text-xs">С увеличением количества отзывов рейтинг станет точнее</p>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                    )}
+                    {(() => {
+                      const trc = (specialist as any).trustedReviewsCount || 0;
+                      const tr = (specialist as any).trustedRating || 0;
+                      const isNew = trc < 3;
+                      const noData = tr === 0;
+                      
+                      if (isNew) {
+                        return <span className="text-sm text-muted-foreground" data-testid="text-new-profile">Новый профиль</span>;
+                      }
+                      if (noData) {
+                        return <span className="text-sm text-muted-foreground" data-testid="text-no-data">Недостаточно данных</span>;
+                      }
+                      return (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <AnimatedStar ratingValue={tr}>
+                              <Star size={14} className="text-amber-400 fill-amber-400" />
+                            </AnimatedStar>
+                            <AnimatedRating value={tr.toFixed(1)} className="text-base font-semibold text-foreground" />
+                          </div>
+                          <span className="text-sm text-muted-foreground">
+                            {specialist.reviewCount} {(() => {
+                              const n = specialist.reviewCount % 100;
+                              if (n >= 11 && n <= 19) return 'отзывов';
+                              const last = n % 10;
+                              if (last === 1) return 'отзыв';
+                              if (last >= 2 && last <= 4) return 'отзыва';
+                              return 'отзывов';
+                            })()}
+                          </span>
+                          {((specialist as any).validReviewCount || 0) >= 10 ? (
+                            <span className="text-xs text-emerald-600" data-testid="badge-rating-formed">Сформированный</span>
+                          ) : (
+                            <div onClick={(e) => { e.preventDefault(); e.stopPropagation(); }} onPointerDown={(e) => e.stopPropagation()}>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <span className="inline-flex items-center gap-0.5 text-xs text-muted-foreground/60 cursor-pointer" data-testid="badge-rating-forming">
+                                    Формируется
+                                    <Info size={10} className="opacity-60" />
+                                  </span>
+                                </PopoverTrigger>
+                                <PopoverContent side="bottom" className="max-w-[200px] text-sm p-3 text-center">
+                                  <p className="text-xs">С увеличением количества отзывов рейтинг станет точнее</p>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
 
                   {/* Arrow */}

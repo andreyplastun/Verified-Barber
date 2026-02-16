@@ -55,11 +55,9 @@ export const specialists = pgTable("specialists", {
   imageUrl: text("image_url").notNull(),
   rating: text("rating").default("0").notNull(),
   reviewCount: integer("review_count").default(0).notNull(),
-  // baseRating = average of ALL reviews (never 0 if there are reviews)
-  averageRating: integer("average_rating").default(0).notNull(), // Stored as (rating * 10) e.g. 4.5 -> 45
-  // trustedRating = average of ONLY valid (non-limited) reviews
-  trustedRating: integer("trusted_rating").default(0).notNull(), // Stored as (rating * 10) e.g. 4.5 -> 45
-  // validReviewCount >= 10 → "Сформированный рейтинг"
+  averageRating: real("average_rating").default(0).notNull(),
+  trustedRating: real("trusted_rating").default(0).notNull(),
+  trustedReviewsCount: integer("trusted_reviews_count").default(0).notNull(),
   validReviewCount: integer("valid_review_count").default(0).notNull(),
   // If false, specialist is hidden from clients
   isActive: boolean("is_active").default(true).notNull(),
@@ -317,7 +315,8 @@ export const insertSpecialistSchema = createInsertSchema(specialists).omit({
   reviewCount: true, 
   averageRating: true,
   validReviewCount: true,
-  trustedRating: true
+  trustedRating: true,
+  trustedReviewsCount: true
 });
 
 export type CreateSpecialistRequest = z.infer<typeof insertSpecialistSchema>;

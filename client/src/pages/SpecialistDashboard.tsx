@@ -451,7 +451,9 @@ export default function SpecialistDashboard() {
     return hoursSince >= STALE_HOURS;
   });
 
-  const averageRating = specialist?.averageRating ? (specialist.averageRating / 10).toFixed(1) : '0.0';
+  const trustedRating = (specialist as any)?.trustedRating || 0;
+  const trustedReviewsCount = (specialist as any)?.trustedReviewsCount || 0;
+  const averageRating = trustedRating > 0 ? trustedRating.toFixed(1) : '0.0';
 
   const workPhotos = photos.filter(p => p.photoType === 'work');
   const canAddWorkPhoto = workPhotos.length < 5;
@@ -589,10 +591,16 @@ export default function SpecialistDashboard() {
               <CardTitle className="text-2xl" data-testid="text-specialist-name">{specialist.name}</CardTitle>
               <p className="text-muted-foreground" data-testid="text-specialty">{specialist.specialty}</p>
               <div className="flex items-center gap-4 mt-2">
-                <div className="flex items-center gap-1">
-                  <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                  <span data-testid="text-rating">{averageRating}</span>
-                </div>
+                {trustedReviewsCount < 3 ? (
+                  <span className="text-sm text-muted-foreground" data-testid="text-new-profile">Новый профиль</span>
+                ) : trustedRating === 0 ? (
+                  <span className="text-sm text-muted-foreground" data-testid="text-no-data">Недостаточно данных</span>
+                ) : (
+                  <div className="flex items-center gap-1">
+                    <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                    <span data-testid="text-rating">{averageRating}</span>
+                  </div>
+                )}
                 <Badge variant="secondary" data-testid="badge-review-count">
                   {specialist.reviewCount || 0} отзывов
                 </Badge>
