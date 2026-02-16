@@ -117,7 +117,7 @@ export const bookings = pgTable("bookings", {
   paymentReceivedAt: timestamp("payment_received_at"),
   reviewEligibility: boolean("review_eligibility"),
   reviewEligibilityReason: text("review_eligibility_reason"),
-  notCompleted: boolean("not_completed").default(false).notNull(),
+  notCompletedAt: timestamp("not_completed_at"),
   externalPaymentId: text("external_payment_id"),
   altegioOperationId: text("altegio_operation_id"),
   createdAt: timestamp("created_at").defaultNow(),

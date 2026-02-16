@@ -109,6 +109,9 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_connection_status text DEFAULT 'disconnected';
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_retry_count integer DEFAULT 0;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_last_retry_at timestamp;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS not_completed_at timestamp;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS external_payment_id text;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_operation_id text;
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
@@ -125,6 +128,33 @@ app.use((req, res, next) => {
   } catch (err) {
     console.error("[STARTUP] Error finalizing pending reviews:", err);
   }
+
+  const NOT_COMPLETED_INTERVAL_MS = 10 * 60 * 1000;
+  const NOT_COMPLETED_HOURS = 24;
+
+  async function flagNotCompletedBookings() {
+    try {
+      const cutoff = new Date(Date.now() - NOT_COMPLETED_HOURS * 60 * 60 * 1000);
+      const result = await pool.query(
+        `UPDATE bookings
+         SET not_completed_at = NOW()
+         WHERE status NOT IN ('completed', 'cancelled')
+           AND not_completed_at IS NULL
+           AND appointment_time <= $1
+         RETURNING id, appointment_time`,
+        [cutoff]
+      );
+      if (result.rows.length > 0) {
+        console.log(`[NOT_COMPLETED_JOB] Flagged ${result.rows.length} bookings: ${result.rows.map((r: any) => r.id).join(', ')}`);
+      }
+    } catch (err) {
+      console.error("[NOT_COMPLETED_JOB] Error:", err);
+    }
+  }
+
+  await flagNotCompletedBookings();
+  setInterval(flagNotCompletedBookings, NOT_COMPLETED_INTERVAL_MS);
+  console.log(`[STARTUP] NOT_COMPLETED background job started (every ${NOT_COMPLETED_INTERVAL_MS / 60000} min, threshold ${NOT_COMPLETED_HOURS}h)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

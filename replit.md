@@ -98,7 +98,7 @@ Language: Russian (Русский) - all UI text is in Russian.
 - **Paid After Cancelled**: Logs `[PAID_AFTER_CANCELLED]`, records payment, adds score, no magic link
 - **Guards**: Backend rejects reviews if booking status != "completed". Payment requires completed status for magic link. `notCompleted` flag blocks review/tip.
 - **UI Status Matrix**: Scheduled (future) → "Запланирован" badge; ReadyToComplete (past, not completed/cancelled/flagged) → amber bg + "Отметить как состоявшийся" + cancel buttons; NotCompleted (flagged after 24h) → dimmed + "Не состоялся" badge; Completed+Unpaid → "Ожидается оплата"; Completed+Paid → "Оплачено". No manual payment buttons.
-- **NOT_COMPLETED Auto-Flag**: `checkAndFlagNotCompleted()` runs on bookings fetch, flags bookings 24h+ past appointment with no completion. Reversible on Altegio `attendance=1` webhook. Blocks review/tip creation.
+- **NOT_COMPLETED Auto-Flag**: `flagNotCompletedBookings()` background job runs every 10 minutes via `setInterval` in `server/index.ts`. Sets `not_completed_at` timestamp on bookings 24h+ past appointment with no completion. Reversible on Altegio `attendance=1` webhook (sets `notCompletedAt = null`). Blocks review/tip creation.
 - **Cancel Booking**: `POST /api/specialist/bookings/:id/cancel` with Altegio sync. Available for overdue (ReadyToComplete) visits.
 - **Reminders**: Dashboard shows warning banner for uncompleted visits, stale hint after 6+ hours.
 

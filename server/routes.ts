@@ -548,17 +548,16 @@ export async function registerRoutes(
     }
     const bookingsList = await storage.getBookingsForSpecialist(id);
 
-    await checkAndFlagNotCompleted(bookingsList);
-
     const now = Date.now();
     const enriched = bookingsList.map(b => {
       const appointmentTime = new Date(b.appointmentTime).getTime();
       const isPast = appointmentTime <= now;
+      const isNotCompleted = !!(b as any).notCompletedAt;
       const isReadyToComplete = isPast &&
         b.status !== 'completed' &&
         b.status !== 'cancelled' &&
-        !(b as any).notCompleted;
-      return { ...b, readyToComplete: isReadyToComplete };
+        !isNotCompleted;
+      return { ...b, readyToComplete: isReadyToComplete, notCompleted: isNotCompleted };
     });
 
     res.json(enriched);
@@ -611,7 +610,7 @@ export async function registerRoutes(
       if (booking.status !== "completed") {
         return res.status(409).json({ message: "Visit not yet verified/completed" });
       }
-      if ((booking as any).notCompleted) {
+      if ((booking as any).notCompletedAt) {
         return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
       }
       if (booking.hasReview) {
@@ -1182,7 +1181,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Отзыв доступен после завершения визита" });
       }
 
-      if ((booking as any).notCompleted) {
+      if ((booking as any).notCompletedAt) {
         return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
       }
       
@@ -1420,28 +1419,10 @@ ${magicLink}`;
   });
 
   // =====================
-  // NOT_COMPLETED CHECK (called on bookings list fetch)
+  // NOT_COMPLETED BACKGROUND JOB
   // Flags bookings as not_completed after 24h past appointment with no completion
+  // Runs via setInterval in server/index.ts — NOT on fetch
   // =====================
-
-  async function checkAndFlagNotCompleted(bookingsForSpecialist: Booking[]): Promise<void> {
-    const NOT_COMPLETED_HOURS = 24;
-    const now = Date.now();
-
-    for (const booking of bookingsForSpecialist) {
-      if (booking.status === 'completed' || booking.status === 'cancelled') continue;
-      if ((booking as any).notCompleted) continue;
-
-      const appointmentTime = new Date(booking.appointmentTime).getTime();
-      const hoursSince = (now - appointmentTime) / (1000 * 60 * 60);
-
-      if (hoursSince >= NOT_COMPLETED_HOURS) {
-        await storage.updateBooking(booking.id, { notCompleted: true } as any);
-        (booking as any).notCompleted = true;
-        console.log(`[NOT_COMPLETED] Booking ${booking.id} flagged as not_completed (${Math.round(hoursSince)}h since appointment)`);
-      }
-    }
-  }
 
   // =====================
   // PAYMENT PROCESSING (triggered by Altegio webhook or payment provider callback ONLY)
@@ -1522,7 +1503,7 @@ ${magicLink}`;
       return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED' };
     }
 
-    if ((booking as any).notCompleted) {
+    if ((booking as any).notCompletedAt) {
       console.log(`[PAYMENT] Booking ${bookingId} paid but flagged not_completed, payment recorded, no magic link (source: ${source})`);
       await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
       return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED_FLAG' };
@@ -2507,8 +2488,8 @@ ${magicLink}`;
 
           if (isVisitCompleted) {
             updateData.status = "completed";
-            if ((existing as any).notCompleted) {
-              updateData.notCompleted = false;
+            if ((existing as any).notCompletedAt) {
+              updateData.notCompletedAt = null;
               console.log(`[ALTEGIO] Reversing not_completed flag for booking ${existing.id} (attendance=1 received)`);
             }
             console.log(`[ALTEGIO] Visit completed via attendance=1 for booking ${existing.id}, appointment ${altegioId}`);
