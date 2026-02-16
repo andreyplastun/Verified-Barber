@@ -613,6 +613,9 @@ export async function registerRoutes(
       if ((booking as any).notCompletedAt) {
         return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
       }
+      if ((booking as any).paymentStatus === 'refunded') {
+        return res.status(403).json({ message: "Оставление отзыва недоступно. Оплата по визиту была отменена или возвращена." });
+      }
       if (booking.hasReview) {
         return res.status(409).json({ message: "Review already submitted for this visit" });
       }
@@ -1089,7 +1092,10 @@ export async function registerRoutes(
         return res.status(404).json({ valid: false, reason: "data_not_found" });
       }
       
-      // Check if review already exists
+      if ((booking as any).paymentStatus === 'refunded') {
+        return res.status(403).json({ valid: false, reason: "refunded", message: "Оставление отзыва недоступно. Оплата по визиту была отменена или возвращена." });
+      }
+
       if (booking.hasReview) {
         await storage.markMagicLinkUsed(link.id);
         return res.status(410).json({ valid: false, reason: "review_exists" });
@@ -1183,6 +1189,10 @@ export async function registerRoutes(
 
       if ((booking as any).notCompletedAt) {
         return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
+      }
+
+      if ((booking as any).paymentStatus === 'refunded') {
+        return res.status(403).json({ message: "Оставление отзыва недоступно. Оплата по визиту была отменена или возвращена." });
       }
       
       if (booking.hasReview) {
@@ -1474,6 +1484,11 @@ ${magicLink}`;
       return { success: true, magicLinkCreated: false, reason: 'ALREADY_PAID' };
     }
 
+    if ((booking as any).paymentStatus === 'refunded') {
+      console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=PAYMENT_AFTER_REFUND — payment ignored, refund takes priority`);
+      return { success: true, magicLinkCreated: false, reason: 'PAYMENT_AFTER_REFUND' };
+    }
+
     if (opts?.externalPaymentId && (booking as any).externalPaymentId === opts.externalPaymentId) {
       console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} source=${source} externalPaymentId=${opts.externalPaymentId} reason=DUPLICATE_EXTERNAL_ID`);
       return { success: true, magicLinkCreated: false, reason: 'DUPLICATE_EXTERNAL_ID' };
@@ -1540,6 +1555,57 @@ ${magicLink}`;
     }
 
     return { success: true, magicLinkCreated: false, reason: eligibilityResult.reason };
+  }
+
+  async function processRefund(
+    bookingId: number,
+    source: string,
+    opts?: { operationId?: string; amount?: number; operationType?: string }
+  ): Promise<{ success: boolean; case: string }> {
+    const booking = await storage.getBooking(bookingId);
+    if (!booking) {
+      console.log(`[REFUND_DETECTED] booking=${bookingId} source=${source} result=BOOKING_NOT_FOUND`);
+      return { success: false, case: 'NOT_FOUND' };
+    }
+
+    const oldPaymentStatus = (booking as any).paymentStatus;
+
+    if (oldPaymentStatus === 'refunded') {
+      console.log(`[DUPLICATE_REFUND_IGNORED] booking=${bookingId} source=${source} reason=ALREADY_REFUNDED`);
+      return { success: true, case: 'DUPLICATE' };
+    }
+
+    await storage.updateBooking(bookingId, {
+      paymentStatus: 'refunded',
+      refundDetectedAt: new Date(),
+    } as any);
+
+    const hasReview = booking.hasReview;
+    const review = hasReview ? await storage.getReviewByBookingId(bookingId) : null;
+
+    const magicLink = await storage.getMagicLinkByBookingId(bookingId);
+    const magicLinkSentAt = magicLink?.createdAt || null;
+
+    console.log(`[REFUND_DETECTED] booking=${bookingId} source=${source} old_payment_status=${oldPaymentStatus} has_review=${hasReview} magic_link_sent_at=${magicLinkSentAt} amount=${opts?.amount} type=${opts?.operationType}`);
+
+    if (hasReview && review) {
+      await storage.updateReviewInternalState(review.id, "refunded_visit");
+      console.log(`[REFUND_AFTER_REVIEW] booking=${bookingId} review=${review.id} — review preserved, no rating rollback`);
+      return { success: true, case: 'C_REVIEW_EXISTS' };
+    }
+
+    await storage.updateBooking(bookingId, {
+      reviewEligibility: false,
+      reviewEligibilityReason: 'refunded',
+    } as any);
+
+    if (magicLink && !magicLink.usedAt) {
+      console.log(`[REFUND_DETECTED] booking=${bookingId} case=B magic_link=${magicLink.id} — link not revoked, review blocked on submit`);
+      return { success: true, case: 'B_MAGIC_LINK_SENT' };
+    }
+
+    console.log(`[REFUND_DETECTED] booking=${bookingId} case=A — no review, no magic link, eligibility blocked`);
+    return { success: true, case: 'A_NO_REVIEW' };
   }
 
   app.post("/api/payment/callback", async (req, res) => {
@@ -2568,16 +2634,19 @@ ${magicLink}`;
             (data?.title || '').toLowerCase().includes('refund');
 
           if (isRefund) {
-            console.log(`[REFUND_DETECTED] record_id=${recordId} operation_id=${operationId} amount=${amount} type=${operationType} — log only, no UI downgrade`);
             if (recordId) {
               const refundBooking = await storage.getBookingByAltegioId(recordId);
               if (refundBooking) {
-                const refundReview = await storage.getReviewByBookingId(refundBooking.id);
-                if (refundReview) {
-                  await storage.updateReviewInternalState(refundReview.id, "refunded_visit");
-                  console.log(`[REFUND_DETECTED] review=${refundReview.id} booking=${refundBooking.id} internal_state=refunded_visit`);
-                }
+                await processRefund(refundBooking.id, 'altegio_financial_operation', {
+                  operationId: operationId ? String(operationId) : undefined,
+                  amount,
+                  operationType,
+                });
+              } else {
+                console.log(`[REFUND_DETECTED] record_id=${recordId} operation_id=${operationId} amount=${amount} type=${operationType} result=BOOKING_NOT_FOUND`);
               }
+            } else {
+              console.log(`[REFUND_DETECTED] source=altegio_financial_operation operation_id=${operationId} amount=${amount} type=${operationType} result=NO_RECORD_ID`);
             }
             break;
           }
