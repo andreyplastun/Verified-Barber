@@ -91,6 +91,7 @@ export const specialists = pgTable("specialists", {
   // Profile ownership - links specialist to their user account
   ownerUserId: uuid("owner_user_id"), // References users.id - set when profile is claimed
   verifiedVisitScore: integer("verified_visit_score").default(0).notNull(),
+  refundRate: integer("refund_rate").default(0).notNull(),
   altegioStaffId: integer("altegio_staff_id"), // Altegio team member ID
   altegioCompanyId: integer("altegio_company_id"), // Altegio location/company ID
   altegioConnectionStatus: text("altegio_connection_status").default("disconnected"), // 'connected' | 'error' | 'disconnected'

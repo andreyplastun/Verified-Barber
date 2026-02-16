@@ -114,6 +114,7 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_operation_id text;
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS internal_state text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_detected_at timestamp;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS refund_rate integer DEFAULT 0;
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {

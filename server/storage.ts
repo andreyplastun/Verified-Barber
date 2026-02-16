@@ -364,7 +364,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSpecialistRating(id: number): Promise<void> {
-    // Get only FINALIZED + PUBLISHED reviews for this specialist
     const reviewsList = await db.select()
       .from(reviews)
       .where(and(
@@ -373,25 +372,44 @@ export class DatabaseStorage implements IStorage {
         eq(reviews.publishReview, true)
       ));
     
-    // Total review count (finalized + published reviews - INCLUDING limited for display)
     const totalCount = reviewsList.length;
     
-    // Valid reviews = only those where isRatingLimited is false
     const validReviews = reviewsList.filter(r => !r.isRatingLimited);
     const validCount = validReviews.length;
     
-    // averageRating = average of ONLY non-limited reviews (limited reviews don't affect rating!)
     const validTotal = validReviews.reduce((acc, r) => acc + r.rating, 0);
     const averageRating = validCount > 0 ? Math.round((validTotal / validCount) * 10) : 0;
 
-    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, AvgRating: ${averageRating/10}`);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const refundedBookings = await db.select()
+      .from(bookings)
+      .where(and(
+        eq(bookings.specialistId, id),
+        eq(bookings.paymentStatus, 'refunded'),
+        sql`${bookings.refundDetectedAt} >= ${thirtyDaysAgo}`
+      ));
+    const refundCount30d = refundedBookings.length;
+
+    let trustedRating = averageRating;
+    if (refundCount30d >= 5) {
+      trustedRating = Math.round(averageRating * 0.75);
+    } else if (refundCount30d >= 3) {
+      trustedRating = Math.round(averageRating * 0.9);
+    }
+
+    if (refundCount30d >= 5) {
+      trustedRating = Math.round(trustedRating * 0.97);
+    }
+
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, AvgRating: ${averageRating/10}, TrustedRating: ${trustedRating/10}, Refunds30d: ${refundCount30d}`);
 
     await db.update(specialists)
       .set({ 
-        reviewCount: totalCount,  // includes limited reviews for counter
-        averageRating: averageRating,  // only non-limited reviews affect rating
-        trustedRating: averageRating,  // same as averageRating now
-        validReviewCount: validCount 
+        reviewCount: totalCount,
+        averageRating: averageRating,
+        trustedRating: trustedRating,
+        validReviewCount: validCount,
+        refundRate: refundCount30d,
       })
       .where(eq(specialists.id, id));
   }

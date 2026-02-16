@@ -614,7 +614,8 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
       }
       if ((booking as any).paymentStatus === 'refunded') {
-        return res.status(403).json({ message: "Оставление отзыва недоступно. Оплата по визиту была отменена или возвращена." });
+        console.log(`[REFUND_BLOCKED_REVIEW] booking=${input.bookingId} source=direct_review — review submission blocked, payment refunded`);
+        return res.status(403).json({ message: "Оставление отзыва недоступно. Оплата по визиту была отменена." });
       }
       if (booking.hasReview) {
         return res.status(409).json({ message: "Review already submitted for this visit" });
@@ -1093,7 +1094,7 @@ export async function registerRoutes(
       }
       
       if ((booking as any).paymentStatus === 'refunded') {
-        return res.status(403).json({ valid: false, reason: "refunded", message: "Оставление отзыва недоступно. Оплата по визиту была отменена или возвращена." });
+        return res.status(403).json({ valid: false, reason: "refunded", message: "Оставление отзыва недоступно. Оплата по визиту была отменена." });
       }
 
       if (booking.hasReview) {
@@ -1192,7 +1193,8 @@ export async function registerRoutes(
       }
 
       if ((booking as any).paymentStatus === 'refunded') {
-        return res.status(403).json({ message: "Оставление отзыва недоступно. Оплата по визиту была отменена или возвращена." });
+        console.log(`[REFUND_BLOCKED_REVIEW] booking=${link.bookingId} source=magic_link token=${req.params.token} — review submission blocked, payment refunded`);
+        return res.status(403).json({ message: "Оставление отзыва недоступно. Оплата по визиту была отменена." });
       }
       
       if (booking.hasReview) {
@@ -1588,6 +1590,8 @@ ${magicLink}`;
 
     console.log(`[REFUND_DETECTED] booking=${bookingId} source=${source} old_payment_status=${oldPaymentStatus} has_review=${hasReview} magic_link_sent_at=${magicLinkSentAt} amount=${opts?.amount} type=${opts?.operationType}`);
 
+    await storage.updateSpecialistRating(booking.specialistId);
+
     if (hasReview && review) {
       await storage.updateReviewInternalState(review.id, "refunded_visit");
       console.log(`[REFUND_AFTER_REVIEW] booking=${bookingId} review=${review.id} — review preserved, no rating rollback`);
@@ -1610,7 +1614,7 @@ ${magicLink}`;
 
   app.post("/api/payment/callback", async (req, res) => {
     try {
-      const { bookingId, source, secret, externalPaymentId } = req.body;
+      const { bookingId, source, secret, externalPaymentId, status } = req.body;
 
       const expectedSecret = process.env.PAYMENT_CALLBACK_SECRET;
       if (expectedSecret && secret !== expectedSecret) {
@@ -1620,6 +1624,12 @@ ${magicLink}`;
 
       if (!bookingId) {
         return res.status(400).json({ message: "bookingId is required" });
+      }
+
+      if (status === 'refunded') {
+        const refundResult = await processRefund(Number(bookingId), source || 'payment_callback');
+        console.log(`[REFUND_DETECTED] booking=${bookingId} source=${source || 'payment_callback'} result=${JSON.stringify(refundResult)}`);
+        return res.json({ status: "ok", ...refundResult });
       }
 
       const result = await processPaymentSuccess(
