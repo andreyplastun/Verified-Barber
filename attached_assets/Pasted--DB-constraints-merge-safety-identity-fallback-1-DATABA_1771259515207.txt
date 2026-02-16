@@ -1,0 +1,121 @@
+ТЗ: DB constraints / merge safety / identity fallback
+	1.	DATABASE CONSTRAINTS
+
+Add / verify:
+	•	altegio_client_id
+• nullable
+• indexed
+• unique when NOT NULL
+	•	normalized_phone
+• nullable
+• indexed
+• NOT unique globally (phones may repeat edge-case)
+
+SQL logic:
+	•	UNIQUE(altegio_client_id) WHERE altegio_client_id IS NOT NULL
+	•	INDEX(normalized_phone)
+
+Purpose:
+✔ prevent duplicate Altegio clients
+✔ allow guest clients without phone
+
+⸻
+
+	2.	NORMALIZE PHONE GUARD
+
+In normalizePhone():
+
+if (!phone) return null;
+
+Rules:
+✔ NULL stays NULL
+✔ never convert NULL → “”
+✔ never normalize empty string
+
+⸻
+
+	3.	CLIENT IDENTITY PRIORITY
+
+Identity matching order:
+
+1️⃣ altegio_client_id (highest priority)
+2️⃣ normalized_phone
+3️⃣ fallback → create new guest client
+
+Rules:
+	•	If altegio_client_id present → always use it
+	•	Phone updates must NOT remap client to another altegio_client_id
+	•	normalized_phone only secondary key
+
+⸻
+
+	4.	MERGE SAFETY RULES
+
+Allow merge ONLY if:
+
+✔ normalized_phone matches
+✔ AND neither client has altegio_client_id
+✔ OR altegio_client_id identical
+
+NEVER merge when:
+
+❌ altegio_client_id differs
+❌ both clients have different altegio_client_id
+
+If conflict:
+
+✔ keep separate
+✔ log [CLIENT_IDENTITY_CONFLICT]
+
+⸻
+
+	5.	PHONE APPEARED LATER
+
+Case: guest client → later phone received
+
+✔ update normalized_phone
+✔ is_guest → false
+✔ DO NOT create new client
+✔ DO NOT merge automatically with other altegio_client_id
+
+If phone matches existing client WITH altegio_client_id:
+
+✔ log [PHONE_MATCH_EXISTING_ALTEGIO_CLIENT]
+✔ NO auto-merge
+
+⸻
+
+	6.	LOGGING PREFIXES
+
+Add structured logs:
+
+[CLIENT_CREATED_GUEST]
+[CLIENT_UPDATED_PHONE]
+[CLIENT_MERGED]
+[CLIENT_IDENTITY_CONFLICT]
+[PHONE_MATCH_EXISTING_ALTEGIO_CLIENT]
+
+⸻
+
+	7.	FALLBACK IDENTITY PROTECTION
+
+If:
+	•	no altegio_client_id
+	•	no phone
+
+✔ create guest client
+✔ mark is_guest = true
+✔ no eligibility for auto WhatsApp flows
+
+But:
+
+✔ allow review via manual magic link if triggered later
+
+⸻
+
+Goal:
+
+✔ Stable identity
+✔ No destructive merges
+✔ Guest-safe lifecycle
+✔ Predictable rating / trust behavior

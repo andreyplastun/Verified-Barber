@@ -8,6 +8,7 @@ import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
 import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig } from "./altegio";
+import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater } from "./client-identity";
 import { db } from "./db";
 import { appConfig } from "@shared/schema";
 
@@ -514,7 +515,12 @@ export async function registerRoutes(
       }
       
       const input = api.bookings.create.input.parse(body);
-      const booking = await storage.createBooking(input);
+      const normalized = normalizePhone(input.customerPhone);
+      const booking = await storage.createBooking({
+        ...input,
+        normalizedPhone: normalized,
+        isGuest: !normalized && !input.customerPhone,
+      });
 
       if (isAltegioConfigured()) {
         const specialist = await storage.getSpecialist(booking.specialistId);
@@ -2551,6 +2557,8 @@ ${magicLink}`;
       const clientData = data?.client || {};
       const clientName = clientData?.name || data?.client_name || "Клиент Altegio";
       const clientPhone = clientData?.phone || data?.client_phone || "";
+      const altegioClientIdRaw = clientData?.id || data?.client_id || null;
+      const altegioClientIdParsed = altegioClientIdRaw ? Number(altegioClientIdRaw) : null;
       const datetime = data?.datetime || data?.date;
       const attendance = data?.attendance ?? data?.visit_attendance ?? null;
 
@@ -2589,19 +2597,28 @@ ${magicLink}`;
           }
 
           const appointmentTime = datetime ? new Date(datetime) : new Date();
+          const identity = await resolveClientIdentity({
+            altegioClientId: altegioClientIdParsed,
+            phone: clientPhone || null,
+            customerName: clientName,
+            specialistId,
+          });
           const newBooking = await storage.createBooking({
             specialistId,
             customerName: clientName,
-            customerPhone: clientPhone,
+            customerPhone: clientPhone || null,
             appointmentTime,
           });
           await storage.updateBooking(newBooking.id, {
             altegioAppointmentId: altegioId,
             altegioStaffId: staffId || null,
+            altegioClientId: identity.altegioClientId,
+            normalizedPhone: identity.normalizedPhone,
+            isGuest: identity.isGuest,
             status: "scheduled",
             updatedFrom: "altegio",
           });
-          console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}`);
+          console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}, guest=${identity.isGuest}`);
           break;
         }
 
@@ -2626,19 +2643,28 @@ ${magicLink}`;
               console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId}, using default id=${specialistId}`);
             }
             const appointmentTime = datetime ? new Date(datetime) : new Date();
+            const identity = await resolveClientIdentity({
+              altegioClientId: altegioClientIdParsed,
+              phone: clientPhone || null,
+              customerName: clientName,
+              specialistId,
+            });
             const newBooking = await storage.createBooking({
               specialistId,
               customerName: clientName,
-              customerPhone: clientPhone,
+              customerPhone: clientPhone || null,
               appointmentTime,
             });
             await storage.updateBooking(newBooking.id, {
               altegioAppointmentId: altegioId,
               altegioStaffId: staffId || null,
+              altegioClientId: identity.altegioClientId,
+              normalizedPhone: identity.normalizedPhone,
+              isGuest: identity.isGuest,
               status: isNewVisitCompleted ? "completed" : "scheduled",
               updatedFrom: "altegio",
             });
-            console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}`);
+            console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}, guest=${identity.isGuest}`);
 
             if (isNewVisitCompleted) {
               console.log(`[ALTEGIO] New booking ${newBooking.id} already completed (status-only, no magic link per spec)`);
@@ -2652,7 +2678,15 @@ ${magicLink}`;
           const updateData: any = {};
           if (datetime) updateData.appointmentTime = new Date(datetime);
           if (clientName && clientName !== "Клиент Altegio") updateData.customerName = clientName;
-          if (clientPhone) updateData.customerPhone = clientPhone;
+          if (clientPhone) {
+            updateData.customerPhone = clientPhone;
+            if (existing.isGuest || !existing.normalizedPhone) {
+              await handlePhoneAppearedLater(existing.id, clientPhone);
+            }
+          }
+          if (altegioClientIdParsed && !existing.altegioClientId) {
+            updateData.altegioClientId = altegioClientIdParsed;
+          }
           if (staffId) updateData.altegioStaffId = staffId;
           updateData.updatedFrom = "altegio";
 

@@ -37,6 +37,7 @@ export interface IStorage {
   createBookingWithClient(booking: { specialistId: number; clientId: string; customerName: string; customerPhone: string; customerEmail: string; appointmentTime: Date }): Promise<Booking>;
   getBooking(id: number): Promise<Booking | undefined>;
   getBookingByAltegioId(altegioAppointmentId: number): Promise<Booking | undefined>;
+  getBookingsByNormalizedPhone(normalizedPhone: string): Promise<Booking[]>;
   getBookings(): Promise<Booking[]>; // Admin/Debug
   getBookingsForSpecialist(specialistId: number): Promise<Booking[]>;
   getBookingsForClient(clientId: string): Promise<Booking[]>;
@@ -482,6 +483,10 @@ export class DatabaseStorage implements IStorage {
   async getBookingByAltegioId(altegioAppointmentId: number): Promise<Booking | undefined> {
     const [booking] = await db.select().from(bookings).where(eq(bookings.altegioAppointmentId, altegioAppointmentId));
     return booking;
+  }
+
+  async getBookingsByNormalizedPhone(normalizedPhone: string): Promise<Booking[]> {
+    return await db.select().from(bookings).where(eq(bookings.normalizedPhone, normalizedPhone));
   }
 
   async getBookings(): Promise<Booking[]> {

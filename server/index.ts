@@ -127,6 +127,17 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS review_eligibility_reason text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_client_id integer;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_guest boolean DEFAULT false;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS normalized_phone text;
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_bookings_altegio_client_id') THEN
+          CREATE INDEX idx_bookings_altegio_client_id ON bookings (altegio_client_id) WHERE altegio_client_id IS NOT NULL;
+        END IF;
+      END $$;
+      DO $$ BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_bookings_normalized_phone') THEN
+          CREATE INDEX idx_bookings_normalized_phone ON bookings (normalized_phone) WHERE normalized_phone IS NOT NULL;
+        END IF;
+      END $$;
       DO $$ BEGIN
         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='specialists' AND column_name='average_rating' AND data_type='integer') THEN
           ALTER TABLE specialists ALTER COLUMN average_rating TYPE real USING (average_rating::real / 10.0);

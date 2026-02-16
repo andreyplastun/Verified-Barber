@@ -2,6 +2,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { appConfig } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater } from "./client-identity";
 
 const ALTEGIO_BASE_URL = "https://api.alteg.io/api/v1";
 
@@ -989,15 +990,24 @@ export async function syncUpcomingAppointments(): Promise<{ imported: number; up
         const apptTime = new Date(appt.datetime);
         const clientName = appt.client?.name || "Клиент Altegio";
         const clientPhone = appt.client?.phone || "";
+        const altClientId = appt.client?.id ? Number(appt.client.id) : null;
         const needsUpdate = existing.customerName === "Клиент Altegio" && clientName !== "Клиент Altegio";
         if (needsUpdate) {
-          await storage.updateBooking(existing.id, {
+          const updateFields: any = {
             customerName: clientName,
-            customerPhone: clientPhone,
+            customerPhone: clientPhone || null,
             updatedFrom: "altegio",
-          });
+          };
+          if (altClientId && !existing.altegioClientId) {
+            updateFields.altegioClientId = altClientId;
+          }
+          await storage.updateBooking(existing.id, updateFields);
           updated++;
-        } else {
+        }
+        if (clientPhone && (existing.isGuest || !existing.normalizedPhone)) {
+          await handlePhoneAppearedLater(existing.id, clientPhone);
+          if (!needsUpdate) updated++;
+        } else if (!needsUpdate) {
           skipped++;
         }
         continue;
@@ -1020,12 +1030,19 @@ export async function syncUpcomingAppointments(): Promise<{ imported: number; up
       const appointmentTime = new Date(appt.datetime);
       const clientName = appt.client?.name || "Клиент Altegio";
       const clientPhone = appt.client?.phone || "";
+      const altClientId = appt.client?.id ? Number(appt.client.id) : null;
 
       try {
+        const identity = await resolveClientIdentity({
+          altegioClientId: altClientId,
+          phone: clientPhone || null,
+          customerName: clientName,
+          specialistId,
+        });
         const newBooking = await storage.createBooking({
           specialistId,
           customerName: clientName,
-          customerPhone: clientPhone,
+          customerPhone: clientPhone || null,
           appointmentTime,
         });
 
@@ -1035,6 +1052,9 @@ export async function syncUpcomingAppointments(): Promise<{ imported: number; up
         await storage.updateBooking(newBooking.id, {
           altegioAppointmentId: appt.id,
           altegioStaffId: appt.staff_id || null,
+          altegioClientId: identity.altegioClientId,
+          normalizedPhone: identity.normalizedPhone,
+          isGuest: identity.isGuest,
           status,
           updatedFrom: "altegio",
         });

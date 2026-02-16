@@ -126,6 +126,7 @@ export const bookings = pgTable("bookings", {
   altegioOperationId: text("altegio_operation_id"),
   altegioClientId: integer("altegio_client_id"),
   isGuest: boolean("is_guest").default(false),
+  normalizedPhone: text("normalized_phone"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
