@@ -373,44 +373,6 @@ export default function SpecialistDashboard() {
     },
   });
 
-  const [confirmingPaymentId, setConfirmingPaymentId] = useState<number | null>(null);
-  const confirmPaymentMutation = useMutation({
-    mutationFn: async (bookingId: number) => {
-      if (!currentUser) throw new Error('Not logged in');
-      setConfirmingPaymentId(bookingId);
-      const res = await fetch(`/api/specialist/bookings/${bookingId}/confirm-payment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': currentUser.id,
-        },
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || 'Failed to confirm payment');
-      }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setConfirmingPaymentId(null);
-      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-
-      if (data.magicLink) {
-        const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(data.magicLink.whatsappText)}`;
-        toast({ title: 'Оплата подтверждена. Ссылка на отзыв готова' });
-        window.open(whatsappUrl, '_blank');
-      } else if (data.eligibility && !data.eligibility.eligible) {
-        toast({ title: 'Оплата подтверждена', description: 'Запрос отзыва не отправлен (ограничение частоты)' });
-      } else {
-        toast({ title: 'Оплата подтверждена' });
-      }
-    },
-    onError: (err: Error) => {
-      setConfirmingPaymentId(null);
-      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
-    },
-  });
 
   const upcomingBookings = (bookings?.filter(b => 
     b.status !== 'completed' && b.status !== 'cancelled'
@@ -1141,20 +1103,14 @@ export default function SpecialistDashboard() {
                           <CheckCircle2 className="w-4 h-4 mr-2" />
                           {completingBookingId === booking.id ? 'Завершение...' : 'Завершить визит'}
                         </Button>
-                      ) : (booking as any).paymentStatus !== 'paid' ? (
-                        <Button
-                          size="sm"
-                          className="w-full"
-                          onClick={() => confirmPaymentMutation.mutate(booking.id)}
-                          disabled={confirmingPaymentId === booking.id}
-                          data-testid={`button-confirm-payment-${booking.id}`}
-                        >
-                          <Banknote className="w-4 h-4 mr-2" />
-                          {confirmingPaymentId === booking.id ? 'Подтверждение...' : 'Оплата получена → запросить отзыв'}
-                        </Button>
-                      ) : (
+                      ) : (booking as any).paymentStatus === 'paid' ? (
                         <Badge variant="secondary" className="text-green-600 dark:text-green-400" data-testid={`badge-paid-${booking.id}`}>
                           Оплачено
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-amber-600 dark:text-amber-400" data-testid={`badge-awaiting-payment-${booking.id}`}>
+                          <Clock className="w-3 h-3 mr-1" />
+                          Ожидается оплата
                         </Badge>
                       )}
                     </div>
@@ -1333,16 +1289,10 @@ export default function SpecialistDashboard() {
                     </div>
                   </div>
                   {(booking as any).paymentStatus !== 'paid' && (
-                    <Button
-                      size="sm"
-                      className="w-full"
-                      onClick={() => confirmPaymentMutation.mutate(booking.id)}
-                      disabled={confirmingPaymentId === booking.id}
-                      data-testid={`button-confirm-payment-completed-${booking.id}`}
-                    >
-                      <Banknote className="w-4 h-4 mr-2" />
-                      {confirmingPaymentId === booking.id ? 'Подтверждение...' : 'Оплата получена → запросить отзыв'}
-                    </Button>
+                    <Badge variant="outline" className="text-amber-600 dark:text-amber-400" data-testid={`badge-awaiting-payment-completed-${booking.id}`}>
+                      <Clock className="w-3 h-3 mr-1" />
+                      Ожидается оплата
+                    </Badge>
                   )}
                   {!suppressIndividualBanners && (
                     <AltegioSyncBanner

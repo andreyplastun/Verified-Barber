@@ -1346,7 +1346,8 @@ ${magicLink}`;
   });
 
   // =====================
-  // PAYMENT CONFIRMATION → MAGIC LINK FLOW
+  // PAYMENT PROCESSING (triggered by Altegio webhook or payment provider callback ONLY)
+  // No manual "Confirm Payment" button — payment is determined by external systems
   // =====================
 
   async function checkReviewEligibility(
@@ -1378,114 +1379,81 @@ ${magicLink}`;
     return { eligible: true, reason: 'OK' };
   }
 
-  app.post("/api/specialist/bookings/:id/confirm-payment", async (req, res) => {
+  async function processPaymentSuccess(bookingId: number, source: string): Promise<{ success: boolean; magicLinkCreated: boolean; reason?: string }> {
+    const booking = await storage.getBooking(bookingId);
+    if (!booking) {
+      console.warn(`[PAYMENT] Booking ${bookingId} not found (source: ${source})`);
+      return { success: false, magicLinkCreated: false, reason: 'BOOKING_NOT_FOUND' };
+    }
+
+    if ((booking as any).paymentStatus === 'paid') {
+      console.log(`[PAYMENT] Booking ${bookingId} already paid, skipping (source: ${source})`);
+      return { success: true, magicLinkCreated: false, reason: 'ALREADY_PAID' };
+    }
+
+    await storage.updateBooking(bookingId, {
+      paymentStatus: 'paid',
+      paymentReceivedAt: new Date(),
+    } as any);
+
+    if (booking.status !== 'completed') {
+      console.warn(`[PAYMENT] Booking ${bookingId} paid but not completed (status=${booking.status}), payment recorded, no magic link (source: ${source})`);
+      return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED' };
+    }
+
+    await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
+    console.log(`[PAYMENT] Payment.success for booking ${bookingId}, specialist ${booking.specialistId} score +2 (source: ${source})`);
+
+    if (!booking.clientId) {
+      console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=null specialist_id=${booking.specialistId} eligible=false reason=NO_CLIENT`);
+      return { success: true, magicLinkCreated: false, reason: 'NO_CLIENT' };
+    }
+
+    const eligibilityResult = await checkReviewEligibility(booking.clientId, booking.specialistId, bookingId);
+    console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason}`);
+
+    await storage.updateBooking(bookingId, {
+      reviewEligibility: eligibilityResult.eligible,
+      reviewEligibilityReason: eligibilityResult.reason,
+    } as any);
+
+    if (eligibilityResult.eligible) {
+      const existingLink = await storage.getMagicLinkByBookingId(bookingId);
+      if (existingLink) {
+        console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId}`);
+      } else {
+        const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
+        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
+        const fullLink = `${baseUrl}/r/${magicLink.token}`;
+        console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} client_id=${booking.clientId} link=${fullLink}`);
+      }
+      return { success: true, magicLinkCreated: true, reason: 'ELIGIBLE' };
+    }
+
+    return { success: true, magicLinkCreated: false, reason: eligibilityResult.reason };
+  }
+
+  app.post("/api/payment/callback", async (req, res) => {
     try {
-      const userId = req.headers["x-user-id"] as string;
-      if (!userId) {
+      const { bookingId, source, secret } = req.body;
+
+      const expectedSecret = process.env.PAYMENT_CALLBACK_SECRET;
+      if (expectedSecret && secret !== expectedSecret) {
+        console.warn(`[PAYMENT] Unauthorized payment callback attempt`);
         return res.status(401).json({ message: "Unauthorized" });
       }
 
-      const user = await storage.getUser(userId);
-      if (!user || (user.role !== 'specialist' && user.role !== 'admin')) {
-        return res.status(403).json({ message: "Forbidden" });
+      if (!bookingId) {
+        return res.status(400).json({ message: "bookingId is required" });
       }
 
-      const bookingId = Number(req.params.id);
-      const booking = await storage.getBooking(bookingId);
-      if (!booking) {
-        return res.status(404).json({ message: "Визит не найден" });
-      }
+      const result = await processPaymentSuccess(Number(bookingId), source || 'payment_callback');
+      console.log(`[PAYMENT] Payment callback processed: booking=${bookingId}, result=${JSON.stringify(result)}`);
 
-      if (user.role === 'specialist' && user.specialistId !== booking.specialistId) {
-        return res.status(403).json({ message: "Forbidden" });
-      }
-
-      if ((booking as any).paymentStatus === 'paid') {
-        const existingLink = await storage.getMagicLinkByBookingId(bookingId);
-        let magicLinkData = null;
-        if (existingLink) {
-          const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
-          const fullLink = `${baseUrl}/r/${existingLink.token}`;
-          const specialist = await storage.getSpecialist(booking.specialistId);
-          const barberName = specialist?.name || 'барберу';
-          magicLinkData = {
-            magicLink: fullLink,
-            whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
-            expiresAt: existingLink.expiresAt,
-          };
-        }
-        console.log(`[PAYMENT] Duplicate payment confirmation for booking ${bookingId}, reusing existing link: ${!!magicLinkData}`);
-        return res.json({
-          booking,
-          magicLink: magicLinkData,
-          paymentAlreadyConfirmed: true,
-        });
-      }
-
-      if (booking.status !== 'completed') {
-        return res.status(400).json({ message: "Сначала завершите визит" });
-      }
-
-      await storage.updateBooking(bookingId, {
-        paymentStatus: 'paid',
-        paymentReceivedAt: new Date(),
-      } as any);
-
-      await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
-      console.log(`[PAYMENT] Payment confirmed for booking ${bookingId}, specialist ${booking.specialistId} score +2`);
-
-      let magicLinkData = null;
-      let eligibilityResult = { eligible: false, reason: 'NO_CLIENT' };
-
-      if (booking.clientId) {
-        eligibilityResult = await checkReviewEligibility(booking.clientId, booking.specialistId, bookingId);
-
-        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason}`);
-
-        await storage.updateBooking(bookingId, {
-          reviewEligibility: eligibilityResult.eligible,
-          reviewEligibilityReason: eligibilityResult.reason,
-        } as any);
-
-        if (eligibilityResult.eligible) {
-          const existingLink = await storage.getMagicLinkByBookingId(bookingId);
-          if (existingLink) {
-            console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId}`);
-            const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
-            const fullLink = `${baseUrl}/r/${existingLink.token}`;
-            const specialist = await storage.getSpecialist(booking.specialistId);
-            const barberName = specialist?.name || 'барберу';
-            magicLinkData = {
-              magicLink: fullLink,
-              whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
-              expiresAt: existingLink.expiresAt,
-            };
-          } else {
-            const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
-            const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
-            const fullLink = `${baseUrl}/r/${magicLink.token}`;
-            const specialist = await storage.getSpecialist(booking.specialistId);
-            const barberName = specialist?.name || 'барберу';
-            magicLinkData = {
-              magicLink: fullLink,
-              whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
-              expiresAt: magicLink.expiresAt,
-            };
-            console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} client_id=${booking.clientId} link=${fullLink}`);
-          }
-        }
-      } else {
-        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=null specialist_id=${booking.specialistId} eligible=false reason=NO_CLIENT`);
-      }
-
-      res.json({
-        booking: { ...booking, paymentStatus: 'paid' },
-        magicLink: magicLinkData,
-        eligibility: eligibilityResult,
-      });
+      return res.json({ status: "ok", ...result });
     } catch (err: any) {
-      console.error("Error confirming payment:", err);
-      res.status(500).json({ message: err.message });
+      console.error("[PAYMENT] Payment callback error:", err);
+      return res.status(500).json({ message: err.message });
     }
   });
 
@@ -2282,6 +2250,9 @@ ${magicLink}`;
             case "delete": eventType = "delete"; break;
             default: eventType = `record.${status}`;
           }
+        } else if (resource === "financial_operation" || resource === "finance") {
+          eventType = "financial_operation";
+          console.log(`[ALTEGIO] Financial operation webhook: resource=${resource}, status=${status}`);
         } else {
           console.log(`[ALTEGIO] Non-record webhook: resource=${resource}, status=${status}, skipping`);
           return res.json({ status: "ok" });
@@ -2416,6 +2387,14 @@ ${magicLink}`;
           if (isVisitCompleted) {
             console.log(`[ALTEGIO] Visit completed for booking ${existing.id} (status-only, no magic link per spec)`);
           }
+
+          const isPaid = data?.paid === true || data?.paid === 1 || data?.paid === "1" ||
+            data?.payment_status === "paid" || data?.finance_status === "paid";
+          if (isPaid && (existing as any).paymentStatus !== 'paid') {
+            console.log(`[ALTEGIO] Payment detected in update event for booking ${existing.id}`);
+            const payResult = await processPaymentSuccess(existing.id, 'altegio_update_paid_flag');
+            console.log(`[ALTEGIO] Payment.success result for booking ${existing.id}: ${JSON.stringify(payResult)}`);
+          }
           break;
         }
 
@@ -2443,6 +2422,36 @@ ${magicLink}`;
           }
           await storage.updateBooking(existing.id, { status: "completed", updatedFrom: "altegio" } as any);
           console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId} (status-only, no magic link per spec)`);
+          break;
+        }
+
+        case "record.paid":
+        case "appointment.paid": {
+          if (!existing) {
+            console.warn(`[ALTEGIO] Appointment ${altegioId} not found for payment`);
+            break;
+          }
+          console.log(`[ALTEGIO] Payment event for booking ${existing.id}, appointment ${altegioId}`);
+          const paidResult = await processPaymentSuccess(existing.id, 'altegio_webhook_paid');
+          console.log(`[ALTEGIO] Payment.success result for booking ${existing.id}: ${JSON.stringify(paidResult)}`);
+          break;
+        }
+
+        case "financial_operation": {
+          const recordId = data?.record_id || data?.appointment_id || data?.object_id;
+          console.log(`[ALTEGIO] Financial operation: record_id=${recordId}, data_keys=${Object.keys(data || {}).join(',')}`);
+          if (recordId) {
+            const linkedBooking = await storage.getBookingByAltegioId(recordId);
+            if (linkedBooking) {
+              console.log(`[ALTEGIO] Financial operation linked to booking ${linkedBooking.id}`);
+              const finResult = await processPaymentSuccess(linkedBooking.id, 'altegio_financial_operation');
+              console.log(`[ALTEGIO] Payment.success result for booking ${linkedBooking.id}: ${JSON.stringify(finResult)}`);
+            } else {
+              console.log(`[ALTEGIO] Financial operation: no booking found for record_id=${recordId}`);
+            }
+          } else {
+            console.log(`[ALTEGIO] Financial operation: no record_id in payload, skipping`);
+          }
           break;
         }
 
