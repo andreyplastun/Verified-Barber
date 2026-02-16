@@ -1,0 +1,201 @@
+ТЗ агенту: Refund Handling Policy (Altegio ↔ Rateus)
+
+⸻
+
+1. Цель
+
+Корректно обрабатывать возвраты (refund), чтобы:
+
+✔ исключить манипуляции “оплата → отзыв → возврат”
+✔ не ломать уже оставленные отзывы
+✔ сохранить стабильность рейтинга и trust-score
+✔ избежать UX-конфликтов
+
+⸻
+
+2. Новые/используемые поля Visit
+
+Добавить / убедиться в наличии:
+
+payment_status: pending | paid | refunded
+review_eligible: boolean
+magic_link_sent_at: timestamp | null
+refund_detected_at: timestamp | null
+
+3. Базовая логика eligibility
+
+⸻
+
+✅ Право на отзыв
+
+review_eligible = true
+IF payment_status == paid
+AND Visit.status == Completed
+
+ Блокировка eligibility
+
+review_eligible = false
+IF payment_status == refunded
+AND review not yet created
+
+4. Поведение при Altegio webhook REFUND
+
+⸻
+
+Событие:
+
+Webhook Altegio → refund / payment_cancelled / refunded
+
+Действия Rateus:
+
+payment_status → refunded
+refund_detected_at → now()
+
+Проверка состояния отзыва:
+
+⸻
+
+CASE A — отзыв ещё НЕ создан
+
+review_eligible → false
+magic link → НЕ отправлять
+если уже сгенерирован, но не отправлен → отменить
+
+CASE B — magic link уже отправлен, отзыв НЕ оставлен
+
+✔ линк НЕ отзывать
+✔ review_eligible → false
+✔ при попытке оставить отзыв:
+
+UI сообщение клиенту:
+
+Оплата по визиту была отменена или возвращена.
+Оставление отзыва недоступно.
+
+⸻
+
+CASE C — отзыв уже создан
+
+✔ отзыв НЕ удалять
+✔ рейтинг НЕ пересчитывать назад
+
+✔ trust-score НЕ откатывать
+
+Только:
+
+лог: REFUND_AFTER_REVIEW
+
+5. Генерация magic link
+
+⸻
+
+✅ Условие отправки:
+
+IF payment_status == paid
+AND payment_status != refunded
+AND review_eligible == true
+AND magic_link_sent_at == null
+
+Не отправлять: 
+
+IF payment_status == refunded
+
+6. Защита от дублей
+
+⸻
+
+При получении refund webhook:
+
+IF payment_status already == refunded
+→ ignore duplicate webhook
+→ лог DUPLICATE_REFUND_WEBHOOK
+
+7. Edge cases
+
+⸻
+
+7.1 Partial refund
+
+payment_status → refunded
+review_eligible → false (если отзыв не создан)
+7.2 Refund после Completed + Paid
+
+✔ статус визита НЕ менять
+✔ только payment_status → refunded
+
+⸻
+
+7.3 Refund после отзыва
+
+✔ ничего не ломать
+✔ только логирование
+
+⸻
+
+8. Логирование (обязательно)
+
+Логировать:
+
+✔ visit_id
+✔ webhook_event
+✔ старый → новый payment_status
+✔ был ли отзыв
+✔ magic_link_sent_at
+
+⸻
+
+9. UX тексты
+
+⸻
+
+Клиент пытается оставить отзыв после refund:
+
+Оставление отзыва недоступно
+Оплата по визиту была отменена или возвращена.
+
+⸻
+
+Специалист (опционально, если UI предусмотрен):
+
+По визиту зафиксирован возврат оплаты
+
+(без санкционных формулировок)
+
+⸻
+
+10. Влияние на рейтинг / trust-score
+
+⸻
+
+Refund ДО отзыва:
+
+✔ отзыв не появляется
+✔ рейтинг не меняется
+
+⸻
+
+Refund ПОСЛЕ отзыва:
+
+✔ рейтинг НЕ откатывать
+✔ отзыв остаётся
+
+⸻
+
+11. Принципиальный запрет
+
+❌ НЕ:
+	•	удалять отзыв автоматически
+	•	уменьшать рейтинг задним числом
+	•	показывать “санкции” специалисту
+
+⸻
+
+12. Результат внедрения
+
+После реализации:
+
+✔ refund не ломает UX
+✔ отзывы не исчезают
+✔ накрутка через возвраты невозможна
+✔ рейтинги стабильны
+✔ логика прозрачна в логах
