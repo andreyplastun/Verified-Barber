@@ -1,0 +1,191 @@
+ТЗ ДЛЯ АГЕНТА — Guest / Verified / Phone Privacy / Reviews / Anti-fraud
+
+Цель:
+Ввести единую логику статусов клиента, приватности телефона, допуска к отзывам и антифрода при объединении клиентов.
+
+⸻
+
+1️⃣ СТАТУСЫ КЛИЕНТА
+
+Поля клиента:
+	•	is_guest (boolean, default = true)
+	•	verified_at (timestamp, nullable)
+	•	phone (nullable)
+	•	phone_verified (boolean, default = false)
+	•	altegio_client_id (nullable)
+	•	payment_count (integer, default = 0)
+	•	reviews_count (integer, default = 0)
+
+⸻
+
+Guest = если одновременно:
+	•	is_guest = true
+	•	phone IS NULL OR phone_verified = false
+	•	altegio_client_id IS NULL
+	•	payment_count = 0
+	•	reviews_count = 0
+	•	verified_at IS NULL
+
+⸻
+
+Verified = если выполнено ХОТЯ БЫ ОДНО:
+	•	phone_verified = true
+	•	altegio_client_id IS NOT NULL
+	•	payment_count ≥ 1
+	•	reviews_count ≥ 1
+	•	verified_at IS NOT NULL
+
+⸻
+
+2️⃣ АВТО-АПГРЕЙД Guest → Verified
+
+Триггеры:
+
+✔ подтверждён телефон
+✔ пришёл altegio_client_id
+✔ успешная оплата
+✔ оставлен отзыв
+✔ login через magic link
+
+Действие:
+	•	is_guest = false
+	•	verified_at = now()
+
+⸻
+
+Verified → Guest = ❌ запрещено
+
+⸻
+
+3️⃣ ВЕС ДОВЕРИЯ
+
+Используется в рейтинге / trust-score:
+
+Guest:
+	•	review_weight = 0.7
+	•	visit_weight = 0.7
+
+Verified:
+	•	review_weight = 1.0
+	•	visit_weight = 1.0
+
+⸻
+
+4️⃣ ДОПУСК К ОТЗЫВАМ
+
+Guest:
+
+✔ может оставить отзыв
+НО → вес 0.7
+
+Verified:
+
+✔ может оставить отзыв
+✔ полный вес
+
+⸻
+
+5️⃣ PHONE PRIVACY / MASKING
+
+Поля:
+	•	can_view_full_phone (boolean per role)
+
+Роли:
+
+Admin → can_view_full_phone = true
+Self-employed specialist → true
+Salon-based specialist → false
+
+⸻
+
+Если can_view_full_phone = false:
+
+UI:
+
+Показывать:
+
+📞 +7 *** *** **34
+
+Правила:
+	•	показывать только последние 2 цифры
+	•	остальное маска
+
+⸻
+
+Если true:
+
+📞 +7 777 123 45 34
+
+⸻
+
+6️⃣ MERGE CLIENTS LOGIC
+
+Условия авто-объединения:
+
+✔ одинаковый phone
+ИЛИ
+✔ одинаковый altegio_client_id
+
+⸻
+
+Если один Guest, второй Verified:
+
+→ итоговый статус = Verified
+
+⸻
+
+Если оба Verified:
+
+→ объединить без потери данных
+
+⸻
+
+7️⃣ АНТИФРОД ПРИ MERGE
+
+Флаги:
+	•	suspicious_merge = true если:
+
+✔ >2 merge за 24ч
+✔ merge клиентов с разными телефонами
+✔ merge после отзывов / оплат
+
+Действие:
+	•	review_weight временно = 0.5 для последних отзывов
+	•	логировать событие
+
+⸻
+
+8️⃣ REFUND / PAYMENT EFFECT
+
+Если payment → refund:
+
+✔ payment_count −= 1
+✔ отзыв НЕ активировать
+✔ trust-score визита = 0
+
+Если отзыв уже был:
+
+✔ review_weight = 0.3
+
+⸻
+
+9️⃣ ЛОГИРОВАНИЕ
+
+Логировать:
+
+✔ Guest → Verified upgrade
+✔ merge_clients
+✔ privacy_mask_applied
+✔ suspicious_merge
+✔ refund_after_review
+
+⸻
+
+🔟 UI ИНДИКАЦИИ (без раскрытия санкций)
+
+В кабинете специалиста:
+
+✔ “Клиент подтверждён” если Verified
+✔ без метки если Guest
+
+Санкции / веса → ❌ не показывать
