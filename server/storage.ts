@@ -1,7 +1,7 @@
 import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
-import { eq, desc, and, lt, asc } from "drizzle-orm";
+import { eq, desc, and, lt, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -71,6 +71,9 @@ export interface IStorage {
   getMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined>;
   getFirstMagicLinkByBookingId(bookingId: number): Promise<MagicLink | undefined>;
   hasReviewForBooking(bookingId: number): Promise<boolean>;
+  getIgnoredMagicLinkCount(clientId: string, specialistId: number): Promise<number>;
+  getLastReviewByClientForSpecialist(clientId: string, specialistId: number): Promise<Review | undefined>;
+  incrementVerifiedVisitScore(specialistId: number, amount: number): Promise<void>;
   
   // Analytics
   trackAnalyticsEvent(event: {
@@ -717,6 +720,43 @@ export class DatabaseStorage implements IStorage {
       .where(eq(reviews.bookingId, bookingId))
       .limit(1);
     return !!review;
+  }
+
+  async getIgnoredMagicLinkCount(clientId: string, specialistId: number): Promise<number> {
+    const links = await db.select()
+      .from(magicLinks)
+      .where(and(
+        eq(magicLinks.userId, clientId),
+        eq(magicLinks.specialistId, specialistId),
+      ));
+    let ignoredCount = 0;
+    for (const link of links) {
+      const isExpired = link.expiresAt && new Date(link.expiresAt) < new Date();
+      const wasOpened = !!link.openedAt;
+      const reviewDone = !!link.reviewSubmittedAt;
+      if ((isExpired || wasOpened) && !reviewDone) {
+        ignoredCount++;
+      }
+    }
+    return ignoredCount;
+  }
+
+  async getLastReviewByClientForSpecialist(clientId: string, specialistId: number): Promise<Review | undefined> {
+    const [review] = await db.select()
+      .from(reviews)
+      .where(and(
+        eq(reviews.clientId, clientId),
+        eq(reviews.specialistId, specialistId),
+      ))
+      .orderBy(desc(reviews.createdAt))
+      .limit(1);
+    return review;
+  }
+
+  async incrementVerifiedVisitScore(specialistId: number, amount: number): Promise<void> {
+    await db.update(specialists)
+      .set({ verifiedVisitScore: sql`COALESCE(${specialists.verifiedVisitScore}, 0) + ${amount}` })
+      .where(eq(specialists.id, specialistId));
   }
 
   // Analytics

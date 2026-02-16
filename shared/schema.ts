@@ -90,6 +90,7 @@ export const specialists = pgTable("specialists", {
   baseServicePrice: integer("base_service_price"),
   // Profile ownership - links specialist to their user account
   ownerUserId: uuid("owner_user_id"), // References users.id - set when profile is claimed
+  verifiedVisitScore: integer("verified_visit_score").default(0).notNull(),
   altegioStaffId: integer("altegio_staff_id"), // Altegio team member ID
   altegioCompanyId: integer("altegio_company_id"), // Altegio location/company ID
   altegioConnectionStatus: text("altegio_connection_status").default("disconnected"), // 'connected' | 'error' | 'disconnected'
@@ -112,6 +113,10 @@ export const bookings = pgTable("bookings", {
   altegioSyncError: text("altegio_sync_error"), // last sync error message
   altegioRetryCount: integer("altegio_retry_count").default(0),
   altegioLastRetryAt: timestamp("altegio_last_retry_at"),
+  paymentStatus: text("payment_status", { enum: ["unpaid", "paid"] }).default("unpaid").notNull(),
+  paymentReceivedAt: timestamp("payment_received_at"),
+  reviewEligibility: boolean("review_eligibility"),
+  reviewEligibilityReason: text("review_eligibility_reason"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

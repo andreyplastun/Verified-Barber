@@ -361,21 +361,53 @@ export default function SpecialistDashboard() {
       }
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       setCompletingBookingId(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      toast({ title: 'Визит завершён' });
+    },
+    onError: (err: Error) => {
+      setCompletingBookingId(null);
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const [confirmingPaymentId, setConfirmingPaymentId] = useState<number | null>(null);
+  const confirmPaymentMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      if (!currentUser) throw new Error('Not logged in');
+      setConfirmingPaymentId(bookingId);
+      const res = await fetch(`/api/specialist/bookings/${bookingId}/confirm-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to confirm payment');
+      }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setConfirmingPaymentId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
 
       if (data.magicLink) {
         const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(data.magicLink.whatsappText)}`;
-        toast({ title: 'Визит завершён. Ссылка на отзыв готова' });
+        toast({ title: 'Оплата подтверждена. Ссылка на отзыв готова' });
         window.open(whatsappUrl, '_blank');
+      } else if (data.eligibility && !data.eligibility.eligible) {
+        toast({ title: 'Оплата подтверждена', description: 'Запрос отзыва не отправлен (ограничение частоты)' });
       } else {
-        toast({ title: 'Визит завершён. Отзыв отправлен клиенту' });
+        toast({ title: 'Оплата подтверждена' });
       }
     },
     onError: (err: Error) => {
-      setCompletingBookingId(null);
+      setConfirmingPaymentId(null);
       toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
     },
   });
@@ -1098,16 +1130,33 @@ export default function SpecialistDashboard() {
                           <span>Клиент был сегодня. Завершите визит</span>
                         </div>
                       )}
-                      <Button
-                        size="sm"
-                        className="w-full"
-                        onClick={() => completeVisitMutation.mutate(booking.id)}
-                        disabled={completingBookingId === booking.id}
-                        data-testid={`button-complete-visit-${booking.id}`}
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
-                        {completingBookingId === booking.id ? 'Завершение...' : 'Завершить визит → открыть отзыв'}
-                      </Button>
+                      {booking.status !== 'completed' ? (
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          onClick={() => completeVisitMutation.mutate(booking.id)}
+                          disabled={completingBookingId === booking.id}
+                          data-testid={`button-complete-visit-${booking.id}`}
+                        >
+                          <CheckCircle2 className="w-4 h-4 mr-2" />
+                          {completingBookingId === booking.id ? 'Завершение...' : 'Завершить визит'}
+                        </Button>
+                      ) : (booking as any).paymentStatus !== 'paid' ? (
+                        <Button
+                          size="sm"
+                          className="w-full"
+                          onClick={() => confirmPaymentMutation.mutate(booking.id)}
+                          disabled={confirmingPaymentId === booking.id}
+                          data-testid={`button-confirm-payment-${booking.id}`}
+                        >
+                          <Banknote className="w-4 h-4 mr-2" />
+                          {confirmingPaymentId === booking.id ? 'Подтверждение...' : 'Оплата получена → запросить отзыв'}
+                        </Button>
+                      ) : (
+                        <Badge variant="secondary" className="text-green-600 dark:text-green-400" data-testid={`badge-paid-${booking.id}`}>
+                          Оплачено
+                        </Badge>
+                      )}
                     </div>
                   );
                 })}
@@ -1271,6 +1320,11 @@ export default function SpecialistDashboard() {
                       <Badge variant="secondary">
                         {format(new Date(booking.appointmentTime), 'MMM d')}
                       </Badge>
+                      {(booking as any).paymentStatus === 'paid' && (
+                        <Badge variant="outline" className="text-green-600 dark:text-green-400">
+                          Оплачено
+                        </Badge>
+                      )}
                       {booking.hasReview && (
                         <Badge variant="outline" className="text-green-600">
                           Есть отзыв
@@ -1278,6 +1332,18 @@ export default function SpecialistDashboard() {
                       )}
                     </div>
                   </div>
+                  {(booking as any).paymentStatus !== 'paid' && (
+                    <Button
+                      size="sm"
+                      className="w-full"
+                      onClick={() => confirmPaymentMutation.mutate(booking.id)}
+                      disabled={confirmingPaymentId === booking.id}
+                      data-testid={`button-confirm-payment-completed-${booking.id}`}
+                    >
+                      <Banknote className="w-4 h-4 mr-2" />
+                      {confirmingPaymentId === booking.id ? 'Подтверждение...' : 'Оплата получена → запросить отзыв'}
+                    </Button>
+                  )}
                   {!suppressIndividualBanners && (
                     <AltegioSyncBanner
                       config={getBookingSyncBannerConfig(

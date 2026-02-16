@@ -1334,29 +1334,157 @@ ${magicLink}`;
         );
       }
 
-      let magicLinkData = null;
-      if (booking.clientId) {
-        const barberName = specialist?.name || 'барберу';
-
-        const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
-        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
-        const fullLink = `${baseUrl}/r/${magicLink.token}`;
-
-        magicLinkData = {
-          magicLink: fullLink,
-          whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
-          expiresAt: magicLink.expiresAt,
-        };
-      }
-
-      console.log(`[SPECIALIST] Visit ${bookingId} completed by user ${userId}, magic link created: ${!!magicLinkData}`);
+      console.log(`[SPECIALIST] Visit ${bookingId} completed by user ${userId} (status-only, no magic link)`);
 
       res.json({
         booking: updated,
-        magicLink: magicLinkData,
       });
     } catch (err: any) {
       console.error("Error completing visit:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =====================
+  // PAYMENT CONFIRMATION → MAGIC LINK FLOW
+  // =====================
+
+  async function checkReviewEligibility(
+    clientId: string,
+    specialistId: number,
+    bookingId: number,
+  ): Promise<{ eligible: boolean; reason: string }> {
+    const booking = await storage.getBooking(bookingId);
+    if (!booking || booking.status !== 'completed') {
+      return { eligible: false, reason: 'VISIT_NOT_COMPLETED' };
+    }
+
+    const lastReview = await storage.getLastReviewByClientForSpecialist(clientId, specialistId);
+
+    if (!lastReview) {
+      return { eligible: true, reason: 'FIRST_VISIT' };
+    }
+
+    const daysSinceLastReview = (Date.now() - new Date(lastReview.createdAt!).getTime()) / (1000 * 60 * 60 * 24);
+    if (daysSinceLastReview < 60) {
+      return { eligible: false, reason: '<60_DAYS' };
+    }
+
+    const ignoredCount = await storage.getIgnoredMagicLinkCount(clientId, specialistId);
+    if (ignoredCount >= 2) {
+      return { eligible: false, reason: 'IGNORED' };
+    }
+
+    return { eligible: true, reason: 'OK' };
+  }
+
+  app.post("/api/specialist/bookings/:id/confirm-payment", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || (user.role !== 'specialist' && user.role !== 'admin')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const bookingId = Number(req.params.id);
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Визит не найден" });
+      }
+
+      if (user.role === 'specialist' && user.specialistId !== booking.specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if ((booking as any).paymentStatus === 'paid') {
+        const existingLink = await storage.getMagicLinkByBookingId(bookingId);
+        let magicLinkData = null;
+        if (existingLink) {
+          const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
+          const fullLink = `${baseUrl}/r/${existingLink.token}`;
+          const specialist = await storage.getSpecialist(booking.specialistId);
+          const barberName = specialist?.name || 'барберу';
+          magicLinkData = {
+            magicLink: fullLink,
+            whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
+            expiresAt: existingLink.expiresAt,
+          };
+        }
+        console.log(`[PAYMENT] Duplicate payment confirmation for booking ${bookingId}, reusing existing link: ${!!magicLinkData}`);
+        return res.json({
+          booking,
+          magicLink: magicLinkData,
+          paymentAlreadyConfirmed: true,
+        });
+      }
+
+      if (booking.status !== 'completed') {
+        return res.status(400).json({ message: "Сначала завершите визит" });
+      }
+
+      await storage.updateBooking(bookingId, {
+        paymentStatus: 'paid',
+        paymentReceivedAt: new Date(),
+      } as any);
+
+      await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
+      console.log(`[PAYMENT] Payment confirmed for booking ${bookingId}, specialist ${booking.specialistId} score +2`);
+
+      let magicLinkData = null;
+      let eligibilityResult = { eligible: false, reason: 'NO_CLIENT' };
+
+      if (booking.clientId) {
+        eligibilityResult = await checkReviewEligibility(booking.clientId, booking.specialistId, bookingId);
+
+        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason}`);
+
+        await storage.updateBooking(bookingId, {
+          reviewEligibility: eligibilityResult.eligible,
+          reviewEligibilityReason: eligibilityResult.reason,
+        } as any);
+
+        if (eligibilityResult.eligible) {
+          const existingLink = await storage.getMagicLinkByBookingId(bookingId);
+          if (existingLink) {
+            console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId}`);
+            const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
+            const fullLink = `${baseUrl}/r/${existingLink.token}`;
+            const specialist = await storage.getSpecialist(booking.specialistId);
+            const barberName = specialist?.name || 'барберу';
+            magicLinkData = {
+              magicLink: fullLink,
+              whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
+              expiresAt: existingLink.expiresAt,
+            };
+          } else {
+            const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
+            const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
+            const fullLink = `${baseUrl}/r/${magicLink.token}`;
+            const specialist = await storage.getSpecialist(booking.specialistId);
+            const barberName = specialist?.name || 'барберу';
+            magicLinkData = {
+              magicLink: fullLink,
+              whatsappText: generateWhatsAppText(fullLink, booking.customerName, barberName),
+              expiresAt: magicLink.expiresAt,
+            };
+            console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} client_id=${booking.clientId} link=${fullLink}`);
+          }
+        }
+      } else {
+        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=null specialist_id=${booking.specialistId} eligible=false reason=NO_CLIENT`);
+      }
+
+      res.json({
+        booking: { ...booking, paymentStatus: 'paid' },
+        magicLink: magicLinkData,
+        eligibility: eligibilityResult,
+      });
+    } catch (err: any) {
+      console.error("Error confirming payment:", err);
       res.status(500).json({ message: err.message });
     }
   });
@@ -2260,17 +2388,8 @@ ${magicLink}`;
             });
             console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}`);
 
-            if (isNewVisitCompleted && newBooking.clientId) {
-              try {
-                const magicLink = await storage.createMagicLink(
-                  newBooking.clientId,
-                  newBooking.id,
-                  specialistId!,
-                );
-                console.log(`[ALTEGIO] Magic link generated: booking=${newBooking.id}, specialist=${specialistId}, token=${magicLink.token.slice(0, 8)}...`);
-              } catch (mlErr) {
-                console.error(`[ALTEGIO] Failed to create magic link for new booking ${newBooking.id}:`, mlErr);
-              }
+            if (isNewVisitCompleted) {
+              console.log(`[ALTEGIO] New booking ${newBooking.id} already completed (status-only, no magic link per spec)`);
             }
             break;
           }
@@ -2294,24 +2413,8 @@ ${magicLink}`;
             console.log(`[ALTEGIO] Updated booking ${existing.id} for appointment ${altegioId}${isVisitCompleted ? ' (marked completed)' : ''}`);
           }
 
-          if (isVisitCompleted && existing.clientId) {
-            try {
-              const existingLink = await storage.getMagicLinkByBookingId(existing.id);
-              if (existingLink) {
-                console.log(`[ALTEGIO] Magic link already exists for booking ${existing.id}, skipping creation`);
-              } else {
-                const magicLink = await storage.createMagicLink(
-                  existing.clientId,
-                  existing.id,
-                  existing.specialistId,
-                );
-                console.log(`[ALTEGIO] Magic link generated: booking=${existing.id}, specialist=${existing.specialistId}, token=${magicLink.token.slice(0, 8)}...`);
-              }
-            } catch (mlErr) {
-              console.error(`[ALTEGIO] Failed to create magic link for booking ${existing.id}:`, mlErr);
-            }
-          } else if (isVisitCompleted && !existing.clientId) {
-            console.warn(`[ALTEGIO] Visit completed but no clientId on booking ${existing.id}, cannot create magic link`);
+          if (isVisitCompleted) {
+            console.log(`[ALTEGIO] Visit completed for booking ${existing.id} (status-only, no magic link per spec)`);
           }
           break;
         }
@@ -2339,27 +2442,7 @@ ${magicLink}`;
             break;
           }
           await storage.updateBooking(existing.id, { status: "completed", updatedFrom: "altegio" } as any);
-          console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId}`);
-
-          if (existing.clientId) {
-            try {
-              const existingLink = await storage.getMagicLinkByBookingId(existing.id);
-              if (existingLink) {
-                console.log(`[ALTEGIO] Magic link already exists for booking ${existing.id}, skipping creation`);
-              } else {
-                const magicLink = await storage.createMagicLink(
-                  existing.clientId,
-                  existing.id,
-                  existing.specialistId,
-                );
-                console.log(`[ALTEGIO] Magic link generated: booking=${existing.id}, specialist=${existing.specialistId}, token=${magicLink.token.slice(0, 8)}...`);
-              }
-            } catch (mlErr) {
-              console.error(`[ALTEGIO] Failed to create magic link for booking ${existing.id}:`, mlErr);
-            }
-          } else {
-            console.warn(`[ALTEGIO] Booking ${existing.id} completed but no clientId, cannot create magic link`);
-          }
+          console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId} (status-only, no magic link per spec)`);
           break;
         }
 

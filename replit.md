@@ -82,15 +82,24 @@ Language: Russian (Русский) - all UI text is in Russian.
 #### Anti-Fraud System
 - **Mechanism**: Marks reviews as "limited" based on conditions like account age, review timing, duplicate content, and text similarity. Reviews are still published but flagged.
 
-#### Visit Completion Flow
-- **Purpose**: Specialist manages visit lifecycle; reviews and tips only available after visit completion.
-- **Flow**: Specialist clicks "Завершить визит → открыть отзыв" in dashboard → booking status changes to "completed" → magic link auto-created → WhatsApp share opens.
-- **Guards**: Backend rejects reviews if booking status != "completed". Client-side hides review/tips buttons for non-completed bookings.
+#### Visit Completion + Payment Flow (Two-Step)
+- **Step 1 — Complete Visit**: Specialist clicks "Завершить визит" → booking status changes to "completed". NO magic link generated. Altegio webhook `record.completed` also only changes status.
+- **Step 2 — Confirm Payment**: Specialist clicks "Оплата получена → запросить отзыв" → `POST /api/specialist/bookings/:id/confirm-payment`:
+  - Sets `paymentStatus = 'paid'`, `paymentReceivedAt = now()`
+  - Increments `verifiedVisitScore += 2` on specialist
+  - Checks review eligibility (first review OK, <60 days block, ignored ≥2 block, visit must be completed)
+  - If eligible: generates magic link + opens WhatsApp with review request
+  - If not eligible: payment still recorded, score added, no magic link
+- **Logging**: `[REVIEW_ELIGIBILITY]` with visit/client/specialist/eligible/reason, `[MAGIC_LINK_CREATED]` with visit/client/link
+- **Idempotency**: Duplicate payment confirmations reuse existing magic link
+- **Guards**: Backend rejects reviews if booking status != "completed". Payment requires completed status.
 - **Reminders**: Dashboard shows warning banner for uncompleted visits, stale hint after 6+ hours.
 
 #### Magic Link System
 - **Purpose**: Facilitates passwordless review submission via WhatsApp.
-- **Flow**: Specialist completes visit (auto-creates magic link), or admin generates a one-time, expiring link for a booking. Customer clicks link, submits review.
+- **Trigger**: ONLY via Payment.success (confirm-payment endpoint). Altegio completion and visit completion do NOT generate links.
+- **Eligibility Rules**: First review → allow; Review < 60 days ago → block; Client ignored ≥ 2 requests → block; Visit must be completed.
+- **Flow**: Payment confirmed → eligibility check → if eligible: magic link created → WhatsApp message sent to customer.
 - **Follow-up**: Option for admins to send a follow-up link if no review is submitted within a timeframe.
 
 #### Kaspi Tipping System
