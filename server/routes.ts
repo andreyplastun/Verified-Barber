@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, type Review, specialistSignupSchema, claimRequestSchema } from "@shared/schema";
+import { bookings, type Booking, type Review, specialistSignupSchema, claimRequestSchema } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
@@ -543,13 +543,25 @@ export async function registerRoutes(
   app.get("/api/specialists/:id/bookings", async (req, res) => {
     const id = Number(req.params.id);
     const viewerUserId = req.headers["x-user-id"] as string | undefined;
-    console.log(`[DEBUG] GET /api/specialists/${id}/bookings - Requested by user: ${viewerUserId}`);
     if (isNaN(id)) {
       return res.status(400).json({ message: "Invalid specialist ID" });
     }
-    const bookings = await storage.getBookingsForSpecialist(id);
-    console.log(`[DEBUG] GET /api/specialists/${id}/bookings - Found ${bookings.length} bookings`);
-    res.json(bookings);
+    const bookingsList = await storage.getBookingsForSpecialist(id);
+
+    await checkAndFlagNotCompleted(bookingsList);
+
+    const now = Date.now();
+    const enriched = bookingsList.map(b => {
+      const appointmentTime = new Date(b.appointmentTime).getTime();
+      const isPast = appointmentTime <= now;
+      const isReadyToComplete = isPast &&
+        b.status !== 'completed' &&
+        b.status !== 'cancelled' &&
+        !(b as any).notCompleted;
+      return { ...b, readyToComplete: isReadyToComplete };
+    });
+
+    res.json(enriched);
   });
 
   // Get bookings for the current user (by client_id)
@@ -598,6 +610,9 @@ export async function registerRoutes(
       }
       if (booking.status !== "completed") {
         return res.status(409).json({ message: "Visit not yet verified/completed" });
+      }
+      if ((booking as any).notCompleted) {
+        return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
       }
       if (booking.hasReview) {
         return res.status(409).json({ message: "Review already submitted for this visit" });
@@ -1166,6 +1181,10 @@ export async function registerRoutes(
       if (booking.status !== "completed") {
         return res.status(403).json({ message: "Отзыв доступен после завершения визита" });
       }
+
+      if ((booking as any).notCompleted) {
+        return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
+      }
       
       if (booking.hasReview) {
         await storage.markMagicLinkUsed(link.id);
@@ -1346,6 +1365,85 @@ ${magicLink}`;
   });
 
   // =====================
+  // SPECIALIST: CANCEL BOOKING ENDPOINT
+  // =====================
+
+  app.post("/api/specialist/bookings/:id/cancel", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || (user.role !== 'specialist' && user.role !== 'admin')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const bookingId = Number(req.params.id);
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Визит не найден" });
+      }
+
+      if (user.role === 'specialist' && user.specialistId !== booking.specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (booking.status === 'completed') {
+        return res.status(409).json({ message: "Нельзя отменить завершённый визит" });
+      }
+
+      if (booking.status === 'cancelled') {
+        return res.status(409).json({ message: "Визит уже отменён" });
+      }
+
+      const updated = await storage.updateBookingStatus(bookingId, "cancelled");
+
+      const specialist = await storage.getSpecialist(booking.specialistId);
+      if (isAltegioConfigured() && booking.updatedFrom !== "altegio") {
+        await storage.updateBooking(bookingId, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
+        syncWithRetry(
+          { ...booking, status: "cancelled", updatedFrom: "rateus" },
+          specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
+          "cancel",
+        );
+      }
+
+      console.log(`[SPECIALIST] Booking ${bookingId} cancelled by user ${userId}`);
+
+      res.json({ booking: updated });
+    } catch (err: any) {
+      console.error("Error cancelling booking:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =====================
+  // NOT_COMPLETED CHECK (called on bookings list fetch)
+  // Flags bookings as not_completed after 24h past appointment with no completion
+  // =====================
+
+  async function checkAndFlagNotCompleted(bookingsForSpecialist: Booking[]): Promise<void> {
+    const NOT_COMPLETED_HOURS = 24;
+    const now = Date.now();
+
+    for (const booking of bookingsForSpecialist) {
+      if (booking.status === 'completed' || booking.status === 'cancelled') continue;
+      if ((booking as any).notCompleted) continue;
+
+      const appointmentTime = new Date(booking.appointmentTime).getTime();
+      const hoursSince = (now - appointmentTime) / (1000 * 60 * 60);
+
+      if (hoursSince >= NOT_COMPLETED_HOURS) {
+        await storage.updateBooking(booking.id, { notCompleted: true } as any);
+        (booking as any).notCompleted = true;
+        console.log(`[NOT_COMPLETED] Booking ${booking.id} flagged as not_completed (${Math.round(hoursSince)}h since appointment)`);
+      }
+    }
+  }
+
+  // =====================
   // PAYMENT PROCESSING (triggered by Altegio webhook or payment provider callback ONLY)
   // No manual "Confirm Payment" button — payment is determined by external systems
   // =====================
@@ -1379,7 +1477,11 @@ ${magicLink}`;
     return { eligible: true, reason: 'OK' };
   }
 
-  async function processPaymentSuccess(bookingId: number, source: string): Promise<{ success: boolean; magicLinkCreated: boolean; reason?: string }> {
+  async function processPaymentSuccess(
+    bookingId: number,
+    source: string,
+    opts?: { externalPaymentId?: string; altegioOperationId?: string }
+  ): Promise<{ success: boolean; magicLinkCreated: boolean; reason?: string }> {
     const booking = await storage.getBooking(bookingId);
     if (!booking) {
       console.warn(`[PAYMENT] Booking ${bookingId} not found (source: ${source})`);
@@ -1387,22 +1489,47 @@ ${magicLink}`;
     }
 
     if ((booking as any).paymentStatus === 'paid') {
-      console.log(`[PAYMENT] Booking ${bookingId} already paid, skipping (source: ${source})`);
+      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} source=${source}`);
       return { success: true, magicLinkCreated: false, reason: 'ALREADY_PAID' };
     }
 
-    await storage.updateBooking(bookingId, {
+    if (opts?.externalPaymentId && (booking as any).externalPaymentId === opts.externalPaymentId) {
+      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} externalPaymentId=${opts.externalPaymentId} already processed`);
+      return { success: true, magicLinkCreated: false, reason: 'DUPLICATE_EXTERNAL_ID' };
+    }
+    if (opts?.altegioOperationId && (booking as any).altegioOperationId === opts.altegioOperationId) {
+      console.log(`[DUPLICATE_PAYMENT_IGNORED] booking=${bookingId} altegioOperationId=${opts.altegioOperationId} already processed`);
+      return { success: true, magicLinkCreated: false, reason: 'DUPLICATE_ALTEGIO_OP' };
+    }
+
+    const updateData: any = {
       paymentStatus: 'paid',
       paymentReceivedAt: new Date(),
-    } as any);
+    };
+    if (opts?.externalPaymentId) updateData.externalPaymentId = opts.externalPaymentId;
+    if (opts?.altegioOperationId) updateData.altegioOperationId = opts.altegioOperationId;
+
+    await storage.updateBooking(bookingId, updateData);
+
+    if (booking.status === 'cancelled') {
+      console.log(`[PAID_AFTER_CANCELLED] booking=${bookingId} source=${source} — payment recorded, score added, no magic link`);
+      await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
+      return { success: true, magicLinkCreated: false, reason: 'PAID_AFTER_CANCELLED' };
+    }
 
     if (booking.status !== 'completed') {
-      console.warn(`[PAYMENT] Booking ${bookingId} paid but not completed (status=${booking.status}), payment recorded, no magic link (source: ${source})`);
+      console.warn(`[PAYMENT] Booking ${bookingId} paid but status=${booking.status}, payment recorded, no magic link (source: ${source})`);
       return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED' };
     }
 
+    if ((booking as any).notCompleted) {
+      console.log(`[PAYMENT] Booking ${bookingId} paid but flagged not_completed, payment recorded, no magic link (source: ${source})`);
+      await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
+      return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED_FLAG' };
+    }
+
     await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
-    console.log(`[PAYMENT] Payment.success for booking ${bookingId}, specialist ${booking.specialistId} score +2 (source: ${source})`);
+    console.log(`[PAYMENT] Payment.success booking=${bookingId} specialist=${booking.specialistId} score+2 (source: ${source})`);
 
     if (!booking.clientId) {
       console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=null specialist_id=${booking.specialistId} eligible=false reason=NO_CLIENT`);
@@ -1435,7 +1562,7 @@ ${magicLink}`;
 
   app.post("/api/payment/callback", async (req, res) => {
     try {
-      const { bookingId, source, secret } = req.body;
+      const { bookingId, source, secret, externalPaymentId } = req.body;
 
       const expectedSecret = process.env.PAYMENT_CALLBACK_SECRET;
       if (expectedSecret && secret !== expectedSecret) {
@@ -1447,7 +1574,11 @@ ${magicLink}`;
         return res.status(400).json({ message: "bookingId is required" });
       }
 
-      const result = await processPaymentSuccess(Number(bookingId), source || 'payment_callback');
+      const result = await processPaymentSuccess(
+        Number(bookingId),
+        source || 'payment_callback',
+        { externalPaymentId: externalPaymentId || undefined }
+      );
       console.log(`[PAYMENT] Payment callback processed: booking=${bookingId}, result=${JSON.stringify(result)}`);
 
       return res.json({ status: "ok", ...result });
@@ -2376,6 +2507,10 @@ ${magicLink}`;
 
           if (isVisitCompleted) {
             updateData.status = "completed";
+            if ((existing as any).notCompleted) {
+              updateData.notCompleted = false;
+              console.log(`[ALTEGIO] Reversing not_completed flag for booking ${existing.id} (attendance=1 received)`);
+            }
             console.log(`[ALTEGIO] Visit completed via attendance=1 for booking ${existing.id}, appointment ${altegioId}`);
           }
 
@@ -2439,12 +2574,15 @@ ${magicLink}`;
 
         case "financial_operation": {
           const recordId = data?.record_id || data?.appointment_id || data?.object_id;
-          console.log(`[ALTEGIO] Financial operation: record_id=${recordId}, data_keys=${Object.keys(data || {}).join(',')}`);
+          const operationId = data?.id || data?.operation_id;
+          console.log(`[ALTEGIO] Financial operation: record_id=${recordId}, operation_id=${operationId}, data_keys=${Object.keys(data || {}).join(',')}`);
           if (recordId) {
             const linkedBooking = await storage.getBookingByAltegioId(recordId);
             if (linkedBooking) {
               console.log(`[ALTEGIO] Financial operation linked to booking ${linkedBooking.id}`);
-              const finResult = await processPaymentSuccess(linkedBooking.id, 'altegio_financial_operation');
+              const finResult = await processPaymentSuccess(linkedBooking.id, 'altegio_financial_operation', {
+                altegioOperationId: operationId ? String(operationId) : undefined,
+              });
               console.log(`[ALTEGIO] Payment.success result for booking ${linkedBooking.id}: ${JSON.stringify(finResult)}`);
             } else {
               console.log(`[ALTEGIO] Financial operation: no booking found for record_id=${recordId}`);

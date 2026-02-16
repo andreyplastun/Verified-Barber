@@ -99,24 +99,27 @@ export const specialists = pgTable("specialists", {
 export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
   specialistId: integer("specialist_id").notNull(),
-  clientId: uuid("client_id"), // References users.id - nullable for backwards compatibility
+  clientId: uuid("client_id"),
   customerName: text("customer_name").notNull(),
   customerPhone: text("customer_phone").notNull(),
-  customerEmail: text("customer_email"), // Deprecated - kept for display/backfill
+  customerEmail: text("customer_email"),
   appointmentTime: timestamp("appointment_time").notNull(),
   status: text("status", { enum: ["pending", "confirmed", "completed", "cancelled"] }).default("pending").notNull(),
   hasReview: boolean("has_review").default(false).notNull(),
   altegioAppointmentId: integer("altegio_appointment_id"),
   altegioStaffId: integer("altegio_staff_id"),
-  updatedFrom: text("updated_from"), // 'rateus' | 'altegio' - loop protection
-  altegioSyncStatus: text("altegio_sync_status"), // 'synced' | 'error' | 'pending' | null
-  altegioSyncError: text("altegio_sync_error"), // last sync error message
+  updatedFrom: text("updated_from"),
+  altegioSyncStatus: text("altegio_sync_status"),
+  altegioSyncError: text("altegio_sync_error"),
   altegioRetryCount: integer("altegio_retry_count").default(0),
   altegioLastRetryAt: timestamp("altegio_last_retry_at"),
   paymentStatus: text("payment_status", { enum: ["unpaid", "paid"] }).default("unpaid").notNull(),
   paymentReceivedAt: timestamp("payment_received_at"),
   reviewEligibility: boolean("review_eligibility"),
   reviewEligibilityReason: text("review_eligibility_reason"),
+  notCompleted: boolean("not_completed").default(false).notNull(),
+  externalPaymentId: text("external_payment_id"),
+  altegioOperationId: text("altegio_operation_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

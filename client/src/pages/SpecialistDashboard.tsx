@@ -344,6 +344,8 @@ export default function SpecialistDashboard() {
     },
   });
 
+  const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
+
   const completeVisitMutation = useMutation({
     mutationFn: async (bookingId: number) => {
       if (!currentUser?.id) throw new Error('Not authorized');
@@ -373,19 +375,48 @@ export default function SpecialistDashboard() {
     },
   });
 
+  const cancelBookingMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      if (!currentUser?.id) throw new Error('Not authorized');
+      setCancellingBookingId(bookingId);
+      const res = await fetch(`/api/specialist/bookings/${bookingId}/cancel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Failed to cancel');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setCancellingBookingId(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      toast({ title: 'Визит отменён' });
+    },
+    onError: (err: Error) => {
+      setCancellingBookingId(null);
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    },
+  });
 
-  const upcomingBookings = (bookings?.filter(b => 
+
+  const activeBookings = (bookings?.filter(b => 
     b.status !== 'completed' && b.status !== 'cancelled'
   ) || []).sort((a, b) => new Date(a.appointmentTime).getTime() - new Date(b.appointmentTime).getTime());
 
   const completedBookings = bookings?.filter(b => b.status === 'completed') || [];
+  const cancelledBookings = bookings?.filter(b => b.status === 'cancelled') || [];
 
-  const allBookingsForSync = [...upcomingBookings, ...completedBookings];
+  const allBookingsForSync = [...activeBookings, ...completedBookings];
   const globalAltegioBanner = getGlobalAltegioBannerConfig(allBookingsForSync as any, 3);
   const suppressIndividualBanners = !!globalAltegioBanner;
 
   const STALE_HOURS = 6;
-  const staleBookings = upcomingBookings.filter(b => {
+  const staleBookings = activeBookings.filter(b => {
     const appointmentTime = new Date(b.appointmentTime).getTime();
     const hoursSince = (Date.now() - appointmentTime) / (1000 * 60 * 60);
     return hoursSince >= STALE_HOURS;
@@ -978,7 +1009,7 @@ export default function SpecialistDashboard() {
         </CardContent>
       </Card>
 
-      {upcomingBookings.length > 0 && (
+      {activeBookings.length > 0 && (
         <Card className="border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/30">
           <CardContent className="py-4">
             <div className="flex items-start gap-3">
@@ -1011,9 +1042,9 @@ export default function SpecialistDashboard() {
               <Calendar className="w-5 h-5" />
               <CardTitle>Предстоящие записи</CardTitle>
             </div>
-            {upcomingBookings.length > 0 && (
+            {activeBookings.length > 0 && (
               <Badge variant="secondary" data-testid="badge-upcoming-count">
-                {upcomingBookings.length}
+                {activeBookings.length}
               </Badge>
             )}
           </CardHeader>
@@ -1023,19 +1054,22 @@ export default function SpecialistDashboard() {
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
               </div>
-            ) : upcomingBookings.length === 0 ? (
+            ) : activeBookings.length === 0 ? (
               <p className="text-muted-foreground text-sm">Нет предстоящих записей</p>
             ) : (
               <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
-                {upcomingBookings.map((booking) => {
+                {activeBookings.map((booking) => {
                   const appointmentTime = new Date(booking.appointmentTime).getTime();
                   const hoursSince = (Date.now() - appointmentTime) / (1000 * 60 * 60);
                   const isStale = hoursSince >= STALE_HOURS;
+                  const isReadyToComplete = (booking as any).readyToComplete === true;
+                  const isNotCompleted = (booking as any).notCompleted === true;
+                  const isPast = appointmentTime <= Date.now();
 
                   return (
                     <div 
                       key={booking.id} 
-                      className="p-3 rounded-md bg-muted/50 space-y-2"
+                      className={`p-3 rounded-md space-y-2 ${isNotCompleted ? 'bg-muted/30 opacity-60' : isReadyToComplete ? 'bg-amber-50/50 dark:bg-amber-950/20' : 'bg-muted/50'}`}
                       data-testid={`booking-item-${booking.id}`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -1086,13 +1120,43 @@ export default function SpecialistDashboard() {
                           testId={`banner-sync-${booking.id}`}
                         />
                       )}
-                      {isStale && (
-                        <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400" data-testid={`text-stale-hint-${booking.id}`}>
-                          <Clock className="w-3 h-3" />
-                          <span>Клиент был сегодня. Завершите визит</span>
-                        </div>
-                      )}
-                      {booking.status !== 'completed' ? (
+                      {isNotCompleted ? (
+                        <Badge variant="outline" className="text-muted-foreground" data-testid={`badge-not-completed-${booking.id}`}>
+                          Не состоялся
+                        </Badge>
+                      ) : isReadyToComplete ? (
+                        <>
+                          <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400" data-testid={`text-ready-to-complete-${booking.id}`}>
+                            <Clock className="w-3 h-3" />
+                            <span>Время визита прошло</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => completeVisitMutation.mutate(booking.id)}
+                              disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
+                              data-testid={`button-complete-visit-${booking.id}`}
+                            >
+                              <CheckCircle2 className="w-4 h-4 mr-2" />
+                              {completingBookingId === booking.id ? 'Завершение...' : 'Отметить как состоявшийся'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => cancelBookingMutation.mutate(booking.id)}
+                              disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
+                              data-testid={`button-cancel-visit-${booking.id}`}
+                            >
+                              {cancellingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Отменить'}
+                            </Button>
+                          </div>
+                        </>
+                      ) : !isPast ? (
+                        <Badge variant="secondary" data-testid={`badge-scheduled-${booking.id}`}>
+                          Запланирован
+                        </Badge>
+                      ) : (
                         <Button
                           size="sm"
                           className="w-full"
@@ -1103,15 +1167,6 @@ export default function SpecialistDashboard() {
                           <CheckCircle2 className="w-4 h-4 mr-2" />
                           {completingBookingId === booking.id ? 'Завершение...' : 'Завершить визит'}
                         </Button>
-                      ) : (booking as any).paymentStatus === 'paid' ? (
-                        <Badge variant="secondary" className="text-green-600 dark:text-green-400" data-testid={`badge-paid-${booking.id}`}>
-                          Оплачено
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-amber-600 dark:text-amber-400" data-testid={`badge-awaiting-payment-${booking.id}`}>
-                          <Clock className="w-3 h-3 mr-1" />
-                          Ожидается оплата
-                        </Badge>
                       )}
                     </div>
                   );

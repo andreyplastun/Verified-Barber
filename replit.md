@@ -94,9 +94,12 @@ Language: Russian (Русский) - all UI text is in Russian.
   - If eligible: generates magic link automatically
   - If not eligible: payment still recorded, score added, no magic link
 - **Logging**: `[REVIEW_ELIGIBILITY]` with visit/client/specialist/eligible/reason, `[MAGIC_LINK_CREATED]` with visit/client/link
-- **Idempotency**: Duplicate payment events are safely ignored (ALREADY_PAID)
-- **Guards**: Backend rejects reviews if booking status != "completed". Payment requires completed status for magic link.
-- **UI**: Completed + not paid → shows "Ожидается оплата" badge. Completed + paid → shows "Оплачено" badge. No manual payment buttons.
+- **Idempotency**: Duplicate payment events safely ignored via: paymentStatus check (ALREADY_PAID), `externalPaymentId` dedup (DUPLICATE_EXTERNAL_ID), `altegioOperationId` dedup (DUPLICATE_ALTEGIO_OP)
+- **Paid After Cancelled**: Logs `[PAID_AFTER_CANCELLED]`, records payment, adds score, no magic link
+- **Guards**: Backend rejects reviews if booking status != "completed". Payment requires completed status for magic link. `notCompleted` flag blocks review/tip.
+- **UI Status Matrix**: Scheduled (future) → "Запланирован" badge; ReadyToComplete (past, not completed/cancelled/flagged) → amber bg + "Отметить как состоявшийся" + cancel buttons; NotCompleted (flagged after 24h) → dimmed + "Не состоялся" badge; Completed+Unpaid → "Ожидается оплата"; Completed+Paid → "Оплачено". No manual payment buttons.
+- **NOT_COMPLETED Auto-Flag**: `checkAndFlagNotCompleted()` runs on bookings fetch, flags bookings 24h+ past appointment with no completion. Reversible on Altegio `attendance=1` webhook. Blocks review/tip creation.
+- **Cancel Booking**: `POST /api/specialist/bookings/:id/cancel` with Altegio sync. Available for overdue (ReadyToComplete) visits.
 - **Reminders**: Dashboard shows warning banner for uncompleted visits, stale hint after 6+ hours.
 
 #### Magic Link System
