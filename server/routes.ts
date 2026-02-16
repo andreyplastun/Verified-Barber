@@ -2569,6 +2569,16 @@ ${magicLink}`;
 
           if (isRefund) {
             console.log(`[REFUND_DETECTED] record_id=${recordId} operation_id=${operationId} amount=${amount} type=${operationType} — log only, no UI downgrade`);
+            if (recordId) {
+              const refundBooking = await storage.getBookingByAltegioId(recordId);
+              if (refundBooking) {
+                const refundReview = await storage.getReviewByBookingId(refundBooking.id);
+                if (refundReview) {
+                  await storage.updateReviewInternalState(refundReview.id, "refunded_visit");
+                  console.log(`[REFUND_DETECTED] review=${refundReview.id} booking=${refundBooking.id} internal_state=refunded_visit`);
+                }
+              }
+            }
             break;
           }
 

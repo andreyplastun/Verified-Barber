@@ -148,6 +148,7 @@ export const reviews = pgTable("reviews", {
   priceMismatch: boolean("price_mismatch").default(false).notNull(),
   finalizedAt: timestamp("finalized_at"),
   editableUntil: timestamp("editable_until"),
+  internalState: text("internal_state"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

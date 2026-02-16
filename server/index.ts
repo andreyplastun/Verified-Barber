@@ -112,6 +112,7 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS not_completed_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS external_payment_id text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_operation_id text;
+      ALTER TABLE reviews ADD COLUMN IF NOT EXISTS internal_state text;
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {

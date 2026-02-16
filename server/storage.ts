@@ -47,6 +47,7 @@ export interface IStorage {
   // Reviews
   createReview(review: any): Promise<Review>;
   updateReview(id: number, data: { rating?: number; comment?: string; triggers?: string[]; showName?: boolean; priceMismatch?: boolean }): Promise<Review | undefined>;
+  updateReviewInternalState(id: number, state: string): Promise<void>;
   finalizeReview(id: number): Promise<Review | undefined>;
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
   getReviewByBookingId(bookingId: number): Promise<Review | undefined>;
@@ -527,6 +528,12 @@ export class DatabaseStorage implements IStorage {
       .where(eq(reviews.id, id))
       .returning();
     return updated;
+  }
+
+  async updateReviewInternalState(id: number, state: string): Promise<void> {
+    await db.update(reviews)
+      .set({ internalState: state })
+      .where(eq(reviews.id, id));
   }
 
   async finalizeReview(id: number): Promise<Review | undefined> {
