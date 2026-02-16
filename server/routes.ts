@@ -548,16 +548,9 @@ export async function registerRoutes(
     }
     const bookingsList = await storage.getBookingsForSpecialist(id);
 
-    const now = Date.now();
     const enriched = bookingsList.map(b => {
-      const appointmentTime = new Date(b.appointmentTime).getTime();
-      const isPast = appointmentTime <= now;
       const isNotCompleted = !!(b as any).notCompletedAt;
-      const isReadyToComplete = isPast &&
-        b.status !== 'completed' &&
-        b.status !== 'cancelled' &&
-        !isNotCompleted;
-      return { ...b, readyToComplete: isReadyToComplete, notCompleted: isNotCompleted };
+      return { ...b, notCompleted: isNotCompleted };
     });
 
     res.json(enriched);
@@ -1313,10 +1306,11 @@ ${magicLink}`;
   }
 
   // =====================
-  // SPECIALIST: COMPLETE VISIT ENDPOINT
+  // SPECIALIST: COMPLETE + REQUEST PAYMENT ENDPOINT
+  // ReadyToComplete → PaymentPending
   // =====================
 
-  app.post("/api/specialist/bookings/:id/complete-visit", async (req, res) => {
+  app.post("/api/specialist/bookings/:id/complete-request-payment", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId) {
@@ -1338,20 +1332,73 @@ ${magicLink}`;
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      if (booking.status === 'completed') {
-        return res.status(409).json({ message: "Визит уже завершён" });
+      if (booking.status !== 'ready_to_complete') {
+        return res.status(409).json({ message: "Визит должен быть в статусе 'Готов к завершению'" });
       }
 
-      if (booking.hasReview) {
-        return res.status(409).json({ message: "Отзыв уже оставлен" });
+      const updated = await storage.updateBooking(bookingId, {
+        status: "payment_pending",
+        paymentRequestedAt: new Date(),
+        completionType: "with_payment",
+      } as any);
+
+      const specialist = await storage.getSpecialist(booking.specialistId);
+
+      if (isAltegioConfigured() && booking.updatedFrom !== "altegio") {
+        await storage.updateBooking(bookingId, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
+        syncWithRetry(
+          { ...booking, status: "payment_pending", updatedFrom: "rateus" },
+          specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
+          "complete",
+        );
       }
 
-      const appointmentTime = new Date(booking.appointmentTime).getTime();
-      if (appointmentTime > Date.now()) {
-        return res.status(400).json({ message: "Нельзя завершить будущий визит" });
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=payment_pending source=specialist_request_payment userId=${userId}`);
+
+      res.json({ booking: updated });
+    } catch (err: any) {
+      console.error("Error requesting payment:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =====================
+  // SPECIALIST: COMPLETE + SEND REVIEW ENDPOINT
+  // ReadyToComplete → Completed (directly, +1 score, magic link sent)
+  // =====================
+
+  app.post("/api/specialist/bookings/:id/complete-send-review", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
       }
 
-      const updated = await storage.updateBookingStatus(bookingId, "completed");
+      const user = await storage.getUser(userId);
+      if (!user || (user.role !== 'specialist' && user.role !== 'admin')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const bookingId = Number(req.params.id);
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Визит не найден" });
+      }
+
+      if (user.role === 'specialist' && user.specialistId !== booking.specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (booking.status !== 'ready_to_complete') {
+        return res.status(409).json({ message: "Визит должен быть в статусе 'Готов к завершению'" });
+      }
+
+      const updated = await storage.updateBooking(bookingId, {
+        status: "completed",
+        completionType: "with_review",
+      } as any);
+
+      await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
 
       const specialist = await storage.getSpecialist(booking.specialistId);
 
@@ -1364,13 +1411,33 @@ ${magicLink}`;
         );
       }
 
-      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=completed source=specialist_manual userId=${userId}`);
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=completed source=specialist_send_review userId=${userId} score+1`);
 
-      res.json({
-        booking: updated,
-      });
+      let magicLinkCreated = false;
+      if (booking.clientId) {
+        const eligibilityResult = await checkReviewEligibility(booking.clientId, booking.specialistId, bookingId);
+        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason}`);
+
+        await storage.updateBooking(bookingId, {
+          reviewEligibility: eligibilityResult.eligible,
+          reviewEligibilityReason: eligibilityResult.reason,
+        } as any);
+
+        if (eligibilityResult.eligible) {
+          const existingLink = await storage.getMagicLinkByBookingId(bookingId);
+          if (!existingLink) {
+            const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
+            const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
+            const fullLink = `${baseUrl}/r/${magicLink.token}`;
+            console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} client_id=${booking.clientId} link=${fullLink}`);
+            magicLinkCreated = true;
+          }
+        }
+      }
+
+      res.json({ booking: updated, magicLinkCreated });
     } catch (err: any) {
-      console.error("Error completing visit:", err);
+      console.error("Error completing visit with review:", err);
       res.status(500).json({ message: err.message });
     }
   });
@@ -1407,6 +1474,18 @@ ${magicLink}`;
 
       if (booking.status === 'cancelled') {
         return res.status(409).json({ message: "Визит уже отменён" });
+      }
+
+      if (booking.status === 'payment_pending') {
+        return res.status(409).json({ message: "Нельзя отменить визит — ожидается оплата" });
+      }
+
+      if (booking.status !== 'scheduled' && booking.status !== 'ready_to_complete') {
+        return res.status(409).json({ message: "Отмена доступна только для запланированных визитов" });
+      }
+
+      if (booking.hasReview) {
+        return res.status(409).json({ message: "Нельзя отменить визит — отзыв уже отправлен" });
       }
 
       const updated = await storage.updateBookingStatus(bookingId, "cancelled");
@@ -1447,7 +1526,7 @@ ${magicLink}`;
     bookingId: number,
   ): Promise<{ eligible: boolean; reason: string }> {
     const booking = await storage.getBooking(bookingId);
-    if (!booking || booking.status !== 'completed') {
+    if (!booking || (booking.status !== 'completed' && booking.status !== 'payment_pending')) {
       return { eligible: false, reason: 'VISIT_NOT_COMPLETED' };
     }
 
@@ -1507,6 +1586,10 @@ ${magicLink}`;
     if (opts?.externalPaymentId) updateData.externalPaymentId = opts.externalPaymentId;
     if (opts?.altegioOperationId) updateData.altegioOperationId = opts.altegioOperationId;
 
+    if (booking.status === 'payment_pending') {
+      updateData.status = 'completed';
+    }
+
     await storage.updateBooking(bookingId, updateData);
     console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} specialist=${booking.specialistId} status=${booking.status}`);
 
@@ -1516,7 +1599,7 @@ ${magicLink}`;
       return { success: true, magicLinkCreated: false, reason: 'PAID_AFTER_CANCELLED' };
     }
 
-    if (booking.status !== 'completed') {
+    if (booking.status !== 'completed' && booking.status !== 'payment_pending') {
       console.warn(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=NOT_COMPLETED — status=${booking.status}, payment recorded, no magic link`);
       return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED' };
     }
@@ -2506,7 +2589,7 @@ ${magicLink}`;
           await storage.updateBooking(newBooking.id, {
             altegioAppointmentId: altegioId,
             altegioStaffId: staffId || null,
-            status: "confirmed",
+            status: "scheduled",
             updatedFrom: "altegio",
           });
           console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}`);
@@ -2543,7 +2626,7 @@ ${magicLink}`;
             await storage.updateBooking(newBooking.id, {
               altegioAppointmentId: altegioId,
               altegioStaffId: staffId || null,
-              status: isNewVisitCompleted ? "completed" : "confirmed",
+              status: isNewVisitCompleted ? "completed" : "scheduled",
               updatedFrom: "altegio",
             });
             console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}`);

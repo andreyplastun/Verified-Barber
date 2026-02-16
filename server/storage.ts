@@ -390,6 +390,23 @@ export class DatabaseStorage implements IStorage {
       ));
     const refundCount30d = refundedBookings.length;
 
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const notCompletedBookings = await db.select()
+      .from(bookings)
+      .where(and(
+        eq(bookings.specialistId, id),
+        sql`${bookings.notCompletedAt} IS NOT NULL`,
+        sql`${bookings.notCompletedAt} >= ${sevenDaysAgo}`
+      ));
+    const notCompletedCount7d = notCompletedBookings.length;
+
+    let notCompletedMultiplier = 1.0;
+    if (notCompletedCount7d >= 5) {
+      notCompletedMultiplier = 0.6;
+    } else if (notCompletedCount7d >= 3) {
+      notCompletedMultiplier = 0.8;
+    }
+
     let trustedRating = averageRating;
     if (refundCount30d >= 5) {
       trustedRating = Math.round(averageRating * 0.75);
@@ -401,7 +418,9 @@ export class DatabaseStorage implements IStorage {
       trustedRating = Math.round(trustedRating * 0.97);
     }
 
-    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, AvgRating: ${averageRating/10}, TrustedRating: ${trustedRating/10}, Refunds30d: ${refundCount30d}`);
+    trustedRating = Math.round(trustedRating * notCompletedMultiplier);
+
+    console.log(`[STORAGE] updateSpecialistRating(${id}) - Total: ${totalCount}, Valid: ${validCount}, AvgRating: ${averageRating/10}, TrustedRating: ${trustedRating/10}, Refunds30d: ${refundCount30d}, NotCompleted7d: ${notCompletedCount7d}, NCMultiplier: ${notCompletedMultiplier}`);
 
     await db.update(specialists)
       .set({ 

@@ -115,6 +115,13 @@ app.use((req, res, next) => {
       ALTER TABLE reviews ADD COLUMN IF NOT EXISTS internal_state text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS refund_detected_at timestamp;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS refund_rate integer DEFAULT 0;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS ready_to_complete_at timestamp;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_requested_at timestamp;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS completion_type text;
+    `);
+
+    await pool.query(`
+      UPDATE bookings SET status = 'scheduled' WHERE status IN ('pending', 'confirmed');
     `);
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
@@ -132,8 +139,31 @@ app.use((req, res, next) => {
     console.error("[STARTUP] Error finalizing pending reviews:", err);
   }
 
-  const NOT_COMPLETED_INTERVAL_MS = 10 * 60 * 1000;
+  const TRANSITION_INTERVAL_MS = 5 * 60 * 1000;
+  const GRACE_PERIOD_MINUTES = 20;
   const NOT_COMPLETED_HOURS = 24;
+
+  async function transitionScheduledToReady() {
+    try {
+      const cutoff = new Date(Date.now() - GRACE_PERIOD_MINUTES * 60 * 1000);
+      const result = await pool.query(
+        `UPDATE bookings
+         SET status = 'ready_to_complete', ready_to_complete_at = NOW()
+         WHERE status = 'scheduled'
+           AND appointment_time <= $1
+         RETURNING id, appointment_time`,
+        [cutoff]
+      );
+      if (result.rows.length > 0) {
+        for (const row of result.rows) {
+          console.log(`[VISIT_STATUS_AUTO] booking=${row.id} status=ready_to_complete reason=grace_period_passed appointmentTime=${row.appointment_time}`);
+        }
+        console.log(`[VISIT_STATUS_AUTO] transitioned ${result.rows.length} bookings to ready_to_complete`);
+      }
+    } catch (err) {
+      console.error("[VISIT_STATUS_AUTO] transitionScheduledToReady error:", err);
+    }
+  }
 
   async function flagNotCompletedBookings() {
     try {
@@ -141,7 +171,7 @@ app.use((req, res, next) => {
       const result = await pool.query(
         `UPDATE bookings
          SET not_completed_at = NOW()
-         WHERE status NOT IN ('completed', 'cancelled')
+         WHERE status = 'ready_to_complete'
            AND not_completed_at IS NULL
            AND appointment_time <= $1
          RETURNING id, appointment_time`,
@@ -158,9 +188,13 @@ app.use((req, res, next) => {
     }
   }
 
+  await transitionScheduledToReady();
   await flagNotCompletedBookings();
-  setInterval(flagNotCompletedBookings, NOT_COMPLETED_INTERVAL_MS);
-  console.log(`[STARTUP] NOT_COMPLETED background job started (every ${NOT_COMPLETED_INTERVAL_MS / 60000} min, threshold ${NOT_COMPLETED_HOURS}h)`);
+  setInterval(async () => {
+    await transitionScheduledToReady();
+    await flagNotCompletedBookings();
+  }, TRANSITION_INTERVAL_MS);
+  console.log(`[STARTUP] Background jobs started (every ${TRANSITION_INTERVAL_MS / 60000} min, grace=${GRACE_PERIOD_MINUTES}min, not_completed=${NOT_COMPLETED_HOURS}h)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

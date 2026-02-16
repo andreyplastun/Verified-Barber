@@ -346,11 +346,11 @@ export default function SpecialistDashboard() {
 
   const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
 
-  const completeVisitMutation = useMutation({
+  const completeRequestPaymentMutation = useMutation({
     mutationFn: async (bookingId: number) => {
       if (!currentUser?.id) throw new Error('Not authorized');
       setCompletingBookingId(bookingId);
-      const res = await fetch(`/api/specialist/bookings/${bookingId}/complete-visit`, {
+      const res = await fetch(`/api/specialist/bookings/${bookingId}/complete-request-payment`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -359,7 +359,7 @@ export default function SpecialistDashboard() {
       });
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.message || 'Failed to complete visit');
+        throw new Error(error.message || 'Ошибка');
       }
       return res.json();
     },
@@ -367,7 +367,36 @@ export default function SpecialistDashboard() {
       setCompletingBookingId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-      toast({ title: 'Визит завершён' });
+      toast({ title: 'Запрос оплаты отправлен' });
+    },
+    onError: (err: Error) => {
+      setCompletingBookingId(null);
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const completeSendReviewMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      if (!currentUser?.id) throw new Error('Not authorized');
+      setCompletingBookingId(bookingId);
+      const res = await fetch(`/api/specialist/bookings/${bookingId}/complete-send-review`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Ошибка');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setCompletingBookingId(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      toast({ title: 'Визит завершён, отзыв запрошен' });
     },
     onError: (err: Error) => {
       setCompletingBookingId(null);
@@ -388,7 +417,7 @@ export default function SpecialistDashboard() {
       });
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.message || 'Failed to cancel');
+        throw new Error(error.message || 'Ошибка');
       }
       return res.json();
     },
@@ -405,7 +434,7 @@ export default function SpecialistDashboard() {
 
 
   const activeBookings = (bookings?.filter(b => 
-    b.status !== 'completed' && b.status !== 'cancelled'
+    b.status === 'scheduled' || b.status === 'ready_to_complete' || b.status === 'payment_pending'
   ) || []).sort((a, b) => new Date(a.appointmentTime).getTime() - new Date(b.appointmentTime).getTime());
 
   const completedBookings = bookings?.filter(b => b.status === 'completed') || [];
@@ -1009,7 +1038,7 @@ export default function SpecialistDashboard() {
         </CardContent>
       </Card>
 
-      {activeBookings.length > 0 && (
+      {activeBookings.some(b => b.status === 'ready_to_complete' || b.status === 'payment_pending') && (
         <Card className="border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/30">
           <CardContent className="py-4">
             <div className="flex items-start gap-3">
@@ -1019,7 +1048,7 @@ export default function SpecialistDashboard() {
                   Есть незавершённые визиты
                 </p>
                 <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
-                  Отзывы и чаевые недоступны до завершения визита
+                  Завершите визиты, чтобы клиенты могли оставить отзыв
                 </p>
               </div>
             </div>
@@ -1059,17 +1088,19 @@ export default function SpecialistDashboard() {
             ) : (
               <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                 {activeBookings.map((booking) => {
-                  const appointmentTime = new Date(booking.appointmentTime).getTime();
-                  const hoursSince = (Date.now() - appointmentTime) / (1000 * 60 * 60);
-                  const isStale = hoursSince >= STALE_HOURS;
-                  const isReadyToComplete = (booking as any).readyToComplete === true;
+                  const status = booking.status;
                   const isNotCompleted = (booking as any).notCompleted === true;
-                  const isPast = appointmentTime <= Date.now();
+                  const canCancel = status === 'scheduled' || status === 'ready_to_complete';
 
                   return (
                     <div 
                       key={booking.id} 
-                      className={`p-3 rounded-md space-y-2 ${isNotCompleted ? 'bg-muted/30 opacity-60' : isReadyToComplete ? 'bg-amber-50/50 dark:bg-amber-950/20' : 'bg-muted/50'}`}
+                      className={`p-3 rounded-md space-y-2 ${
+                        isNotCompleted ? 'bg-muted/30 opacity-60' :
+                        status === 'ready_to_complete' ? 'bg-amber-50/50 dark:bg-amber-950/20' :
+                        status === 'payment_pending' ? 'bg-blue-50/50 dark:bg-blue-950/20' :
+                        'bg-muted/50'
+                      }`}
                       data-testid={`booking-item-${booking.id}`}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -1124,50 +1155,68 @@ export default function SpecialistDashboard() {
                         <Badge variant="outline" className="text-muted-foreground" data-testid={`badge-not-completed-${booking.id}`}>
                           Не состоялся
                         </Badge>
-                      ) : isReadyToComplete ? (
+                      ) : status === 'ready_to_complete' ? (
                         <>
                           <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400" data-testid={`text-ready-to-complete-${booking.id}`}>
                             <Clock className="w-3 h-3" />
-                            <span>Время визита прошло</span>
+                            <span>Время визита прошло — завершите визит</span>
                           </div>
                           <div className="flex gap-2">
                             <Button
                               size="sm"
                               className="flex-1"
-                              onClick={() => completeVisitMutation.mutate(booking.id)}
+                              onClick={() => completeRequestPaymentMutation.mutate(booking.id)}
                               disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
-                              data-testid={`button-complete-visit-${booking.id}`}
+                              data-testid={`button-request-payment-${booking.id}`}
                             >
                               <CheckCircle2 className="w-4 h-4 mr-2" />
-                              {completingBookingId === booking.id ? 'Завершение...' : 'Отметить как состоявшийся'}
+                              {completingBookingId === booking.id ? 'Загрузка...' : 'Запросить оплату'}
                             </Button>
                             <Button
                               size="sm"
                               variant="outline"
+                              onClick={() => completeSendReviewMutation.mutate(booking.id)}
+                              disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
+                              data-testid={`button-send-review-${booking.id}`}
+                            >
+                              {completingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Только отзыв'}
+                            </Button>
+                          </div>
+                          <div className="flex justify-end">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-xs text-muted-foreground"
                               onClick={() => cancelBookingMutation.mutate(booking.id)}
                               disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
                               data-testid={`button-cancel-visit-${booking.id}`}
                             >
-                              {cancellingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Отменить'}
+                              {cancellingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Не состоялся'}
                             </Button>
                           </div>
                         </>
-                      ) : !isPast ? (
-                        <Badge variant="secondary" data-testid={`badge-scheduled-${booking.id}`}>
-                          Запланирован
-                        </Badge>
-                      ) : (
-                        <Button
-                          size="sm"
-                          className="w-full"
-                          onClick={() => completeVisitMutation.mutate(booking.id)}
-                          disabled={completingBookingId === booking.id}
-                          data-testid={`button-complete-visit-${booking.id}`}
-                        >
-                          <CheckCircle2 className="w-4 h-4 mr-2" />
-                          {completingBookingId === booking.id ? 'Завершение...' : 'Завершить визит'}
-                        </Button>
-                      )}
+                      ) : status === 'payment_pending' ? (
+                        <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400" data-testid={`text-payment-pending-${booking.id}`}>
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Ожидание оплаты</span>
+                        </div>
+                      ) : status === 'scheduled' ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge variant="secondary" data-testid={`badge-scheduled-${booking.id}`}>
+                            Запланирован
+                          </Badge>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs text-muted-foreground"
+                            onClick={() => cancelBookingMutation.mutate(booking.id)}
+                            disabled={cancellingBookingId === booking.id}
+                            data-testid={`button-cancel-visit-${booking.id}`}
+                          >
+                            {cancellingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Отменить'}
+                          </Button>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 })}
