@@ -991,8 +991,10 @@ export async function syncUpcomingAppointments(): Promise<{ imported: number; up
         const clientName = appt.client?.name || "Клиент Altegio";
         const clientPhone = appt.client?.phone || "";
         const altClientId = appt.client?.id ? Number(appt.client.id) : null;
-        const needsUpdate = existing.customerName === "Клиент Altegio" && clientName !== "Клиент Altegio";
-        if (needsUpdate) {
+        let didUpdate = false;
+
+        const needsNameUpdate = existing.customerName === "Клиент Altegio" && clientName !== "Клиент Altegio";
+        if (needsNameUpdate) {
           const updateFields: any = {
             customerName: clientName,
             customerPhone: clientPhone || null,
@@ -1002,12 +1004,30 @@ export async function syncUpcomingAppointments(): Promise<{ imported: number; up
             updateFields.altegioClientId = altClientId;
           }
           await storage.updateBooking(existing.id, updateFields);
-          updated++;
+          didUpdate = true;
         }
+
         if (clientPhone && (existing.isGuest || !existing.normalizedPhone)) {
           await handlePhoneAppearedLater(existing.id, clientPhone);
-          if (!needsUpdate) updated++;
-        } else if (!needsUpdate) {
+          didUpdate = true;
+        }
+
+        const canTransitionToCompleted =
+          appt.attendance === 1 &&
+          (existing.status === "scheduled" || existing.status === "ready_to_complete" || existing.status === "payment_pending");
+        if (canTransitionToCompleted) {
+          await storage.updateBooking(existing.id, {
+            status: "completed",
+            visitTrustWeight: 0.65,
+            updatedFrom: "altegio",
+          });
+          console.log(`[ALTEGIO-SYNC-STATUS] Booking ${existing.id} (${existing.customerName}): status ${existing.status} → completed (attendance=1 from Altegio)`);
+          didUpdate = true;
+        }
+
+        if (didUpdate) {
+          updated++;
+        } else {
           skipped++;
         }
         continue;
