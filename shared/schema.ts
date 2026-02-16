@@ -100,7 +100,7 @@ export const bookings = pgTable("bookings", {
   specialistId: integer("specialist_id").notNull(),
   clientId: uuid("client_id"),
   customerName: text("customer_name").notNull(),
-  customerPhone: text("customer_phone").notNull(),
+  customerPhone: text("customer_phone"),
   customerEmail: text("customer_email"),
   appointmentTime: timestamp("appointment_time").notNull(),
   status: text("status", { enum: ["scheduled", "ready_to_complete", "payment_pending", "completed", "cancelled"] }).default("scheduled").notNull(),
@@ -124,6 +124,8 @@ export const bookings = pgTable("bookings", {
   notCompletedAt: timestamp("not_completed_at"),
   externalPaymentId: text("external_payment_id"),
   altegioOperationId: text("altegio_operation_id"),
+  altegioClientId: integer("altegio_client_id"),
+  isGuest: boolean("is_guest").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -346,7 +348,7 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
 export const adminCreateBookingSchema = z.object({
   specialistId: z.number(),
   customerName: z.string(),
-  customerPhone: z.string(),
+  customerPhone: z.string().nullable().optional(),
   customerEmail: z.string().email(),
   appointmentTime: z.string().or(z.date()),
 });

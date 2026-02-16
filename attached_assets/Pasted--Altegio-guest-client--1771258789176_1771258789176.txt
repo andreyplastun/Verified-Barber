@@ -1,0 +1,93 @@
+ТЗ АГЕНТУ: Обработка клиентов без телефона из Altegio (guest-client логика)
+
+Цель:
+Корректно создавать и обновлять клиентов в Rateus, если Altegio прислал визит/клиента без номера телефона. Исключить фейковые телефоны, некорректный merge и дублирование клиентов.
+
+1. Входящий сценарий (webhook Altegio)
+Если webhook содержит:
+- altegio_client_id
+- client_name (опционально)
+- phone == null / empty / missing
+
+2. Создание / поиск клиента
+
+IF phone присутствует:
+    → normalizePhone(phone)
+    → поиск клиента по normalized_phone
+    → fallback: поиск по altegio_client_id
+
+IF phone отсутствует:
+    → поиск ТОЛЬКО по altegio_client_id
+
+SQL:
+SELECT * FROM clients
+WHERE altegio_client_id = {id}
+
+3. Если клиент НЕ найден и phone отсутствует
+
+Создать клиента:
+- name = client_name (если есть, иначе "Гость")
+- altegio_client_id = webhook.altegio_client_id
+- normalized_phone = NULL
+- source = "altegio"
+- is_guest = true
+
+ВАЖНО:
+- normalized_phone допускает NULL
+- НЕ генерировать фейковый номер
+- НЕ матчить по имени
+
+4. Если клиент найден по altegio_client_id
+
+- использовать существующего клиента
+- НЕ создавать дубликат
+
+5. Update клиента (телефон появился позже)
+
+Если webhook содержит:
+- altegio_client_id
+- phone != null
+
+Логика:
+normalizePhone(phone)
+
+IF normalized_phone уже существует у другого клиента:
+    → выполнить MERGE клиентов
+
+ELSE:
+    → UPDATE normalized_phone
+    → is_guest = false
+
+6. Merge логика
+
+Условие:
+- client_A.is_guest == true
+- client_A.altegio_client_id совпадает
+- client_B.normalized_phone совпадает
+
+Действия:
+- перенести визиты client_A → client_B
+- перенести отзывы
+- перенести историю
+- удалить client_A
+
+7. Ограничения / запреты
+
+- НЕ склеивать по имени
+- НЕ матчить по имени
+- НЕ генерировать временный телефон
+- НЕ падать при NULL phone
+
+8. Edge cases
+
+- multiple NULL phones разрешены
+- altegio_client_id уникален (если задан)
+- merge только при подтверждённом совпадении телефона
+
+9. Ожидаемый результат
+
+- визиты без телефона корректно создаются
+- клиенты не дублируются хаотично
+- identity клиента сохраняется
+- merge выполняется безопасно
+- антифрод/отзывы/чаевые не ломаются

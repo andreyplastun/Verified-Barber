@@ -125,6 +125,8 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_received_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS review_eligibility boolean;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS review_eligibility_reason text;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_client_id integer;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_guest boolean DEFAULT false;
       DO $$ BEGIN
         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='specialists' AND column_name='average_rating' AND data_type='integer') THEN
           ALTER TABLE specialists ALTER COLUMN average_rating TYPE real USING (average_rating::real / 10.0);

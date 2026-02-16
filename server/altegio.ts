@@ -517,7 +517,7 @@ export async function syncBookingToAltegio(
     id: number;
     specialistId: number;
     customerName: string;
-    customerPhone: string;
+    customerPhone: string | null;
     appointmentTime: Date;
     altegioAppointmentId?: number | null;
     status: string;
@@ -554,7 +554,7 @@ export async function syncBookingToAltegio(
       }
       const body: AltegioAppointmentData = {
         staff_id: specialist.altegioStaffId,
-        client: { phone: booking.customerPhone, name: booking.customerName },
+        client: { phone: booking.customerPhone || "", name: booking.customerName },
         datetime: new Date(booking.appointmentTime).toISOString(),
         save_if_busy: true,
         api_id: String(booking.id),
@@ -580,7 +580,7 @@ export async function syncBookingToAltegio(
       }
       const body: Record<string, any> = {
         datetime: new Date(booking.appointmentTime).toISOString(),
-        client: { name: booking.customerName, phone: booking.customerPhone },
+        client: { name: booking.customerName, phone: booking.customerPhone || "" },
       };
       const result = await makeAltegioRequest(
         `${ALTEGIO_BASE_URL}/record/${companyId}/${booking.altegioAppointmentId}`, "PUT", body, logCtx
@@ -644,7 +644,7 @@ export async function syncWithRetry(
     id: number;
     specialistId: number;
     customerName: string;
-    customerPhone: string;
+    customerPhone: string | null;
     appointmentTime: Date;
     altegioAppointmentId?: number | null;
     status: string;
@@ -1029,7 +1029,7 @@ export async function syncUpcomingAppointments(): Promise<{ imported: number; up
           appointmentTime,
         });
 
-        let status: "confirmed" | "completed" = "confirmed";
+        let status: "scheduled" | "completed" = "scheduled";
         if (appt.attendance === 1) status = "completed";
 
         await storage.updateBooking(newBooking.id, {
