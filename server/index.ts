@@ -129,6 +129,18 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_guest boolean DEFAULT false;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS normalized_phone text;
       DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='is_guest')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='is_new_client') THEN
+          ALTER TABLE bookings RENAME COLUMN is_guest TO is_new_client;
+        END IF;
+      END $$;
+      ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS customer_phone text;
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='magic_links' AND column_name='user_id' AND is_nullable='NO') THEN
+          ALTER TABLE magic_links ALTER COLUMN user_id DROP NOT NULL;
+        END IF;
+      END $$;
+      DO $$ BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'idx_bookings_altegio_client_id') THEN
           CREATE INDEX idx_bookings_altegio_client_id ON bookings (altegio_client_id) WHERE altegio_client_id IS NOT NULL;
         END IF;
