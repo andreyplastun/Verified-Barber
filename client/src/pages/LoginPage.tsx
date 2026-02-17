@@ -31,7 +31,7 @@ export default function LoginPage() {
       <div className="h-full w-full flex flex-col items-center justify-center p-4 overflow-y-auto">
         {/* Logo */}
         <div className="mb-12">
-          <img src={logoImage} alt="Logo" className="w-24 h-24 rounded-full" data-testid="img-logo" />
+          <img src={logoImage} alt="Logo" className="w-28 h-28" data-testid="img-logo" />
         </div>
 
         <div className="w-full max-w-sm space-y-6">
