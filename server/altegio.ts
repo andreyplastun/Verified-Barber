@@ -930,7 +930,7 @@ export async function fetchUpcomingAppointments(companyId: number, options?: { s
   }
 }
 
-export async function syncUpcomingAppointments(): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
+export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId: number) => Promise<any> }): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
   const config = getConfig();
   if (!config) {
     console.log("[ALTEGIO-SYNC-APPTS] Not configured, skipping");
@@ -1023,6 +1023,9 @@ export async function syncUpcomingAppointments(): Promise<{ imported: number; up
           });
           console.log(`[ALTEGIO-SYNC-STATUS] Booking ${existing.id} (${existing.customerName}): status ${existing.status} → completed (attendance=1 from Altegio)`);
           didUpdate = true;
+          if (opts?.onCompleted) {
+            await opts.onCompleted(existing.id);
+          }
         }
 
         if (didUpdate) {

@@ -1561,6 +1561,43 @@ ${magicLink}`;
     return { eligible: true, reason: 'OK' };
   }
 
+  async function tryCreateMagicLinkForCompletedVisit(bookingId: number, source: string): Promise<boolean> {
+    try {
+      const booking = await storage.getBooking(bookingId);
+      if (!booking || booking.status !== 'completed') return false;
+      if ((booking as any).paymentStatus === 'refunded') return false;
+      if (!booking.clientId) {
+        console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: no clientId (source=${source})`);
+        return false;
+      }
+
+      const eligibilityResult = await checkReviewEligibility(booking.clientId, booking.specialistId, bookingId);
+      console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason} source=${source}`);
+
+      await storage.updateBooking(bookingId, {
+        reviewEligibility: eligibilityResult.eligible,
+        reviewEligibilityReason: eligibilityResult.reason,
+      } as any);
+
+      if (eligibilityResult.eligible) {
+        const existingLink = await storage.getMagicLinkByBookingId(bookingId);
+        if (!existingLink) {
+          const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
+          const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
+          const fullLink = `${baseUrl}/r/${magicLink.token}`;
+          console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} client_id=${booking.clientId} link=${fullLink} source=${source}`);
+          return true;
+        } else {
+          console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId} (source=${source})`);
+        }
+      }
+      return false;
+    } catch (err: any) {
+      console.error(`[MAGIC_LINK_ERROR] booking=${bookingId} source=${source} error=${err.message}`);
+      return false;
+    }
+  }
+
   async function processPaymentSuccess(
     bookingId: number,
     source: string,
@@ -2458,7 +2495,9 @@ ${magicLink}`;
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const result = await syncUpcomingAppointments();
+      const result = await syncUpcomingAppointments({
+        onCompleted: (bookingId) => tryCreateMagicLinkForCompletedVisit(bookingId, 'altegio_sync'),
+      });
       res.json(result);
     } catch (err: any) {
       console.error("[API] sync-appointments error:", err);
@@ -2705,7 +2744,7 @@ ${magicLink}`;
           }
 
           if (isVisitCompleted) {
-            console.log(`[ALTEGIO] Visit completed for booking ${existing.id} (status-only, no magic link per spec)`);
+            await tryCreateMagicLinkForCompletedVisit(existing.id, 'altegio_webhook_attendance');
           }
 
           const isPaid = data?.paid === true || data?.paid === 1 || data?.paid === "1" ||
@@ -2740,8 +2779,9 @@ ${magicLink}`;
             console.log(`[ALTEGIO] Booking ${existing.id} already completed`);
             break;
           }
-          await storage.updateBooking(existing.id, { status: "completed", updatedFrom: "altegio" } as any);
-          console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId} (status-only, no magic link per spec)`);
+          await storage.updateBooking(existing.id, { status: "completed", visitTrustWeight: 0.65, updatedFrom: "altegio" } as any);
+          console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId}`);
+          await tryCreateMagicLinkForCompletedVisit(existing.id, 'altegio_webhook_completed');
           break;
         }
 
@@ -2828,7 +2868,9 @@ ${magicLink}`;
           await storage.syncSpecialistMappings();
           await autoMapAltegioStaff();
           console.log("[STARTUP] Running upcoming appointments sync...");
-          const syncResult = await syncUpcomingAppointments();
+          const syncResult = await syncUpcomingAppointments({
+            onCompleted: (bookingId) => tryCreateMagicLinkForCompletedVisit(bookingId, 'altegio_sync_startup'),
+          });
           console.log(`[STARTUP] Appointments sync: ${syncResult.imported} imported, ${syncResult.updated} updated, ${syncResult.skipped} skipped`);
           console.log("[STARTUP] Recalculating all specialist ratings...");
           const allSpecialists = await storage.getSpecialists();
@@ -2848,7 +2890,9 @@ ${magicLink}`;
       });
       autoMapAltegioStaff().then(() => {
         console.log("[STARTUP] Running upcoming appointments sync...");
-        return syncUpcomingAppointments();
+        return syncUpcomingAppointments({
+          onCompleted: (bookingId) => tryCreateMagicLinkForCompletedVisit(bookingId, 'altegio_sync_startup'),
+        });
       }).then(async result => {
         console.log(`[STARTUP] Appointments sync: ${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped`);
         console.log("[STARTUP] Recalculating all specialist ratings...");
