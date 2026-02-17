@@ -4,7 +4,7 @@ import { LoginForm } from "@/components/auth/LoginForm";
 import { SignUpForm } from "@/components/auth/SignUpForm";
 import { getCurrentUserWithRole } from "@/lib/auth";
 import { UserPlus } from "lucide-react";
-import logoImage from "@assets/IMG_6090_1771318575130.jpeg";
+import logoImage from "@assets/410C2451-35F6-4A38-98C8-FF4645466949_1771319885407.png";
 
 
 export default function LoginPage() {
