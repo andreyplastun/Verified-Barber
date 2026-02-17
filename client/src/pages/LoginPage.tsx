@@ -4,6 +4,7 @@ import { LoginForm } from "@/components/auth/LoginForm";
 import { SignUpForm } from "@/components/auth/SignUpForm";
 import { getCurrentUserWithRole } from "@/lib/auth";
 import { UserPlus } from "lucide-react";
+import logoImage from "@assets/IMG_6083_1771317700669.jpeg";
 
 
 export default function LoginPage() {
@@ -30,9 +31,7 @@ export default function LoginPage() {
       <div className="h-full w-full flex flex-col items-center justify-center p-4 overflow-y-auto">
         {/* Logo */}
         <div className="mb-12">
-          <span className="text-5xl font-bold tracking-tight text-foreground" data-testid="text-logo">
-            Who
-          </span>
+          <img src={logoImage} alt="Logo" className="w-24 h-24 rounded-full" data-testid="img-logo" />
         </div>
 
         <div className="w-full max-w-sm space-y-6">
