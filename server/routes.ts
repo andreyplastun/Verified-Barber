@@ -519,7 +519,7 @@ export async function registerRoutes(
       const booking = await storage.createBooking({
         ...input,
         normalizedPhone: normalized,
-        isGuest: !normalized && !input.customerPhone,
+        isNewClient: !normalized && !input.customerPhone,
       });
 
       if (isAltegioConfigured()) {
@@ -968,8 +968,8 @@ export async function registerRoutes(
         });
       }
       
-      // Create new magic link
-      const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
+      const customerPhone = booking.normalizedPhone || booking.customerPhone || null;
+      const magicLink = await storage.createMagicLink(booking.clientId || null, bookingId, booking.specialistId, false, !booking.clientId ? customerPhone : null);
       const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
       const fullLink = `${baseUrl}/r/${magicLink.token}`;
       
@@ -1042,8 +1042,8 @@ export async function registerRoutes(
       const specialist = await storage.getSpecialist(booking.specialistId);
       const barberName = specialist?.name || 'барберу';
       
-      // Create follow-up magic link
-      const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId, true);
+      const followupPhone = booking.normalizedPhone || booking.customerPhone || null;
+      const magicLink = await storage.createMagicLink(booking.clientId || null, bookingId, booking.specialistId, true, !booking.clientId ? followupPhone : null);
       const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
       const fullLink = `${baseUrl}/r/${magicLink.token}`;
       
@@ -1104,12 +1104,13 @@ export async function registerRoutes(
       res.json({
         valid: true,
         magicLinkId: link.id,
-        userId: link.userId,
+        userId: link.userId || null,
         bookingId: link.bookingId,
         specialistId: link.specialistId,
         specialistName: specialist.name,
         specialistImageUrl: specialist.imageUrl || null,
         customerName: booking.customerName,
+        isPhoneOnly: !link.userId && !!link.customerPhone,
         tipsEnabled: specialist.tipsEnabled || false,
         kaspiPhone: specialist.kaspiPhone || null,
         sentAt: link.createdAt,
@@ -1207,23 +1208,25 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Укажите оценку от 1 до 5" });
       }
       
-      // Check antifraud conditions (skip account age check for magic links)
       const { checkAntifraudConditions, normalizeReviewText } = await import("./antifraud");
-      const antifraudResult = await checkAntifraudConditions(
-        link.userId,
-        link.specialistId,
-        comment,
-        booking.createdAt,
-        { skipAccountAgeCheck: true } // Magic link = trusted access, skip new account check
-      );
+      
+      let antifraudResult = { isLimited: false, reason: null as string | null, showNewAccountPopup: false };
+      if (link.userId) {
+        antifraudResult = await checkAntifraudConditions(
+          link.userId,
+          link.specialistId,
+          comment,
+          booking.createdAt,
+          { skipAccountAgeCheck: true }
+        );
+      }
       
       const normalizedText = normalizeReviewText(comment);
       
-      // Create review (magic link = no special privileges, same antifraud rules)
       const review = await storage.createReview({
         bookingId: link.bookingId,
         specialistId: link.specialistId,
-        clientId: link.userId,
+        clientId: link.userId || null,
         rating,
         comment: comment || null,
         triggers: triggers || null,
@@ -1403,7 +1406,7 @@ ${magicLink}`;
       const updated = await storage.updateBooking(bookingId, {
         status: "completed",
         completionType: "with_review",
-        visitTrustWeight: 0.65,
+        visitTrustWeight: 1.0,
       } as any);
 
       await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
@@ -1421,27 +1424,7 @@ ${magicLink}`;
 
       console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=completed source=specialist_send_review userId=${userId} score+1`);
 
-      let magicLinkCreated = false;
-      if (booking.clientId) {
-        const eligibilityResult = await checkReviewEligibility(booking.clientId, booking.specialistId, bookingId);
-        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason}`);
-
-        await storage.updateBooking(bookingId, {
-          reviewEligibility: eligibilityResult.eligible,
-          reviewEligibilityReason: eligibilityResult.reason,
-        } as any);
-
-        if (eligibilityResult.eligible) {
-          const existingLink = await storage.getMagicLinkByBookingId(bookingId);
-          if (!existingLink) {
-            const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
-            const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
-            const fullLink = `${baseUrl}/r/${magicLink.token}`;
-            console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} client_id=${booking.clientId} link=${fullLink}`);
-            magicLinkCreated = true;
-          }
-        }
-      }
+      const magicLinkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, 'specialist_send_review');
 
       res.json({ booking: updated, magicLinkCreated });
     } catch (err: any) {
@@ -1566,32 +1549,51 @@ ${magicLink}`;
       const booking = await storage.getBooking(bookingId);
       if (!booking || booking.status !== 'completed') return false;
       if ((booking as any).paymentStatus === 'refunded') return false;
-      if (!booking.clientId) {
-        console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: no clientId (source=${source})`);
+
+      const hasClientId = !!booking.clientId;
+      const hasPhone = !!booking.normalizedPhone || !!booking.customerPhone;
+
+      if (!hasClientId && !hasPhone) {
+        console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: no clientId and no phone (source=${source})`);
         return false;
       }
 
-      const eligibilityResult = await checkReviewEligibility(booking.clientId, booking.specialistId, bookingId);
-      console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason} source=${source}`);
+      if (hasClientId) {
+        const eligibilityResult = await checkReviewEligibility(booking.clientId!, booking.specialistId, bookingId);
+        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason} source=${source}`);
 
-      await storage.updateBooking(bookingId, {
-        reviewEligibility: eligibilityResult.eligible,
-        reviewEligibilityReason: eligibilityResult.reason,
-      } as any);
+        await storage.updateBooking(bookingId, {
+          reviewEligibility: eligibilityResult.eligible,
+          reviewEligibilityReason: eligibilityResult.reason,
+        } as any);
 
-      if (eligibilityResult.eligible) {
-        const existingLink = await storage.getMagicLinkByBookingId(bookingId);
-        if (!existingLink) {
-          const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
-          const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
-          const fullLink = `${baseUrl}/r/${magicLink.token}`;
-          console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} client_id=${booking.clientId} link=${fullLink} source=${source}`);
-          return true;
-        } else {
-          console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId} (source=${source})`);
-        }
+        if (!eligibilityResult.eligible) return false;
+      } else {
+        await storage.updateBooking(bookingId, {
+          reviewEligibility: true,
+          reviewEligibilityReason: 'phone_only_client',
+        } as any);
+        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} phone=${booking.normalizedPhone || booking.customerPhone} specialist_id=${booking.specialistId} eligible=true reason=phone_only_client source=${source}`);
       }
-      return false;
+
+      const existingLink = await storage.getMagicLinkByBookingId(bookingId);
+      if (existingLink) {
+        console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId} (source=${source})`);
+        return false;
+      }
+
+      const customerPhone = booking.normalizedPhone || booking.customerPhone || null;
+      const magicLink = await storage.createMagicLink(
+        booking.clientId || null,
+        bookingId,
+        booking.specialistId,
+        false,
+        hasClientId ? null : customerPhone
+      );
+      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
+      const fullLink = `${baseUrl}/r/${magicLink.token}`;
+      console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
+      return true;
     } catch (err: any) {
       console.error(`[MAGIC_LINK_ERROR] booking=${bookingId} source=${source} error=${err.message}`);
       return false;
@@ -1631,7 +1633,7 @@ ${magicLink}`;
     const updateData: any = {
       paymentStatus: 'paid',
       paymentReceivedAt: new Date(),
-      visitTrustWeight: 1.0,
+      visitTrustWeight: 1.05,
     };
     if (opts?.externalPaymentId) updateData.externalPaymentId = opts.externalPaymentId;
     if (opts?.altegioOperationId) updateData.altegioOperationId = opts.altegioOperationId;
@@ -1664,33 +1666,40 @@ ${magicLink}`;
     await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
     console.log(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=SUCCESS specialist=${booking.specialistId} score+2`);
 
-    if (!booking.clientId) {
-      console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=null specialist_id=${booking.specialistId} eligible=false reason=NO_CLIENT`);
-      return { success: true, magicLinkCreated: false, reason: 'NO_CLIENT' };
+    const hasClientId = !!booking.clientId;
+    const hasPhone = !!booking.normalizedPhone || !!booking.customerPhone;
+
+    if (!hasClientId && !hasPhone) {
+      console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} no clientId or phone, skipping magic link`);
+      return { success: true, magicLinkCreated: false, reason: 'NO_CLIENT_NO_PHONE' };
     }
 
-    const eligibilityResult = await checkReviewEligibility(booking.clientId, booking.specialistId, bookingId);
-    console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason}`);
-
-    await storage.updateBooking(bookingId, {
-      reviewEligibility: eligibilityResult.eligible,
-      reviewEligibilityReason: eligibilityResult.reason,
-    } as any);
-
-    if (eligibilityResult.eligible) {
-      const existingLink = await storage.getMagicLinkByBookingId(bookingId);
-      if (existingLink) {
-        console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId}`);
-      } else {
-        const magicLink = await storage.createMagicLink(booking.clientId, bookingId, booking.specialistId);
-        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
-        const fullLink = `${baseUrl}/r/${magicLink.token}`;
-        console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} client_id=${booking.clientId} link=${fullLink}`);
+    if (hasClientId) {
+      const eligibilityResult = await checkReviewEligibility(booking.clientId!, booking.specialistId, bookingId);
+      console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason}`);
+      await storage.updateBooking(bookingId, {
+        reviewEligibility: eligibilityResult.eligible,
+        reviewEligibilityReason: eligibilityResult.reason,
+      } as any);
+      if (!eligibilityResult.eligible) {
+        return { success: true, magicLinkCreated: false, reason: eligibilityResult.reason || 'NOT_ELIGIBLE' };
       }
-      return { success: true, magicLinkCreated: true, reason: 'ELIGIBLE' };
+    } else {
+      await storage.updateBooking(bookingId, {
+        reviewEligibility: true,
+        reviewEligibilityReason: 'phone_only_client',
+      } as any);
+      console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} phone=${booking.normalizedPhone || booking.customerPhone} eligible=true reason=phone_only_client`);
     }
 
-    return { success: true, magicLinkCreated: false, reason: eligibilityResult.reason };
+    const existingLink = await storage.getMagicLinkByBookingId(bookingId);
+    if (existingLink) {
+      console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId}`);
+      return { success: true, magicLinkCreated: false, reason: 'LINK_EXISTS' };
+    }
+
+    const linkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, `${source}_payment`);
+    return { success: true, magicLinkCreated: linkCreated, reason: linkCreated ? 'ELIGIBLE' : 'NOT_ELIGIBLE' };
   }
 
   async function processRefund(
@@ -2653,11 +2662,11 @@ ${magicLink}`;
             altegioStaffId: staffId || null,
             altegioClientId: identity.altegioClientId,
             normalizedPhone: identity.normalizedPhone,
-            isGuest: identity.isGuest,
+            isNewClient: identity.isNewClient,
             status: "scheduled",
             updatedFrom: "altegio",
           });
-          console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}, guest=${identity.isGuest}`);
+          console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}, newClient=${identity.isNewClient}`);
           break;
         }
 
@@ -2699,11 +2708,11 @@ ${magicLink}`;
               altegioStaffId: staffId || null,
               altegioClientId: identity.altegioClientId,
               normalizedPhone: identity.normalizedPhone,
-              isGuest: identity.isGuest,
+              isNewClient: identity.isNewClient,
               status: isNewVisitCompleted ? "completed" : "scheduled",
               updatedFrom: "altegio",
             });
-            console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}, guest=${identity.isGuest}`);
+            console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}, newClient=${identity.isNewClient}`);
 
             if (isNewVisitCompleted) {
               console.log(`[ALTEGIO] New booking ${newBooking.id} already completed (status-only, no magic link per spec)`);
@@ -2719,7 +2728,7 @@ ${magicLink}`;
           if (clientName && clientName !== "Клиент Altegio") updateData.customerName = clientName;
           if (clientPhone) {
             updateData.customerPhone = clientPhone;
-            if (existing.isGuest || !existing.normalizedPhone) {
+            if (existing.isNewClient || !existing.normalizedPhone) {
               await handlePhoneAppearedLater(existing.id, clientPhone);
             }
           }
@@ -2779,7 +2788,7 @@ ${magicLink}`;
             console.log(`[ALTEGIO] Booking ${existing.id} already completed`);
             break;
           }
-          await storage.updateBooking(existing.id, { status: "completed", visitTrustWeight: 0.65, updatedFrom: "altegio" } as any);
+          await storage.updateBooking(existing.id, { status: "completed", visitTrustWeight: 1.0, updatedFrom: "altegio" } as any);
           console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId}`);
           await tryCreateMagicLinkForCompletedVisit(existing.id, 'altegio_webhook_completed');
           break;

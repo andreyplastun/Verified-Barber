@@ -125,7 +125,7 @@ export const bookings = pgTable("bookings", {
   externalPaymentId: text("external_payment_id"),
   altegioOperationId: text("altegio_operation_id"),
   altegioClientId: integer("altegio_client_id"),
-  isGuest: boolean("is_guest").default(false),
+  isNewClient: boolean("is_new_client").default(false),
   normalizedPhone: text("normalized_phone"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -172,9 +172,10 @@ export const specialistPhotos = pgTable("specialist_photos", {
 export const magicLinks = pgTable("magic_links", {
   id: serial("id").primaryKey(),
   token: text("token").notNull().unique(), // Random secure token
-  userId: uuid("user_id").notNull(), // References users.id
+  userId: uuid("user_id"), // References users.id - nullable for phone-only clients
   bookingId: integer("booking_id").notNull(), // References bookings.id
   specialistId: integer("specialist_id").notNull(), // References specialists.id
+  customerPhone: text("customer_phone"), // Phone for phone-only magic links (no account)
   expiresAt: timestamp("expires_at").notNull(), // Valid for 48 hours
   usedAt: timestamp("used_at"), // Null until used
   createdAt: timestamp("created_at").defaultNow(),

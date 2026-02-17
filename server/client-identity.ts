@@ -22,7 +22,7 @@ export function normalizePhone(phone: string | null | undefined): string | null 
 export interface ClientIdentityResult {
   altegioClientId: number | null;
   normalizedPhone: string | null;
-  isGuest: boolean;
+  isNewClient: boolean;
   merged: boolean;
   mergedFromBookingId?: number;
 }
@@ -50,36 +50,36 @@ export async function resolveClientIdentity(params: {
     }
 
     console.log(
-      `[CLIENT_CREATED_GUEST] Identity resolved via altegio_client_id=${altegioClientId}, phone=${normalized || "none"}, guest=${!normalized}`
+      `[CLIENT_IDENTITY] Identity resolved via altegio_client_id=${altegioClientId}, phone=${normalized || "none"}, newClient=${!normalized}`
     );
 
     return {
       altegioClientId,
       normalizedPhone: normalized,
-      isGuest: !normalized,
+      isNewClient: !normalized,
       merged: false,
     };
   }
 
   if (normalized) {
     console.log(
-      `[CLIENT_CREATED_GUEST] Identity resolved via phone=${normalized}, no altegio_client_id`
+      `[CLIENT_IDENTITY] Identity resolved via phone=${normalized}, no altegio_client_id`
     );
     return {
       altegioClientId: null,
       normalizedPhone: normalized,
-      isGuest: false,
+      isNewClient: false,
       merged: false,
     };
   }
 
   console.log(
-    `[CLIENT_CREATED_GUEST] Guest client created: name="${customerName}", specialist=${specialistId}, no phone, no altegio_client_id`
+    `[CLIENT_IDENTITY] New client created: name="${customerName}", specialist=${specialistId}, no phone, no altegio_client_id`
   );
   return {
     altegioClientId: null,
     normalizedPhone: null,
-    isGuest: true,
+    isNewClient: true,
     merged: false,
   };
 }
@@ -113,18 +113,18 @@ export async function handlePhoneAppearedLater(
     await storage.updateBooking(bookingId, {
       customerPhone: newPhone,
       normalizedPhone: normalized,
-      isGuest: false,
+      isNewClient: false,
     });
-    console.log(`[CLIENT_UPDATED_PHONE] Booking ${bookingId}: phone set to ${normalized}, is_guest=false (conflict kept separate)`);
+    console.log(`[CLIENT_UPDATED_PHONE] Booking ${bookingId}: phone set to ${normalized}, is_new_client=false (conflict kept separate)`);
     return { updated: true, conflict: true };
   }
 
   await storage.updateBooking(bookingId, {
     customerPhone: newPhone,
     normalizedPhone: normalized,
-    isGuest: false,
+    isNewClient: false,
   });
-  console.log(`[CLIENT_UPDATED_PHONE] Booking ${bookingId}: phone set to ${normalized}, is_guest=false`);
+  console.log(`[CLIENT_UPDATED_PHONE] Booking ${bookingId}: phone set to ${normalized}, is_new_client=false`);
   return { updated: true, conflict: false };
 }
 

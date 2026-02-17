@@ -65,7 +65,7 @@ export interface IStorage {
   saveOnboardingTipsSettings(specialistId: number, kaspiPhone: string | null, tipsEnabled: boolean, skipped: boolean): Promise<void>;
   
   // Magic Links
-  createMagicLink(userId: string, bookingId: number, specialistId: number, isFollowup?: boolean): Promise<MagicLink>;
+  createMagicLink(userId: string | null, bookingId: number, specialistId: number, isFollowup?: boolean, customerPhone?: string | null): Promise<MagicLink>;
   getMagicLinkByToken(token: string): Promise<MagicLink | undefined>;
   markMagicLinkOpened(id: number): Promise<void>;
   markMagicLinkUsed(id: number): Promise<void>;
@@ -421,9 +421,9 @@ export class DatabaseStorage implements IStorage {
       } else if (r.notCompletedAt) {
         visitWeight = 0;
       } else if (r.paymentStatus === 'paid') {
-        visitWeight = 1.0;
+        visitWeight = 1.05;
       } else {
-        visitWeight = 0.65;
+        visitWeight = 1.0;
       }
 
       if (visitWeight === 0) continue;
@@ -715,7 +715,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Magic Links
-  async createMagicLink(userId: string, bookingId: number, specialistId: number, isFollowup: boolean = false): Promise<MagicLink> {
+  async createMagicLink(userId: string | null, bookingId: number, specialistId: number, isFollowup: boolean = false, customerPhone: string | null = null): Promise<MagicLink> {
     const token = crypto.randomBytes(12).toString('base64url'); // 16 chars, URL-safe
     const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
     
@@ -724,11 +724,12 @@ export class DatabaseStorage implements IStorage {
       userId,
       bookingId,
       specialistId,
+      customerPhone,
       expiresAt,
       isFollowup,
     }).returning();
     
-    console.log(`[MAGIC_LINK] Created ${isFollowup ? 'FOLLOWUP ' : ''}for booking ${bookingId}, user ${userId}, expires ${expiresAt.toISOString()}`);
+    console.log(`[MAGIC_LINK] Created ${isFollowup ? 'FOLLOWUP ' : ''}for booking ${bookingId}, ${userId ? `user ${userId}` : `phone ${customerPhone}`}, expires ${expiresAt.toISOString()}`);
     return link;
   }
 

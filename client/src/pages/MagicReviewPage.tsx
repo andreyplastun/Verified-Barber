@@ -43,12 +43,13 @@ function toDativeCase(name: string): string {
 interface MagicLinkData {
   valid: boolean;
   magicLinkId: number;
-  userId: string;
+  userId: string | null;
   bookingId: number;
   specialistId: number;
   specialistName: string;
   specialistImageUrl?: string | null;
   customerName: string;
+  isPhoneOnly?: boolean;
   reason?: string;
   tipsEnabled?: boolean;
   kaspiPhone?: string | null;

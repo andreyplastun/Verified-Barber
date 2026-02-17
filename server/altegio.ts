@@ -1007,7 +1007,7 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           didUpdate = true;
         }
 
-        if (clientPhone && (existing.isGuest || !existing.normalizedPhone)) {
+        if (clientPhone && (existing.isNewClient || !existing.normalizedPhone)) {
           await handlePhoneAppearedLater(existing.id, clientPhone);
           didUpdate = true;
         }
@@ -1018,10 +1018,10 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
         if (canTransitionToCompleted) {
           await storage.updateBooking(existing.id, {
             status: "completed",
-            visitTrustWeight: 0.65,
+            visitTrustWeight: 1.0,
             updatedFrom: "altegio",
           });
-          console.log(`[ALTEGIO-SYNC-STATUS] Booking ${existing.id} (${existing.customerName}): status ${existing.status} → completed (attendance=1 from Altegio)`);
+          console.log(`[ALTEGIO-SYNC-STATUS] Booking ${existing.id} (${existing.customerName}): status ${existing.status} → completed (attendance=1 from Altegio, weight=1.0 cash/unknown)`);
           didUpdate = true;
           if (opts?.onCompleted) {
             await opts.onCompleted(existing.id);
@@ -1077,7 +1077,7 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           altegioStaffId: appt.staff_id || null,
           altegioClientId: identity.altegioClientId,
           normalizedPhone: identity.normalizedPhone,
-          isGuest: identity.isGuest,
+          isNewClient: identity.isNewClient,
           status,
           updatedFrom: "altegio",
         });
