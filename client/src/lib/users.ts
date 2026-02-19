@@ -6,6 +6,8 @@ export interface AppUser {
   role: UserRole
   specialistId: number | null
   onboardingCompleted: boolean
+  onboardingSeenClient: boolean
+  onboardingSeenPro: boolean
   createdAt: string
 }
 
@@ -39,6 +41,8 @@ export async function getAppUser(userId: string): Promise<AppUser | null> {
       role: data.role as UserRole,
       specialistId: data.specialistId,
       onboardingCompleted: data.onboardingCompleted ?? false,
+      onboardingSeenClient: data.onboardingSeenClient ?? false,
+      onboardingSeenPro: data.onboardingSeenPro ?? false,
       createdAt: data.createdAt,
     }
   } catch (err) {

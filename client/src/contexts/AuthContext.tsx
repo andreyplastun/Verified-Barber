@@ -59,6 +59,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: userWithRole.role,
         specialistId: userWithRole.specialistId ?? null,
         onboardingCompleted: userWithRole.onboardingCompleted ?? false,
+        onboardingSeenClient: userWithRole.onboardingSeenClient ?? false,
+        onboardingSeenPro: userWithRole.onboardingSeenPro ?? false,
         createdAt: userWithRole.createdAt ?? "",
       });
       return userWithRole;
@@ -77,6 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role: userWithRole.role,
         specialistId: userWithRole.specialistId ?? null,
         onboardingCompleted: userWithRole.onboardingCompleted ?? false,
+        onboardingSeenClient: userWithRole.onboardingSeenClient ?? false,
+        onboardingSeenPro: userWithRole.onboardingSeenPro ?? false,
         createdAt: userWithRole.createdAt ?? "",
       };
       setUser(userData);

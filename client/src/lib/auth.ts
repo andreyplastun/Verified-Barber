@@ -104,6 +104,8 @@ export async function getCurrentUserWithRole(): Promise<{
   role: 'client' | 'specialist' | 'admin';
   specialistId: number | null;
   onboardingCompleted: boolean;
+  onboardingSeenClient: boolean;
+  onboardingSeenPro: boolean;
   createdAt: string | null;
 } | null> {
   const { data: { user } } = await supabase.auth.getUser()
@@ -134,6 +136,8 @@ export async function getCurrentUserWithRole(): Promise<{
       role: data.role as 'client' | 'specialist' | 'admin',
       specialistId: data.specialistId ?? null,
       onboardingCompleted: data.onboardingCompleted ?? false,
+      onboardingSeenClient: data.onboardingSeenClient ?? false,
+      onboardingSeenPro: data.onboardingSeenPro ?? false,
       createdAt: data.createdAt ?? null,
     }
   } catch (err) {

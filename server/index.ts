@@ -161,6 +161,8 @@ app.use((req, res, next) => {
           ALTER TABLE bookings DROP CONSTRAINT bookings_status_check;
         END IF;
       END $$;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_client boolean NOT NULL DEFAULT false;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_pro boolean NOT NULL DEFAULT false;
     `);
 
     await pool.query(`

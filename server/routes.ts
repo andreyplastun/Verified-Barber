@@ -239,6 +239,28 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/users/:id/onboarding-seen", async (req, res) => {
+    try {
+      const userId = req.params.id;
+      const authUserId = req.headers["x-user-id"] as string;
+      if (authUserId !== userId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const { type } = req.body;
+      if (type !== "client" && type !== "pro") {
+        return res.status(400).json({ message: "Invalid type, must be 'client' or 'pro'" });
+      }
+      const updated = await storage.markOnboardingSeen(userId, type);
+      if (!updated) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      res.json(updated);
+    } catch (err: any) {
+      console.error("Error marking onboarding seen:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Specialists with filtering and sorting
   app.get(api.specialists.list.path, async (req, res) => {
     // Lazy finalization: finalize any expired reviews on-demand (autoscale-friendly)

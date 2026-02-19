@@ -11,6 +11,7 @@ export interface IStorage {
   getOrCreateUserByEmail(email: string): Promise<User>;
   updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined>;
   completeOnboarding(id: string): Promise<User | undefined>;
+  markOnboardingSeen(id: string, type: "client" | "pro"): Promise<User | undefined>;
   getClients(): Promise<User[]>;
   getBookingsWithDetails(): Promise<any[]>;
   
@@ -256,6 +257,15 @@ export class DatabaseStorage implements IStorage {
   async completeOnboarding(id: string): Promise<User | undefined> {
     const [updated] = await db.update(users)
       .set({ onboardingCompleted: true })
+      .where(eq(users.id, id))
+      .returning();
+    return updated;
+  }
+
+  async markOnboardingSeen(id: string, type: "client" | "pro"): Promise<User | undefined> {
+    const field = type === "client" ? { onboardingSeenClient: true } : { onboardingSeenPro: true };
+    const [updated] = await db.update(users)
+      .set(field)
       .where(eq(users.id, id))
       .returning();
     return updated;

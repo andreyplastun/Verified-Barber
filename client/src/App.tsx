@@ -24,6 +24,7 @@ import JoinPage from "@/pages/JoinPage";
 import ClaimProfilePage from "@/pages/ClaimProfilePage";
 import { Navigation } from "@/components/Navigation";
 import { InstallBanner } from "@/components/InstallBanner";
+import { useOnboardingSeen } from "@/hooks/useOnboardingSeen";
 
 function LoginRoute() {
   const { user, loading } = useAuth();
@@ -180,8 +181,14 @@ function Router() {
 
 function AppContent() {
   const [location] = useLocation();
+  const { user } = useAuth();
   const hideNavigation = location.startsWith('/r/') || location.startsWith('/claim/') || location.startsWith('/review/');
   const isCriticalFlow = location.startsWith('/r/') || location.startsWith('/review/') || location.startsWith('/book/') || location.startsWith('/claim/');
+
+  const onboardingType = user?.role === "specialist" ? "pro" : "client";
+  const { seen: onboardingSeen, markSeen: markOnboardingSeen } = useOnboardingSeen(onboardingType);
+
+  const shouldShowOnboarding = !isCriticalFlow && onboardingSeen === false;
 
   return (
     <div className="min-h-screen bg-background">

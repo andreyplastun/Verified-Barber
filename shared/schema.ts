@@ -44,6 +44,8 @@ export const users = pgTable("users", {
   role: text("role", { enum: ["client", "specialist", "admin"] }).default("client").notNull(),
   specialistId: integer("specialist_id"),
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
+  onboardingSeenClient: boolean("onboarding_seen_client").default(false).notNull(),
+  onboardingSeenPro: boolean("onboarding_seen_pro").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
