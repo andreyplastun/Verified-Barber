@@ -23,6 +23,7 @@ import HowTrustWorksPage from "@/pages/HowTrustWorksPage";
 import JoinPage from "@/pages/JoinPage";
 import ClaimProfilePage from "@/pages/ClaimProfilePage";
 import { Navigation } from "@/components/Navigation";
+import { InstallBanner } from "@/components/InstallBanner";
 
 function LoginRoute() {
   const { user, loading } = useAuth();
@@ -180,11 +181,13 @@ function Router() {
 function AppContent() {
   const [location] = useLocation();
   const hideNavigation = location.startsWith('/r/') || location.startsWith('/claim/') || location.startsWith('/review/');
+  const isCriticalFlow = location.startsWith('/r/') || location.startsWith('/review/') || location.startsWith('/book/') || location.startsWith('/claim/');
 
   return (
     <div className="min-h-screen bg-background">
       <Router />
       {!hideNavigation && <Navigation />}
+      {!isCriticalFlow && <InstallBanner />}
     </div>
   );
 }

@@ -1,0 +1,229 @@
+ТЗ: Install Banner + Экран инструкции (Rateus PWA)
+
+Цель:
+Мягко мотивировать пользователя добавить Rateus на Home Screen.
+
+Платформы:
+iOS / Android / Mobile Web
+
+Тип UI:
+Bottom Install Banner (нижний баннер)
+
+⸻
+
+1️⃣ Условия показа баннера
+
+Показать баннер если:
+
+✔ пользователь НЕ в standalone режиме
+✔ installBannerInstalled != true
+✔ installBannerDismissed != permanent
+
+И выполняется логика частоты.
+
+НЕ показывать если:
+
+✖ display-mode: standalone
+✖ пользователь уже установил
+✖ permanent dismiss
+✖ открыт critical flow (оплата / форма / отзыв)
+
+⸻
+
+2️⃣ Логика частоты показов
+
+localStorage ключи:
+
+installBannerViews = number (default 0)
+installBannerLastShown = timestamp
+installBannerDismissed = boolean
+installBannerInstalled = boolean
+
+⸻
+
+Алгоритм:
+
+views == 0 → показать
+
+views == 1 → показать если прошло ≥ 3 дня
+
+views == 2 → ≥ 7 дней
+
+views == 3 → ≥ 7 дней
+
+views == 4 → ≥ 14 дней
+
+views == 5 → ≥ 30 дней
+
+views ≥ 6 → ≥ 30 дней
+
+⸻
+
+При показе:
+
+installBannerLastShown = now
+
+⸻
+
+При закрытии (✕):
+
+installBannerViews++
+installBannerLastShown = now
+
+(НЕ permanent)
+
+⸻
+
+Кнопка “Установил”:
+
+installBannerInstalled = true
+Больше не показывать
+
+⸻
+
+3️⃣ Поведение и анимация
+
+• Появление: slide-up + fade
+• Delay: 2.5 сек после загрузки экрана
+• Safe-area support (iOS)
+
+⸻
+
+4️⃣ Тексты баннера
+
+Заголовок:
+Добавьте Rateus на главный экран
+
+Текст:
+Быстрый доступ к записям, отзывам и рейтингу
+
+Кнопка:
+Как установить
+
+Dismiss:
+✕
+
+⸻
+
+5️⃣ Визуальный стиль баннера
+
+Высота:
+72–88 px (responsive)
+
+Ширина:
+100%
+
+Отступы:
+padding: 12–16 px
+
+Фон:
+• Light: #FFFFFF
+• Dark: #111111
+
+Граница:
+1 px top border
+• Light: #EEEEEE
+• Dark: #222222
+
+Тень:
+soft shadow вверх
+
+Радиусы:
+top-left / top-right = 16–20 px
+
+⸻
+
+Типографика:
+
+Заголовок:
+• 15–16 px
+• Semibold
+
+Текст:
+• 13–14 px
+• Regular
+
+Кнопка:
+
+• Height: 36–40 px
+• Radius: 10–12 px
+• Background: Accent color
+• Text: white
+
+⸻
+
+Layout:
+
+[ Текстовый блок ]   [ Кнопка ] [ ✕ ]
+
+Вертикальное выравнивание по центру.
+
+⸻
+
+6️⃣ Экран инструкции “Как установить”
+
+Открывается по кнопке “Как установить”
+
+Тип UI:
+Bottom Sheet / Fullscreen modal (mobile)
+
+⸻
+
+Контент:
+
+Заголовок:
+Как установить Rateus
+
+⸻
+
+iOS блок:
+	1.	Нажмите кнопку «Поделиться»
+	2.	Выберите «На экран Домой»
+	3.	Нажмите «Добавить»
+
+(иконки системные, если доступны)
+
+⸻
+
+Android блок:
+	1.	Нажмите меню ⋮
+	2.	Выберите «Добавить на главный экран»
+	3.	Подтвердите установку
+
+⸻
+
+Низ экрана:
+
+Кнопка:
+Понятно
+
+Действие:
+Закрыть экран
+
+⸻
+
+7️⃣ UX правила
+
+✔ не показывать поверх формы / оплаты / отзыва
+✔ debounce баннера (не чаще логики)
+✔ запоминать состояние
+✔ адаптация под safe-area
+
+⸻
+
+8️⃣ События аналитики
+
+banner_shown
+banner_dismissed
+banner_install_clicked
+banner_marked_installed
+install_help_opened
+
+⸻
+
+Результат:
+
+✔ аккуратный нижний баннер
+✔ предсказуемая частота
+✔ понятная инструкция
+✔ отсутствие раздражения
