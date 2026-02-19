@@ -163,6 +163,7 @@ app.use((req, res, next) => {
       END $$;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_client boolean NOT NULL DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_pro boolean NOT NULL DEFAULT false;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS first_review_celebrated boolean NOT NULL DEFAULT false;
     `);
 
     await pool.query(`

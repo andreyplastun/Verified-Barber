@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
+import { InteractiveStarRating } from "@/components/ui/animations";
 
 export default function ReviewPage() {
   const [, params] = useRoute("/review/:bookingId");
@@ -353,27 +354,14 @@ export default function ReviewPage() {
 
       <form onSubmit={handleSubmit} className="space-y-8 max-w-md mx-auto">
         {/* Star Rating */}
-        <div className="flex justify-center gap-2">
-          {[1, 2, 3, 4, 5].map((star) => (
-            <button
-              key={star}
-              type="button"
-              onMouseEnter={() => setHoveredStar(star)}
-              onMouseLeave={() => setHoveredStar(0)}
-              onClick={() => handleRatingChange(star)}
-              className="p-1 transition-transform hover:scale-110 focus:outline-none"
-              data-testid={`button-star-${star}`}
-            >
-              <Star 
-                size={40} 
-                className={`
-                  transition-colors duration-200
-                  ${star <= (hoveredStar || rating) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}
-                `} 
-              />
-            </button>
-          ))}
-        </div>
+        <InteractiveStarRating
+          rating={rating}
+          hoveredStar={hoveredStar}
+          onRate={handleRatingChange}
+          onHover={setHoveredStar}
+          onLeave={() => setHoveredStar(0)}
+          size={40}
+        />
         <div className="text-center mt-1">
           <Link href="/how-trust-works" className="text-[11px] text-muted-foreground/70 hover:text-primary underline" data-testid="link-how-trust-works">
             Как работает рейтинг

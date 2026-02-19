@@ -1,3 +1,4 @@
+import { useState, useEffect, useRef } from "react";
 import { useRoute, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
@@ -7,7 +8,7 @@ import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info } from "
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { motion } from "framer-motion";
-import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn } from "@/components/ui/animations";
+import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn, Confetti } from "@/components/ui/animations";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
 
 export default function SpecialistProfile() {
@@ -53,6 +54,23 @@ export default function SpecialistProfile() {
 
   const workPhotos = photos.filter(p => p.photoType === 'work');
 
+  const [showConfetti, setShowConfetti] = useState(false);
+  const confettiTriggeredRef = useRef(false);
+
+  useEffect(() => {
+    if (
+      specialist &&
+      specialist.reviewCount === 1 &&
+      !(specialist as any).firstReviewCelebrated &&
+      !confettiTriggeredRef.current
+    ) {
+      confettiTriggeredRef.current = true;
+      setShowConfetti(true);
+      fetch(`/api/specialists/${specialist.id}/first-review-celebrated`, { method: "POST" }).catch(() => {});
+      const t = setTimeout(() => setShowConfetti(false), 800);
+      return () => clearTimeout(t);
+    }
+  }, [specialist]);
 
   if (isLoading || !specialist) {
     return <div className="min-h-screen bg-background animate-pulse" />;
@@ -91,6 +109,7 @@ export default function SpecialistProfile() {
 
   return (
     <div className="min-h-screen bg-background pb-32">
+      <Confetti show={showConfetti} />
       {/* Hero Image */}
       <div className="relative h-[40vh] w-full">
         {/* specialist hero background */}

@@ -43,6 +43,13 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **date-fns**: Date utility library.
 - **embla-carousel-react**: Carousel component.
 
+### Micro-Animations System
+- **Location**: `client/src/components/ui/animations.tsx`
+- **Components**: `AnimatedRating` (fade+slide on value change), `AnimatedStar` (scale+glow on rating update), `InteractiveStarRating` (star input with tap animation), `Confetti` (24 particles, 800ms, for first review), `TipPulse`/`TipConfirmPulse`/`TipIconFloat` (tip flow animations), `FadeIn`/`SlideUp` (general transitions)
+- **First Review Confetti**: DB flag `first_review_celebrated` on specialists table, triggered once when `reviewCount===1`, marked via `POST /api/specialists/:id/first-review-celebrated` (validates specialist exists and has reviews)
+- **Reduced Motion**: All animation components respect `prefers-reduced-motion` via Framer Motion's `useReducedMotion()`, returning static fallbacks
+- **Excluded Flows**: No animations on payment, error, or critical alert screens
+
 ### Development Tools
 - **Vite**: Frontend development server.
 - **esbuild**: Production bundling.

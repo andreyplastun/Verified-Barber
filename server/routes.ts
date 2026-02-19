@@ -239,6 +239,30 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/specialists/:id/first-review-celebrated", async (req, res) => {
+    try {
+      const specialistId = parseInt(req.params.id);
+      if (isNaN(specialistId)) {
+        return res.status(400).json({ message: "Invalid specialist ID" });
+      }
+      const specialist = await storage.getSpecialist(specialistId);
+      if (!specialist) {
+        return res.status(404).json({ message: "Specialist not found" });
+      }
+      if (specialist.firstReviewCelebrated) {
+        return res.json({ success: true, alreadyCelebrated: true });
+      }
+      if (specialist.reviewCount < 1) {
+        return res.status(400).json({ message: "No reviews yet" });
+      }
+      await storage.markFirstReviewCelebrated(specialistId);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error marking first review celebrated:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/users/:id/onboarding-seen", async (req, res) => {
     try {
       const userId = req.params.id;

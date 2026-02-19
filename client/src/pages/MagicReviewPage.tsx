@@ -7,7 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { TipPulse, TipBadge, SlideUp } from "@/components/ui/animations";
+import { TipPulse, TipBadge, SlideUp, InteractiveStarRating, TipConfirmPulse, TipIconFloat } from "@/components/ui/animations";
 
 function toDativeCase(name: string): string {
   const n = name.trim();
@@ -309,9 +309,11 @@ export default function MagicReviewPage() {
   if (showTipsScreen && linkData) {
     return (
       <div className="min-h-screen bg-background p-6 flex flex-col items-center justify-center text-center">
-        <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mb-6">
-          <Banknote className="w-8 h-8 text-amber-600" />
-        </div>
+        <TipIconFloat trigger={showTipsScreen}>
+          <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mb-6">
+            <Banknote className="w-8 h-8 text-amber-600" />
+          </div>
+        </TipIconFloat>
         <h2 className="text-2xl font-bold mb-2">Хотите оставить чаевые?</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
           Это необязательно. Деньги поступят напрямую мастеру через Kaspi.
@@ -452,27 +454,14 @@ export default function MagicReviewPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8 max-w-md mx-auto">
-        <div className="flex justify-center gap-2">
-          {[1, 2, 3, 4, 5].map((star) => (
-            <button
-              key={star}
-              type="button"
-              onMouseEnter={() => setHoveredStar(star)}
-              onMouseLeave={() => setHoveredStar(0)}
-              onClick={() => handleRatingChange(star)}
-              className="p-1 transition-transform hover:scale-110 focus:outline-none"
-              data-testid={`button-star-${star}`}
-            >
-              <Star 
-                size={40} 
-                className={`
-                  transition-colors duration-200
-                  ${star <= (hoveredStar || rating) ? "fill-yellow-400 text-yellow-400" : "text-muted-foreground/30"}
-                `} 
-              />
-            </button>
-          ))}
-        </div>
+        <InteractiveStarRating
+          rating={rating}
+          hoveredStar={hoveredStar}
+          onRate={handleRatingChange}
+          onHover={setHoveredStar}
+          onLeave={() => setHoveredStar(0)}
+          size={40}
+        />
 
         {rating > 0 && availableTriggers.length > 0 && (
           <div className="space-y-3">
