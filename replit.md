@@ -50,6 +50,19 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **Reduced Motion**: All animation components respect `prefers-reduced-motion` via Framer Motion's `useReducedMotion()`, returning static fallbacks
 - **Excluded Flows**: No animations on payment, error, or critical alert screens
 
+### WhatsApp Auto-Messaging System
+- **Location**: `server/whatsapp.ts`
+- **Tables**: `wa_messages` (queue + log), `wa_opt_outs` (opt-out phones), settings in `app_config` (WA_SENDING_ENABLED, WA_WARMUP_START_DATE, WA_DAILY_LIMIT)
+- **Message Types**: PRIMARY (on visit completion) + REMINDER (24h after primary if no review)
+- **Templates**: 5 variations per type with {clientName}, {specialistName}, {reviewLink} placeholders. Random selection, no repeats.
+- **Throttling/Warmup**: Day 1-3: 2/day, Day 4-7: 5/day, Day 8-14: 10/day, Day 15+: min(20, WA_DAILY_LIMIT). Anti-spam: 3-15 min random intervals.
+- **Sending**: WhatsApp Business Cloud API (Meta) via WA_ACCESS_TOKEN + WA_PHONE_NUMBER_ID env vars
+- **Retry**: 2 attempts max, 10-30 min random delay between retries
+- **Emergency Stop**: WA_SENDING_ENABLED=false stops all processing
+- **Auto-queue**: Messages enqueued automatically when magic links are created in `tryCreateMagicLinkForCompletedVisit`
+- **Background Job**: Queue processed every 5 min alongside other background jobs
+- **Admin UI**: WhatsApp tab in AdminDashboard with toggle, warmup date, daily limit, sent today counter, and message log
+
 ### Development Tools
 - **Vite**: Frontend development server.
 - **esbuild**: Production bundling.

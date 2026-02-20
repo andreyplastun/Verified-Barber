@@ -393,6 +393,33 @@ export const appConfig = pgTable("app_config", {
   value: text("value").notNull(),
 });
 
+export const waMessages = pgTable("wa_messages", {
+  id: serial("id").primaryKey(),
+  bookingId: integer("booking_id").notNull(),
+  specialistId: integer("specialist_id").notNull(),
+  customerPhone: text("customer_phone").notNull(),
+  customerName: text("customer_name").notNull(),
+  specialistName: text("specialist_name").notNull(),
+  reviewLink: text("review_link").notNull(),
+  messageType: text("message_type", { enum: ["primary", "reminder"] }).notNull(),
+  status: text("status", { enum: ["queued", "sending", "sent", "failed", "skipped"] }).default("queued").notNull(),
+  templateIndex: integer("template_index").notNull(),
+  messageText: text("message_text").notNull(),
+  attempts: integer("attempts").default(0).notNull(),
+  maxAttempts: integer("max_attempts").default(2).notNull(),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  sentAt: timestamp("sent_at"),
+  lastError: text("last_error"),
+  skipReason: text("skip_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const waOptOuts = pgTable("wa_opt_outs", {
+  id: serial("id").primaryKey(),
+  phone: text("phone").notNull().unique(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export type Review = typeof reviews.$inferSelect;
 export type SpecialistPhoto = typeof specialistPhotos.$inferSelect;
 export type MagicLink = typeof magicLinks.$inferSelect;
@@ -400,6 +427,8 @@ export type ClaimRequest = typeof claimRequests.$inferSelect;
 export type TipsEvent = typeof tipsEvents.$inferSelect;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
 export type AppConfig = typeof appConfig.$inferSelect;
+export type WaMessage = typeof waMessages.$inferSelect;
+export type WaOptOut = typeof waOptOuts.$inferSelect;
 
 export type CreateBookingRequest = z.infer<typeof insertBookingSchema>;
 export type CreateReviewRequest = z.infer<typeof insertReviewSchema>;

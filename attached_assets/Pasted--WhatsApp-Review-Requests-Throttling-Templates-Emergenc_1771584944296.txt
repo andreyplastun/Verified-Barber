@@ -1,0 +1,183 @@
+🎯 ТЗ АГЕНТУ: WhatsApp Review Requests + Throttling + Templates + Emergency Stop
+
+1️⃣ Цель
+Автоматическая отправка WhatsApp-сообщений клиентам после визита:
+✔ запрос отзыва
+✔ напоминание
+✔ без спам-паттернов
+✔ с прогревом номера
+
+────────────────────
+2️⃣ Условия отправки
+
+Сообщение можно отправлять только если:
+
+✔ Visit.status == Completed
+✔ Visit.review_link != null
+✔ Client.phone != null
+✔ Client.opt_out != true
+✔ Review.not_submitted == true
+
+────────────────────
+3️⃣ Типы сообщений
+
+A) PRIMARY (сразу после Completed)
+B) REMINDER (через 24 часа)
+
+────────────────────
+4️⃣ Throttling / Прогрев номера
+
+Переменные:
+
+WA_WARMUP_START_DATE
+WA_DAILY_LIMIT
+
+Логика:
+
+Если TODAY < WA_WARMUP_START_DATE → НЕ отправлять
+
+Если TODAY >= WA_WARMUP_START_DATE:
+
+День 1–3  → limit 2 / день
+День 4–7  → limit 5 / день
+День 8–14 → limit 10 / день
+День 15+  → limit 20 / день (или WA_DAILY_LIMIT)
+
+✔ НЕ превышать дневной лимит
+✔ Излишки → queue
+
+────────────────────
+5️⃣ Антиспам-тайминг
+
+✔ НЕ пачкой
+✔ Интервал 3–15 минут (рандом)
+✔ Псевдо-человеческий ритм
+
+────────────────────
+6️⃣ TEMPLATE SETS
+
+TEMPLATE_SET_REVIEW_REQUEST_PRIMARY (мин. 5)
+TEMPLATE_SET_REVIEW_REQUEST_REMINDER (мин. 5)
+
+────────────────────
+PRIMARY
+
+T1:
+"{clientName}, спасибо за визит к {specialistName}.\nОставьте отзыв:\n{reviewLink}"
+
+T2:
+"{clientName}, благодарим за визит к {specialistName} ✨\nБудем признательны за отзыв:\n{reviewLink}"
+
+T3:
+"{clientName}, как прошёл визит к {specialistName}?\nОставить отзыв:\n{reviewLink}"
+
+T4:
+"{clientName}, спасибо, что выбрали {specialistName}.\nПоделитесь впечатлением:\n{reviewLink}"
+
+T5:
+"{clientName}, визит к {specialistName} завершён.\nОцените специалиста:\n{reviewLink}"
+
+────────────────────
+REMINDER
+
+T1:
+"{clientName}, отзыв о визите к {specialistName} ещё можно оставить:\n{reviewLink}"
+
+T2:
+"{clientName}, напоминание об отзыве для {specialistName}.\nЭто займёт несколько секунд:\n{reviewLink}"
+
+T3:
+"{clientName}, если удобно — оставьте отзыв о визите к {specialistName}:\n{reviewLink}"
+
+T4:
+"{clientName}, оценка визита к {specialistName} всё ещё доступна:\n{reviewLink}"
+
+T5:
+"{clientName}, последняя возможность оценить визит к {specialistName}:\n{reviewLink}"
+
+────────────────────
+7️⃣ Правила выбора шаблонов
+
+✔ Случайный template
+✔ НЕ повторять один и тот же подряд одному клиенту
+✔ По возможности избегать одинаковых подряд глобально
+
+────────────────────
+8️⃣ Подстановки
+
+✔ {clientName}
+✔ {specialistName}
+✔ {reviewLink}
+
+────────────────────
+9️⃣ Queue Logic
+
+Если WA_DAILY_LIMIT достигнут:
+
+✔ сообщения → очередь
+✔ отправка на следующий день
+
+────────────────────
+🔟 Emergency Stop
+
+Глобальный флаг:
+
+WA_SENDING_ENABLED = true / false
+
+Если false:
+
+❌ остановить ВСЕ отправки
+❌ не обрабатывать queue
+
+────────────────────
+1️⃣1️⃣ Opt-out
+
+Если клиент отказался:
+
+✔ Client.opt_out = true
+❌ больше НЕ отправлять
+
+────────────────────
+1️⃣2️⃣ Логирование
+
+Логировать:
+
+✔ client_id
+✔ visit_id
+✔ template_id
+✔ финальный текст
+✔ статус отправки
+✔ причина отказа (если skip)
+
+────────────────────
+1️⃣3️⃣ Retry Logic
+
+При ошибке отправки:
+
+✔ retry через 10–30 минут
+✔ максимум 2 попытки
+
+────────────────────
+1️⃣4️⃣ Safety Rules
+
+✔ НЕ отправлять без review_link
+✔ НЕ отправлять Cancelled
+✔ НЕ отправлять повторно при submitted review
+
+────────────────────
+1️⃣5️⃣ UI / Admin Controls
+
+В админке:
+
+✔ поле WA_WARMUP_START_DATE
+✔ поле WA_DAILY_LIMIT
+✔ переключатель WA_SENDING_ENABLED
+
+────────────────────
+✅ Результат
+
+✔ плавный прогрев номера
+✔ отсутствие спам-паттернов
+✔ вариативные тексты
+✔ управляемая рассылка
+✔ аварийное отключение

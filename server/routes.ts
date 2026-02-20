@@ -11,6 +11,7 @@ import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioS
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater } from "./client-identity";
 import { db } from "./db";
 import { appConfig } from "@shared/schema";
+import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting } from "./whatsapp";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -1639,6 +1640,24 @@ ${magicLink}`;
       const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
       const fullLink = `${baseUrl}/r/${magicLink.token}`;
       console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
+
+      if (customerPhone) {
+        const specialist = await storage.getSpecialist(booking.specialistId);
+        try {
+          await enqueueReviewMessage({
+            bookingId,
+            specialistId: booking.specialistId,
+            customerPhone,
+            customerName: booking.customerName,
+            specialistName: specialist?.name || "специалисту",
+            reviewLink: fullLink,
+            messageType: "primary",
+          });
+        } catch (waErr: any) {
+          console.error(`[WA_QUEUE_ERROR] booking=${bookingId} error=${waErr.message}`);
+        }
+      }
+
       return true;
     } catch (err: any) {
       console.error(`[MAGIC_LINK_ERROR] booking=${bookingId} source=${source} error=${err.message}`);
@@ -3106,6 +3125,104 @@ ${magicLink}`;
       }
     } catch (err) {
       console.error("[SEED-ALTEGIO] Error seeding Altegio specialists:", err);
+    }
+  });
+
+  // =====================
+  // WHATSAPP ADMIN ROUTES
+  // =====================
+
+  app.get("/api/admin/whatsapp/settings", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const settings = await getWaSettings();
+      res.json(settings);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/whatsapp/settings", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const { enabled, warmupStartDate, dailyLimit } = req.body;
+      if (typeof enabled === "boolean") {
+        await setWaSetting("WA_SENDING_ENABLED", String(enabled));
+      }
+      if (typeof warmupStartDate === "string") {
+        await setWaSetting("WA_WARMUP_START_DATE", warmupStartDate);
+      }
+      if (typeof dailyLimit === "number" && dailyLimit > 0) {
+        await setWaSetting("WA_DAILY_LIMIT", String(dailyLimit));
+      }
+      const settings = await getWaSettings();
+      console.log(`[WA_SETTINGS] Updated by admin ${userId}: enabled=${settings.enabled} warmup=${settings.warmupStartDate} limit=${settings.dailyLimit}`);
+      res.json(settings);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/admin/whatsapp/messages", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const result = await storage.getWaMessages(limit, offset);
+      const sentToday = await storage.countWaMessagesSentToday();
+      res.json({ ...result, sentToday });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/admin/whatsapp/stats", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const sentToday = await storage.countWaMessagesSentToday();
+      const settings = await getWaSettings();
+      res.json({ sentToday, ...settings });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/whatsapp/opt-out", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const { phone } = req.body;
+      if (!phone) return res.status(400).json({ message: "Phone required" });
+      await storage.addWaOptOut(phone.replace(/\D/g, ""));
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/admin/whatsapp/opt-out/:phone", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      await storage.removeWaOptOut(req.params.phone);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/admin/whatsapp/opt-outs", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const optOuts = await storage.getWaOptOuts();
+      res.json(optOuts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 

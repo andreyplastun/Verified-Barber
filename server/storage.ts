@@ -1,4 +1,4 @@
-import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, asc, sql } from "drizzle-orm";
@@ -100,6 +100,35 @@ export interface IStorage {
   getClaimByToken(token: string): Promise<ClaimRequest | undefined>;
   bindSpecialistToUser(specialistId: number, userId: string): Promise<void>;
   markClaimTokenUsed(id: number): Promise<void>;
+
+  // WhatsApp Messages
+  enqueueWaMessage(msg: {
+    bookingId: number;
+    specialistId: number;
+    customerPhone: string;
+    customerName: string;
+    specialistName: string;
+    reviewLink: string;
+    messageType: "primary" | "reminder";
+    templateIndex: number;
+    messageText: string;
+    scheduledAt: Date;
+  }): Promise<WaMessage>;
+  getWaMessagesDue(limit: number): Promise<WaMessage[]>;
+  getWaMessageByBookingAndType(bookingId: number, messageType: string): Promise<WaMessage | undefined>;
+  markWaMessageSending(id: number): Promise<void>;
+  markWaMessageSent(id: number): Promise<void>;
+  markWaMessageFailed(id: number, error: string, nextScheduledAt?: Date): Promise<void>;
+  markWaMessageSkipped(id: number, reason: string): Promise<void>;
+  countWaMessagesSentToday(): Promise<number>;
+  getWaMessages(limit: number, offset: number): Promise<{ messages: WaMessage[]; total: number }>;
+  getLastSentTemplateIndex(messageType: string): Promise<number | null>;
+
+  // WhatsApp Opt-outs
+  addWaOptOut(phone: string): Promise<void>;
+  removeWaOptOut(phone: string): Promise<void>;
+  isWaOptedOut(phone: string): Promise<boolean>;
+  getWaOptOuts(): Promise<WaOptOut[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -941,6 +970,126 @@ export class DatabaseStorage implements IStorage {
     await db.update(claimRequests)
       .set({ tokenUsedAt: new Date() })
       .where(eq(claimRequests.id, id));
+  }
+
+  async enqueueWaMessage(msg: {
+    bookingId: number;
+    specialistId: number;
+    customerPhone: string;
+    customerName: string;
+    specialistName: string;
+    reviewLink: string;
+    messageType: "primary" | "reminder";
+    templateIndex: number;
+    messageText: string;
+    scheduledAt: Date;
+  }): Promise<WaMessage> {
+    const [result] = await db.insert(waMessages).values(msg).returning();
+    console.log(`[WA_QUEUE] Enqueued ${msg.messageType} for booking=${msg.bookingId} phone=${msg.customerPhone} scheduledAt=${msg.scheduledAt.toISOString()}`);
+    return result;
+  }
+
+  async getWaMessagesDue(limit: number): Promise<WaMessage[]> {
+    const now = new Date();
+    return await db.select().from(waMessages)
+      .where(and(
+        eq(waMessages.status, "queued"),
+        sql`${waMessages.scheduledAt} <= ${now}`
+      ))
+      .orderBy(asc(waMessages.scheduledAt))
+      .limit(limit);
+  }
+
+  async getWaMessageByBookingAndType(bookingId: number, messageType: string): Promise<WaMessage | undefined> {
+    const [msg] = await db.select().from(waMessages)
+      .where(and(
+        eq(waMessages.bookingId, bookingId),
+        sql`${waMessages.messageType} = ${messageType}`
+      ));
+    return msg;
+  }
+
+  async markWaMessageSending(id: number): Promise<void> {
+    await db.update(waMessages)
+      .set({ status: "sending" })
+      .where(eq(waMessages.id, id));
+  }
+
+  async markWaMessageSent(id: number): Promise<void> {
+    await db.update(waMessages)
+      .set({ status: "sent", sentAt: new Date() })
+      .where(eq(waMessages.id, id));
+  }
+
+  async markWaMessageFailed(id: number, error: string, nextScheduledAt?: Date): Promise<void> {
+    const [msg] = await db.select().from(waMessages).where(eq(waMessages.id, id));
+    if (!msg) return;
+    const newAttempts = msg.attempts + 1;
+    if (newAttempts >= msg.maxAttempts || !nextScheduledAt) {
+      await db.update(waMessages)
+        .set({ status: "failed", attempts: newAttempts, lastError: error })
+        .where(eq(waMessages.id, id));
+    } else {
+      await db.update(waMessages)
+        .set({ status: "queued", attempts: newAttempts, lastError: error, scheduledAt: nextScheduledAt })
+        .where(eq(waMessages.id, id));
+    }
+  }
+
+  async markWaMessageSkipped(id: number, reason: string): Promise<void> {
+    await db.update(waMessages)
+      .set({ status: "skipped", skipReason: reason })
+      .where(eq(waMessages.id, id));
+  }
+
+  async countWaMessagesSentToday(): Promise<number> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const result = await db.select({ count: sql<number>`count(*)` })
+      .from(waMessages)
+      .where(and(
+        eq(waMessages.status, "sent"),
+        sql`${waMessages.sentAt} >= ${todayStart}`
+      ));
+    return Number(result[0]?.count || 0);
+  }
+
+  async getWaMessages(limit: number, offset: number): Promise<{ messages: WaMessage[]; total: number }> {
+    const messages = await db.select().from(waMessages)
+      .orderBy(desc(waMessages.createdAt))
+      .limit(limit)
+      .offset(offset);
+    const totalResult = await db.select({ count: sql<number>`count(*)` }).from(waMessages);
+    return { messages, total: Number(totalResult[0]?.count || 0) };
+  }
+
+  async getLastSentTemplateIndex(messageType: string): Promise<number | null> {
+    const [last] = await db.select({ templateIndex: waMessages.templateIndex })
+      .from(waMessages)
+      .where(and(
+        sql`${waMessages.messageType} = ${messageType}`,
+        eq(waMessages.status, "sent")
+      ))
+      .orderBy(desc(waMessages.sentAt))
+      .limit(1);
+    return last?.templateIndex ?? null;
+  }
+
+  async addWaOptOut(phone: string): Promise<void> {
+    await db.insert(waOptOuts).values({ phone }).onConflictDoNothing();
+  }
+
+  async removeWaOptOut(phone: string): Promise<void> {
+    await db.delete(waOptOuts).where(eq(waOptOuts.phone, phone));
+  }
+
+  async isWaOptedOut(phone: string): Promise<boolean> {
+    const [row] = await db.select().from(waOptOuts).where(eq(waOptOuts.phone, phone));
+    return !!row;
+  }
+
+  async getWaOptOuts(): Promise<WaOptOut[]> {
+    return await db.select().from(waOptOuts).orderBy(desc(waOptOuts.createdAt));
   }
 }
 

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2 } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2, Send, Power, PowerOff, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -54,7 +54,7 @@ export default function AdminDashboard() {
     appointmentTime: "",
   });
 
-  const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims" | "whatsapp">("bookings");
   const [specialistFormOpen, setSpecialistFormOpen] = useState(false);
   const [editingSpecialist, setEditingSpecialist] = useState<Specialist | null>(null);
   const [specialistForm, setSpecialistForm] = useState({
@@ -363,6 +363,57 @@ export default function AdminDashboard() {
     },
   });
 
+  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number };
+  type WaMessageType = {
+    id: number; bookingId: number; customerPhone: string; customerName: string;
+    specialistName: string; messageType: string; status: string; templateIndex: number;
+    messageText: string; attempts: number; scheduledAt: string; sentAt: string | null;
+    lastError: string | null; skipReason: string | null; createdAt: string;
+  };
+
+  const { data: waSettings, refetch: refetchWaSettings } = useQuery<WaSettingsType>({
+    queryKey: ["/api/admin/whatsapp/settings"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/whatsapp/settings", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!currentUser && activeTab === "whatsapp",
+  });
+
+  const { data: waMessagesData, refetch: refetchWaMessages } = useQuery<{ messages: WaMessageType[]; total: number; sentToday: number }>({
+    queryKey: ["/api/admin/whatsapp/messages"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/whatsapp/messages?limit=50", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!currentUser && activeTab === "whatsapp",
+  });
+
+  const updateWaSettingsMutation = useMutation({
+    mutationFn: async (data: Partial<WaSettingsType>) => {
+      const res = await fetch("/api/admin/whatsapp/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id || "" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchWaSettings();
+      toast({ title: "Настройки WhatsApp сохранены" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    },
+  });
+
   const pendingClaimsCount = claimRequests.filter(c => c.status === "pending").length;
 
   const filteredBookings = bookings.filter((booking) => {
@@ -383,24 +434,28 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims")}>
-          <TabsList className="grid w-full grid-cols-3 mb-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims" | "whatsapp")}>
+          <TabsList className="grid w-full grid-cols-4 mb-4">
             <TabsTrigger value="bookings" data-testid="tab-bookings-main">
-              <Calendar className="h-4 w-4 mr-2" />
-              Записи
+              <Calendar className="h-4 w-4 mr-1" />
+              <span className="text-xs">Записи</span>
             </TabsTrigger>
             <TabsTrigger value="specialists" data-testid="tab-specialists-main">
-              <Users className="h-4 w-4 mr-2" />
-              Специалисты
+              <Users className="h-4 w-4 mr-1" />
+              <span className="text-xs">Спец-ты</span>
             </TabsTrigger>
             <TabsTrigger value="claims" data-testid="tab-claims-main" className="relative">
-              <UserCheck className="h-4 w-4 mr-2" />
-              Заявки
+              <UserCheck className="h-4 w-4 mr-1" />
+              <span className="text-xs">Заявки</span>
               {pendingClaimsCount > 0 && (
                 <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
                   {pendingClaimsCount}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="whatsapp" data-testid="tab-whatsapp-main">
+              <Send className="h-4 w-4 mr-1" />
+              <span className="text-xs">WA</span>
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -922,6 +977,137 @@ export default function AdminDashboard() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {activeTab === "whatsapp" && (
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Send className="h-5 w-5" />
+                  Настройки WhatsApp
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-medium">Автоотправка</Label>
+                    <p className="text-xs text-muted-foreground">Включить/выключить рассылку</p>
+                  </div>
+                  <Button
+                    variant={waSettings?.enabled ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => updateWaSettingsMutation.mutate({ enabled: !waSettings?.enabled })}
+                    disabled={updateWaSettingsMutation.isPending}
+                    data-testid="button-wa-toggle"
+                  >
+                    {waSettings?.enabled ? <Power className="h-4 w-4 mr-1" /> : <PowerOff className="h-4 w-4 mr-1" />}
+                    {updateWaSettingsMutation.isPending ? "..." : waSettings?.enabled ? "Вкл" : "Выкл"}
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-sm">Дата начала прогрева</Label>
+                    <Input
+                      type="date"
+                      value={waSettings?.warmupStartDate || ""}
+                      onChange={(e) => updateWaSettingsMutation.mutate({ warmupStartDate: e.target.value })}
+                      data-testid="input-wa-warmup-date"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-sm">Лимит / день</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={waSettings?.dailyLimit || 20}
+                      onChange={(e) => {
+                        const v = parseInt(e.target.value);
+                        if (v > 0) updateWaSettingsMutation.mutate({ dailyLimit: v });
+                      }}
+                      data-testid="input-wa-daily-limit"
+                    />
+                  </div>
+                </div>
+
+                {waMessagesData && (
+                  <div className="flex gap-2">
+                    <Badge variant="secondary" data-testid="badge-wa-sent-today">
+                      Сегодня: {waMessagesData.sentToday}
+                    </Badge>
+                    <Badge variant="outline" data-testid="badge-wa-total">
+                      Всего: {waMessagesData.total}
+                    </Badge>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Лог сообщений</CardTitle>
+                  <Button variant="ghost" size="sm" onClick={() => refetchWaMessages()} data-testid="button-wa-refresh">
+                    Обновить
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {!waMessagesData?.messages?.length ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">Нет сообщений</p>
+                ) : (
+                  <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+                    {waMessagesData.messages.map((msg) => (
+                      <div key={msg.id} className="border rounded-lg p-3 text-sm space-y-1" data-testid={`wa-message-${msg.id}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium">{msg.customerName}</span>
+                          <Badge
+                            variant={
+                              msg.status === "sent" ? "default" :
+                              msg.status === "failed" ? "destructive" :
+                              msg.status === "skipped" ? "secondary" :
+                              "outline"
+                            }
+                            data-testid={`badge-wa-status-${msg.id}`}
+                          >
+                            {msg.status === "sent" ? "Отправлено" :
+                             msg.status === "failed" ? "Ошибка" :
+                             msg.status === "skipped" ? "Пропущено" :
+                             msg.status === "queued" ? "В очереди" :
+                             msg.status === "sending" ? "Отправка..." : msg.status}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                          <span>{msg.customerPhone}</span>
+                          <span>•</span>
+                          <span>{msg.messageType === "primary" ? "Основное" : "Напоминание"}</span>
+                          <span>•</span>
+                          <span>T{msg.templateIndex + 1}</span>
+                        </div>
+                        <p className="text-xs bg-muted p-2 rounded whitespace-pre-wrap">{msg.messageText}</p>
+                        {msg.lastError && (
+                          <p className="text-xs text-destructive flex items-center gap-1">
+                            <AlertTriangle className="h-3 w-3" />
+                            {msg.lastError.substring(0, 100)}
+                          </p>
+                        )}
+                        {msg.skipReason && (
+                          <p className="text-xs text-muted-foreground">Причина: {msg.skipReason}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {msg.sentAt
+                            ? `Отправлено: ${new Date(msg.sentAt).toLocaleString("ru-RU")}`
+                            : `Запланировано: ${new Date(msg.scheduledAt).toLocaleString("ru-RU")}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
 

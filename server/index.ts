@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
+import { processWaQueue } from "./whatsapp";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
@@ -164,6 +165,37 @@ app.use((req, res, next) => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_client boolean NOT NULL DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_pro boolean NOT NULL DEFAULT false;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS first_review_celebrated boolean NOT NULL DEFAULT false;
+
+      CREATE TABLE IF NOT EXISTS wa_messages (
+        id SERIAL PRIMARY KEY,
+        booking_id INTEGER NOT NULL,
+        specialist_id INTEGER NOT NULL,
+        customer_phone TEXT NOT NULL,
+        customer_name TEXT NOT NULL,
+        specialist_name TEXT NOT NULL,
+        review_link TEXT NOT NULL,
+        message_type TEXT NOT NULL DEFAULT 'primary',
+        status TEXT NOT NULL DEFAULT 'queued',
+        template_index INTEGER NOT NULL DEFAULT 0,
+        message_text TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 2,
+        scheduled_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        sent_at TIMESTAMP,
+        last_error TEXT,
+        skip_reason TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS wa_opt_outs (
+        id SERIAL PRIMARY KEY,
+        phone TEXT NOT NULL UNIQUE,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'false') ON CONFLICT (key) DO NOTHING;
+      INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
+      INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '20') ON CONFLICT (key) DO NOTHING;
     `);
 
     await pool.query(`
@@ -271,8 +303,13 @@ app.use((req, res, next) => {
     await transitionScheduledToReady();
     await flagNotCompletedBookings();
     await transitionPaymentPendingToCompleted();
+    try {
+      await processWaQueue();
+    } catch (err) {
+      console.error("[WA_PROCESSOR] Error processing WhatsApp queue:", err);
+    }
   }, TRANSITION_INTERVAL_MS);
-  console.log(`[STARTUP] Background jobs started (every ${TRANSITION_INTERVAL_MS / 60000} min, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h)`);
+  console.log(`[STARTUP] Background jobs started (every ${TRANSITION_INTERVAL_MS / 60000} min, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, wa_queue=enabled)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
