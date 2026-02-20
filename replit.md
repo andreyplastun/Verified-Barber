@@ -56,7 +56,7 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **Message Types**: PRIMARY (on visit completion) + REMINDER (24h after primary if no review)
 - **Templates**: 5 variations per type with {clientName}, {specialistName}, {reviewLink} placeholders. Random selection, no repeats.
 - **Throttling/Warmup**: Day 1-3: 2/day, Day 4-7: 5/day, Day 8-14: 10/day, Day 15+: min(20, WA_DAILY_LIMIT). Anti-spam: 3-15 min random intervals.
-- **Sending**: WhatsApp Business Cloud API (Meta) via WA_ACCESS_TOKEN + WA_PHONE_NUMBER_ID env vars
+- **Sending**: AssistBot WhatsApp provider via ASSISTBOT_API_TOKEN + ASSISTBOT_ENDPOINT + ASSISTBOT_CHANNEL_ID env vars
 - **Retry**: 2 attempts max, 10-30 min random delay between retries
 - **Emergency Stop**: WA_SENDING_ENABLED=false stops all processing
 - **Auto-queue**: Messages enqueued automatically when magic links are created in `tryCreateMagicLinkForCompletedVisit`

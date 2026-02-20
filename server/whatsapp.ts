@@ -79,39 +79,40 @@ function randomInterval(minMin: number, maxMin: number): number {
   return (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
 }
 
-async function sendViaWhatsAppAPI(phone: string, text: string): Promise<void> {
-  const token = process.env.WA_ACCESS_TOKEN;
-  const phoneNumberId = process.env.WA_PHONE_NUMBER_ID;
+async function sendViaAssistBot(phone: string, text: string): Promise<void> {
+  const token = process.env.ASSISTBOT_API_TOKEN;
+  const endpoint = process.env.ASSISTBOT_ENDPOINT;
+  const channelId = process.env.ASSISTBOT_CHANNEL_ID;
 
-  if (!token || !phoneNumberId) {
-    throw new Error("WhatsApp API not configured (WA_ACCESS_TOKEN / WA_PHONE_NUMBER_ID missing)");
+  if (!token || !endpoint) {
+    throw new Error("AssistBot not configured (ASSISTBOT_API_TOKEN / ASSISTBOT_ENDPOINT missing)");
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
 
-  const response = await fetch(
-    `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
-    {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messaging_product: "whatsapp",
-        to: cleanPhone,
-        type: "text",
-        text: { body: text },
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`WhatsApp API error ${response.status}: ${body}`);
+  const body: Record<string, any> = {
+    phone: cleanPhone,
+    message: text,
+  };
+  if (channelId) {
+    body.channelId = channelId;
   }
 
-  console.log(`[WA_SEND] Sent to ${cleanPhone} via WhatsApp API`);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const respBody = await response.text();
+    throw new Error(`AssistBot API error ${response.status}: ${respBody}`);
+  }
+
+  console.log(`[WA_SEND] Sent to ${cleanPhone} via AssistBot`);
 }
 
 export async function enqueueReviewMessage(params: {
@@ -215,7 +216,7 @@ export async function processWaQueue(): Promise<void> {
     await storage.markWaMessageSending(msg.id);
 
     try {
-      await sendViaWhatsAppAPI(msg.customerPhone, msg.messageText);
+      await sendViaAssistBot(msg.customerPhone, msg.messageText);
       await storage.markWaMessageSent(msg.id);
       console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex}`);
 
