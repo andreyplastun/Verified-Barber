@@ -193,6 +193,8 @@ app.use((req, res, next) => {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
+      ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS assistbot_message_id TEXT;
+
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'false') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '20') ON CONFLICT (key) DO NOTHING;

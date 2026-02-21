@@ -153,22 +153,31 @@ if (уже есть magic_link для booking) → skip
 
 Реализация в `server/whatsapp.ts`, функция `sendViaAssistBot`.
 
-- **Endpoint**: env `ASSISTBOT_ENDPOINT` (полный URL)
-- **Авторизация**: `Authorization: Bearer {ASSISTBOT_API_TOKEN}`
-- **Channel ID**: env `ASSISTBOT_CHANNEL_ID` (опционально, добавляется в body если задан)
+- **Endpoint**: `POST https://lk.assistbot.ru/api/send` (захардкожен)
+- **Авторизация**: `Authorization: Bearer {ASSISTBOT_TOKEN}`
 - **HTTP метод**: `POST`
 - **Content-Type**: `application/json`
 - **Request body**:
 
 ```json
 {
-  "phone": "77001234567",
-  "message": "Текст сообщения",
-  "channelId": "..."
+  "destination_params": [
+    {
+      "id": "rateus_visit_123",
+      "phone": "77001234567"
+    }
+  ],
+  "text": "Текст сообщения",
+  "type": "whatsapp"
 }
 ```
 
-- **Env vars**: `ASSISTBOT_API_TOKEN` (обязательно), `ASSISTBOT_ENDPOINT` (обязательно), `ASSISTBOT_CHANNEL_ID` (опционально)
+- `id` формируется как `rateus_visit_{bookingId}`
+- `phone` — только цифры (очищен от +, пробелов, скобок)
+
+- **Env vars**: `ASSISTBOT_TOKEN` (обязательно)
+- **Сохранение ответа**: `assistbot_message_id` из ответа API сохраняется в таблицу `wa_messages`
+- **Защита от дублей**: если `assistbot_message_id` уже заполнен для сообщения — повторная отправка блокируется
 - **Реализованные методы**: только отправка текстового сообщения. Webhook / status callback — не реализованы.
 
 ---
@@ -196,6 +205,7 @@ if (уже есть magic_link для booking) → skip
 | `sentAt` | timestamp (nullable) | Фактическое время отправки |
 | `lastError` | text (nullable) | Последняя ошибка |
 | `skipReason` | text (nullable) | Причина пропуска |
+| `assistbotMessageId` | text (nullable) | ID сообщения от AssistBot (защита от дублей) |
 | `createdAt` | timestamp | |
 
 ### wa_opt_outs

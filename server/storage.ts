@@ -117,7 +117,7 @@ export interface IStorage {
   getWaMessagesDue(limit: number): Promise<WaMessage[]>;
   getWaMessageByBookingAndType(bookingId: number, messageType: string): Promise<WaMessage | undefined>;
   markWaMessageSending(id: number): Promise<void>;
-  markWaMessageSent(id: number): Promise<void>;
+  markWaMessageSent(id: number, assistbotMessageId?: string | null): Promise<void>;
   markWaMessageFailed(id: number, error: string, nextScheduledAt?: Date): Promise<void>;
   markWaMessageSkipped(id: number, reason: string): Promise<void>;
   countWaMessagesSentToday(): Promise<number>;
@@ -1015,9 +1015,13 @@ export class DatabaseStorage implements IStorage {
       .where(eq(waMessages.id, id));
   }
 
-  async markWaMessageSent(id: number): Promise<void> {
+  async markWaMessageSent(id: number, assistbotMessageId?: string | null): Promise<void> {
+    const updateData: Record<string, any> = { status: "sent", sentAt: new Date() };
+    if (assistbotMessageId) {
+      updateData.assistbotMessageId = assistbotMessageId;
+    }
     await db.update(waMessages)
-      .set({ status: "sent", sentAt: new Date() })
+      .set(updateData)
       .where(eq(waMessages.id, id));
   }
 

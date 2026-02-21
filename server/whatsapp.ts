@@ -79,40 +79,54 @@ function randomInterval(minMin: number, maxMin: number): number {
   return (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
 }
 
-async function sendViaAssistBot(phone: string, text: string): Promise<void> {
-  const token = process.env.ASSISTBOT_API_TOKEN;
-  const endpoint = process.env.ASSISTBOT_ENDPOINT;
-  const channelId = process.env.ASSISTBOT_CHANNEL_ID;
+async function sendViaAssistBot(phone: string, text: string, bookingId: number): Promise<string | null> {
+  const token = process.env.ASSISTBOT_TOKEN;
 
-  if (!token || !endpoint) {
-    throw new Error("AssistBot not configured (ASSISTBOT_API_TOKEN / ASSISTBOT_ENDPOINT missing)");
+  if (!token) {
+    throw new Error("AssistBot not configured (ASSISTBOT_TOKEN missing)");
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
+  const clientId = `rateus_visit_${bookingId}`;
 
-  const body: Record<string, any> = {
-    phone: cleanPhone,
-    message: text,
+  const payload = {
+    destination_params: [
+      {
+        id: clientId,
+        phone: cleanPhone,
+      },
+    ],
+    text,
+    type: "whatsapp",
   };
-  if (channelId) {
-    body.channelId = channelId;
-  }
 
-  const response = await fetch(endpoint, {
+  console.log(`[WA_SEND] Sending to phone=${cleanPhone} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
+
+  const response = await fetch("https://lk.assistbot.ru/api/send", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
 
+  const respBody = await response.text();
+
   if (!response.ok) {
-    const respBody = await response.text();
+    console.error(`[WA_SEND] AssistBot error: status=${response.status} body=${respBody}`);
     throw new Error(`AssistBot API error ${response.status}: ${respBody}`);
   }
 
-  console.log(`[WA_SEND] Sent to ${cleanPhone} via AssistBot`);
+  let assistbotMessageId: string | null = null;
+  try {
+    const respJson = JSON.parse(respBody);
+    assistbotMessageId = respJson?.message_id || respJson?.id || null;
+  } catch {}
+
+  console.log(`[WA_SEND] Success: phone=${cleanPhone} bookingId=${bookingId} assistbot_message_id=${assistbotMessageId} response=${respBody.substring(0, 200)}`);
+
+  return assistbotMessageId;
 }
 
 export async function enqueueReviewMessage(params: {
@@ -213,12 +227,18 @@ export async function processWaQueue(): Promise<void> {
       continue;
     }
 
+    if (msg.assistbotMessageId) {
+      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=already_has_assistbot_id (${msg.assistbotMessageId})`);
+      await storage.markWaMessageSkipped(msg.id, "duplicate_assistbot_id");
+      continue;
+    }
+
     await storage.markWaMessageSending(msg.id);
 
     try {
-      await sendViaAssistBot(msg.customerPhone, msg.messageText);
-      await storage.markWaMessageSent(msg.id);
-      console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex}`);
+      const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
+      await storage.markWaMessageSent(msg.id, assistbotMessageId);
+      console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
 
       if (msg.messageType === "primary") {
         const reminderDelay = 24 * 60 * 60 * 1000 + randomInterval(0, 60);

@@ -411,6 +411,7 @@ export const waMessages = pgTable("wa_messages", {
   sentAt: timestamp("sent_at"),
   lastError: text("last_error"),
   skipReason: text("skip_reason"),
+  assistbotMessageId: text("assistbot_message_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
