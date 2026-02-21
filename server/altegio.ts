@@ -27,6 +27,8 @@ const STAFF_ID_ALIASES: Record<number, { primaryStaffId: number; primaryCompanyI
   1394519: { primaryStaffId: 57457, primaryCompanyId: 37245 },
   2194088: { primaryStaffId: 57457, primaryCompanyId: 37245 },
   2668559: { primaryStaffId: 2668558, primaryCompanyId: 37245 },
+  2982468: { primaryStaffId: 2982463, primaryCompanyId: 25692 },
+  2874598: { primaryStaffId: 2874603, primaryCompanyId: 766817 },
 };
 
 interface AltegioConfig {
@@ -435,6 +437,22 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
     }
 
     if (!match) {
+      const staffCity = getCityForBranch(staffCompanyId);
+      const sameNameSameCity = allSpecialists.find((s: any) =>
+        s.isActive && normalizeName(s.name) === staffNameNorm && s.city === staffCity
+      );
+
+      if (sameNameSameCity) {
+        console.log(`[ALTEGIO-AUTOMAP] Duplicate detected: "${staff.name}" (staffId=${staff.id}, company=${staffCompanyId}) matches existing "${sameNameSameCity.name}" (id=${sameNameSameCity.id}) in ${staffCity}. Adding as alias.`);
+        STAFF_ID_ALIASES[staff.id] = {
+          primaryStaffId: (sameNameSameCity as any).altegioStaffId,
+          primaryCompanyId: (sameNameSameCity as any).altegioCompanyId,
+        };
+        mappedStaffIds.add(staff.id);
+        skipped++;
+        continue;
+      }
+
       try {
         const newSpecialist = await storage.createSpecialist({
           name: staff.name,
@@ -442,7 +460,7 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
           bio: "",
           imageUrl: staff.avatar || "",
           category: "barber",
-          city: getCityForBranch(staffCompanyId),
+          city: staffCity,
           status: "active",
           isActive: true,
           altegioStaffId: staff.id,
