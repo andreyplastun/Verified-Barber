@@ -160,7 +160,10 @@ export async function enqueueReviewMessage(params: {
     reviewLink: params.reviewLink,
   });
 
-  const scheduledAt = new Date(Date.now() + (params.delayMs || 0));
+  const defaultDelay = params.messageType === "primary" && !params.delayMs
+    ? randomInterval(60, 120)
+    : (params.delayMs || 0);
+  const scheduledAt = new Date(Date.now() + defaultDelay);
 
   await storage.enqueueWaMessage({
     bookingId: params.bookingId,
@@ -174,6 +177,9 @@ export async function enqueueReviewMessage(params: {
     messageText,
     scheduledAt,
   });
+
+  const delayMin = Math.round(defaultDelay / 60000);
+  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()} (delay=${delayMin}min)`);
 }
 
 export async function processWaQueue(): Promise<void> {
@@ -196,10 +202,10 @@ export async function processWaQueue(): Promise<void> {
     return;
   }
 
-  const batch = await storage.getWaMessagesDue(Math.min(remaining, 5));
+  const batch = await storage.getWaMessagesDue(Math.min(remaining, 1));
   if (batch.length === 0) return;
 
-  console.log(`[WA_PROCESSOR] Processing ${batch.length} messages (sent today: ${sentToday}/${effectiveLimit})`);
+  console.log(`[WA_PROCESSOR] Processing ${batch.length} message(s) (sent today: ${sentToday}/${effectiveLimit})`);
 
   for (let i = 0; i < batch.length; i++) {
     const msg = batch[i];

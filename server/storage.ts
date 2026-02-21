@@ -985,7 +985,6 @@ export class DatabaseStorage implements IStorage {
     scheduledAt: Date;
   }): Promise<WaMessage> {
     const [result] = await db.insert(waMessages).values(msg).returning();
-    console.log(`[WA_QUEUE] Enqueued ${msg.messageType} for booking=${msg.bookingId} phone=${msg.customerPhone} scheduledAt=${msg.scheduledAt.toISOString()}`);
     return result;
   }
 
