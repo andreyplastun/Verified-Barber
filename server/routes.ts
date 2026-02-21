@@ -1885,7 +1885,7 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       const specialistId = Number(req.params.id);
-      const { bio } = req.body;
+      const { bio, city } = req.body;
 
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -1899,12 +1899,20 @@ ${magicLink}`;
         return res.status(400).json({ message: "Bio must be a string with max 180 characters" });
       }
 
+      const validCities = ['Алматы', 'Астана', 'Караганда'];
+      if (city !== undefined && (!validCities.includes(city))) {
+        return res.status(400).json({ message: "Invalid city" });
+      }
+
       const canEdit = await checkSpecialistOwner(userId, specialistId);
       if (!canEdit) {
         return res.status(403).json({ message: "Forbidden" });
       }
 
       await storage.updateSpecialistBio(specialistId, bio);
+      if (city) {
+        await storage.updateSpecialist(specialistId, { city } as any);
+      }
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error updating bio:", err);

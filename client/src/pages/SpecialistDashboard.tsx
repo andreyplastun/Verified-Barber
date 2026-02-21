@@ -13,6 +13,7 @@ import { queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import type { Specialist, Booking, Review, SpecialistPhoto } from '@shared/schema';
@@ -29,6 +30,7 @@ export default function SpecialistDashboard() {
   const workInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<'avatar' | 'work' | null>(null);
   const [bio, setBio] = useState('');
+  const [city, setCity] = useState('Алматы');
   const [savingBio, setSavingBio] = useState(false);
   const [kaspiPhone, setKaspiPhone] = useState('');
   const [tipsEnabled, setTipsEnabled] = useState(false);
@@ -462,7 +464,10 @@ export default function SpecialistDashboard() {
     if (specialist?.bio) {
       setBio(specialist.bio);
     }
-  }, [specialist?.bio]);
+    if (specialist?.city) {
+      setCity(specialist.city);
+    }
+  }, [specialist?.bio, specialist?.city]);
 
   useEffect(() => {
     if (specialist) {
@@ -483,14 +488,14 @@ export default function SpecialistDashboard() {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio }),
+        body: JSON.stringify({ bio, city }),
       });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || 'Failed to save');
       }
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-      toast({ title: 'Описание сохранено' });
+      toast({ title: 'Профиль сохранён' });
     } catch (err: any) {
       toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
     } finally {
@@ -616,6 +621,19 @@ export default function SpecialistDashboard() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-2">
+            <Label htmlFor="city">Город</Label>
+            <Select value={city} onValueChange={setCity} data-testid="select-specialist-city">
+              <SelectTrigger data-testid="select-trigger-city">
+                <SelectValue placeholder="Выберите город" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Алматы">Алматы</SelectItem>
+                <SelectItem value="Астана">Астана</SelectItem>
+                <SelectItem value="Караганда">Караганда</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="bio">Краткое описание</Label>
             <Textarea
               id="bio"
@@ -633,7 +651,7 @@ export default function SpecialistDashboard() {
               <Button
                 size="sm"
                 onClick={handleSaveBio}
-                disabled={savingBio || bio === specialist?.bio}
+                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы'))}
                 data-testid="button-save-bio"
               >
                 {savingBio ? 'Сохранение...' : 'Сохранить'}
