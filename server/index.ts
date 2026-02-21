@@ -216,6 +216,31 @@ app.use((req, res, next) => {
       UPDATE specialists SET city = 'Караганда' WHERE altegio_company_id = 64381 AND city = 'Алматы';
     `);
 
+    const STAFF_ALIASES: Array<{ primaryStaffId: number; primaryCompanyId: number; dupeStaffId: number; dupeCompanyId: number }> = [
+      { primaryStaffId: 57457, primaryCompanyId: 37245, dupeStaffId: 1394519, dupeCompanyId: 469919 },
+      { primaryStaffId: 57457, primaryCompanyId: 37245, dupeStaffId: 2194088, dupeCompanyId: 766817 },
+      { primaryStaffId: 2668558, primaryCompanyId: 37245, dupeStaffId: 2668559, dupeCompanyId: 766817 },
+    ];
+    for (const alias of STAFF_ALIASES) {
+      const primary = await pool.query(
+        `SELECT id FROM specialists WHERE altegio_staff_id = $1 AND altegio_company_id = $2 LIMIT 1`,
+        [alias.primaryStaffId, alias.primaryCompanyId]
+      );
+      const dupe = await pool.query(
+        `SELECT id FROM specialists WHERE altegio_staff_id = $1 AND altegio_company_id = $2 AND is_active = true LIMIT 1`,
+        [alias.dupeStaffId, alias.dupeCompanyId]
+      );
+      if (primary.rows.length > 0 && dupe.rows.length > 0) {
+        const primaryId = primary.rows[0].id;
+        const dupeId = dupe.rows[0].id;
+        await pool.query(`UPDATE bookings SET specialist_id = $1 WHERE specialist_id = $2`, [primaryId, dupeId]);
+        await pool.query(`UPDATE magic_links SET specialist_id = $1 WHERE specialist_id = $2`, [primaryId, dupeId]);
+        await pool.query(`UPDATE wa_messages SET specialist_id = $1 WHERE specialist_id = $2`, [primaryId, dupeId]);
+        await pool.query(`UPDATE specialists SET is_active = false WHERE id = $1`, [dupeId]);
+        console.log(`[STARTUP] Merged duplicate specialist id=${dupeId} (staff=${alias.dupeStaffId}) → primary id=${primaryId} (staff=${alias.primaryStaffId})`);
+      }
+    }
+
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
     console.error("[STARTUP] Auto-migration error (non-fatal):", err);

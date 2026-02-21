@@ -23,6 +23,12 @@ function getCityForBranch(companyId: number): string {
   return BRANCH_CITY_MAP[companyId] || "Алматы";
 }
 
+const STAFF_ID_ALIASES: Record<number, { primaryStaffId: number; primaryCompanyId: number }> = {
+  1394519: { primaryStaffId: 57457, primaryCompanyId: 37245 },
+  2194088: { primaryStaffId: 57457, primaryCompanyId: 37245 },
+  2668559: { primaryStaffId: 2668558, primaryCompanyId: 37245 },
+};
+
 interface AltegioConfig {
   partnerToken: string;
   userToken: string;
@@ -1052,10 +1058,17 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
 
       let specialistId: number | null = null;
       if (appt.staff_id) {
-        const matched = appt.company_id
-          ? connectedSpecialists.find((s: any) => s.altegioStaffId === appt.staff_id && s.altegioCompanyId === appt.company_id)
+        let effectiveStaffId = appt.staff_id;
+        let effectiveCompanyId = appt.company_id;
+        const alias = STAFF_ID_ALIASES[appt.staff_id];
+        if (alias) {
+          effectiveStaffId = alias.primaryStaffId;
+          effectiveCompanyId = alias.primaryCompanyId;
+        }
+        const matched = effectiveCompanyId
+          ? connectedSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
           : null;
-        const fallback = matched || connectedSpecialists.find((s: any) => s.altegioStaffId === appt.staff_id);
+        const fallback = matched || connectedSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId);
         if (fallback) specialistId = fallback.id;
       }
 
