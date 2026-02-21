@@ -210,6 +210,12 @@ app.use((req, res, next) => {
       UPDATE bookings SET visit_trust_weight = 0 WHERE visit_trust_weight IS NULL AND not_completed_at IS NOT NULL;
       UPDATE bookings SET visit_trust_weight = 0.65 WHERE visit_trust_weight IS NULL AND status = 'completed' AND payment_status = 'unpaid';
     `);
+
+    await pool.query(`
+      UPDATE specialists SET city = 'Астана' WHERE altegio_company_id IN (28196, 86692) AND city = 'Алматы';
+      UPDATE specialists SET city = 'Караганда' WHERE altegio_company_id = 64381 AND city = 'Алматы';
+    `);
+
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
     console.error("[STARTUP] Auto-migration error (non-fatal):", err);

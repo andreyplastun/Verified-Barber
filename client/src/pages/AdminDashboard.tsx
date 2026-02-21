@@ -1179,6 +1179,7 @@ export default function AdminDashboard() {
                   <SelectContent>
                     <SelectItem value="Алматы">Алматы</SelectItem>
                     <SelectItem value="Астана">Астана</SelectItem>
+                    <SelectItem value="Караганда">Караганда</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

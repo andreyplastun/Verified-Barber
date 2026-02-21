@@ -9,6 +9,20 @@ const ALTEGIO_BASE_URL = "https://api.alteg.io/api/v1";
 const RETRY_DELAYS = [5 * 60 * 1000, 15 * 60 * 1000, 60 * 60 * 1000]; // 5min, 15min, 60min
 const MAX_RETRIES = 3;
 
+const BRANCH_CITY_MAP: Record<number, string> = {
+  25692: "Алматы",
+  37245: "Алматы",
+  469919: "Алматы",
+  766817: "Алматы",
+  28196: "Астана",
+  86692: "Астана",
+  64381: "Караганда",
+};
+
+function getCityForBranch(companyId: number): string {
+  return BRANCH_CITY_MAP[companyId] || "Алматы";
+}
+
 interface AltegioConfig {
   partnerToken: string;
   userToken: string;
@@ -422,7 +436,7 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
           bio: "",
           imageUrl: staff.avatar || "",
           category: "barber",
-          city: "Алматы",
+          city: getCityForBranch(staffCompanyId),
           status: "active",
           isActive: true,
           altegioStaffId: staff.id,
