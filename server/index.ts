@@ -298,6 +298,17 @@ app.use((req, res, next) => {
     }
   }
 
+  try {
+    const skipped = await pool.query(
+      `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND scheduled_at < NOW() - INTERVAL '2 hours' RETURNING id`
+    );
+    if (skipped.rows.length > 0) {
+      console.log(`[WA_CLEANUP] Skipped ${skipped.rows.length} stale queued messages on startup`);
+    }
+  } catch (err) {
+    console.error("[WA_CLEANUP] Error cleaning stale messages:", err);
+  }
+
   await transitionScheduledToReady();
   await flagNotCompletedBookings();
   await transitionPaymentPendingToCompleted();
