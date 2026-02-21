@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import { db } from "./db";
-import { appConfig } from "@shared/schema";
+import { appConfig, bookings, reviews } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater } from "./client-identity";
 
@@ -414,7 +414,26 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
       continue;
     }
 
-    let match = allSpecialists.find((s: any) =>
+    const staffCity = getCityForBranch(staffCompanyId);
+
+    const sameNameSameCity = allSpecialists.find((s: any) =>
+      s.isActive && normalizeName(s.name) === staffNameNorm && s.city === staffCity
+    );
+
+    if (sameNameSameCity && mappedSpecialistIds.has(sameNameSameCity.id)) {
+      if ((sameNameSameCity as any).altegioStaffId) {
+        STAFF_ID_ALIASES[staff.id] = {
+          primaryStaffId: (sameNameSameCity as any).altegioStaffId,
+          primaryCompanyId: (sameNameSameCity as any).altegioCompanyId,
+        };
+        console.log(`[ALTEGIO-AUTOMAP] Same-city alias: "${staff.name}" (staffId=${staff.id}, company=${staffCompanyId}) → "${sameNameSameCity.name}" (id=${sameNameSameCity.id}, staffId=${(sameNameSameCity as any).altegioStaffId})`);
+      }
+      mappedStaffIds.add(staff.id);
+      skipped++;
+      continue;
+    }
+
+    let match = sameNameSameCity || allSpecialists.find((s: any) =>
       !mappedSpecialistIds.has(s.id) && normalizeName(s.name) === staffNameNorm
     );
 
@@ -437,22 +456,6 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
     }
 
     if (!match) {
-      const staffCity = getCityForBranch(staffCompanyId);
-      const sameNameSameCity = allSpecialists.find((s: any) =>
-        s.isActive && normalizeName(s.name) === staffNameNorm && s.city === staffCity
-      );
-
-      if (sameNameSameCity) {
-        console.log(`[ALTEGIO-AUTOMAP] Duplicate detected: "${staff.name}" (staffId=${staff.id}, company=${staffCompanyId}) matches existing "${sameNameSameCity.name}" (id=${sameNameSameCity.id}) in ${staffCity}. Adding as alias.`);
-        STAFF_ID_ALIASES[staff.id] = {
-          primaryStaffId: (sameNameSameCity as any).altegioStaffId,
-          primaryCompanyId: (sameNameSameCity as any).altegioCompanyId,
-        };
-        mappedStaffIds.add(staff.id);
-        skipped++;
-        continue;
-      }
-
       try {
         const newSpecialist = await storage.createSpecialist({
           name: staff.name,
@@ -485,6 +488,8 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
         altegioCompanyId: staffCompanyId,
         altegioConnectionStatus: "connected",
       } as any);
+      (match as any).altegioStaffId = staff.id;
+      (match as any).altegioCompanyId = staffCompanyId;
       mappedStaffIds.add(staff.id);
       mappedSpecialistIds.add(match.id);
       console.log(`[ALTEGIO-AUTOMAP] Mapped "${staff.name}" (staffId=${staff.id}, company=${staffCompanyId}) → specialist "${match.name}" (id=${match.id})`);
@@ -497,7 +502,71 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
   }
 
   console.log(`[ALTEGIO-AUTOMAP] Complete: ${mapped} mapped, ${skipped} already mapped, ${errors.length} unmatched`);
+
+  await mergeDuplicateSpecialists();
+
   return { mapped, skipped, errors };
+}
+
+export async function mergeDuplicateSpecialists(): Promise<void> {
+  const allSpecialists = await storage.getSpecialists();
+  const active = allSpecialists.filter((s: any) => s.isActive);
+
+  function normalizeName(name: string): string {
+    return name.toLowerCase().trim().replace(/\s+/g, " ");
+  }
+
+  const groups: Record<string, typeof active> = {};
+  for (const s of active) {
+    const key = `${normalizeName(s.name)}|${s.city || 'Алматы'}`;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
+  }
+
+  for (const key of Object.keys(groups)) {
+    const members = groups[key];
+    if (members.length <= 1) continue;
+
+    const primary = members.reduce((a: any, b: any) => {
+      const aBookings = (a as any).altegioStaffId ? 1 : 0;
+      const bBookings = (b as any).altegioStaffId ? 1 : 0;
+      if (aBookings !== bBookings) return aBookings > bBookings ? a : b;
+      return a.id < b.id ? a : b;
+    });
+
+    const duplicates = members.filter((m: any) => m.id !== primary.id);
+    
+    for (const dup of duplicates) {
+      console.log(`[MERGE-DUPLICATES] Merging "${dup.name}" (id=${dup.id}, staffId=${(dup as any).altegioStaffId}) → "${primary.name}" (id=${primary.id}, staffId=${(primary as any).altegioStaffId})`);
+
+      try {
+        const dupBookings = await db.select().from(bookings).where(eq(bookings.specialistId, dup.id));
+        if (dupBookings.length > 0) {
+          await db.update(bookings).set({ specialistId: primary.id }).where(eq(bookings.specialistId, dup.id));
+          console.log(`[MERGE-DUPLICATES] Moved ${dupBookings.length} bookings from specialist ${dup.id} → ${primary.id}`);
+        }
+
+        const dupReviews = await db.select().from(reviews).where(eq(reviews.specialistId, dup.id));
+        if (dupReviews.length > 0) {
+          await db.update(reviews).set({ specialistId: primary.id }).where(eq(reviews.specialistId, dup.id));
+          console.log(`[MERGE-DUPLICATES] Moved ${dupReviews.length} reviews from specialist ${dup.id} → ${primary.id}`);
+        }
+
+        await storage.updateSpecialist(dup.id, { isActive: false } as any);
+
+        if ((dup as any).altegioStaffId && (primary as any).altegioStaffId) {
+          STAFF_ID_ALIASES[(dup as any).altegioStaffId] = {
+            primaryStaffId: (primary as any).altegioStaffId,
+            primaryCompanyId: (primary as any).altegioCompanyId,
+          };
+        }
+
+        console.log(`[MERGE-DUPLICATES] Deactivated duplicate specialist ${dup.id}`);
+      } catch (err: any) {
+        console.error(`[MERGE-DUPLICATES] Failed to merge specialist ${dup.id}: ${err.message}`);
+      }
+    }
+  }
 }
 
 async function makeAltegioRequest(
