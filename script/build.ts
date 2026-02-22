@@ -112,6 +112,34 @@ async function runDbPush() {
   }
 }
 
+async function storeRuntimeSecretsToDb() {
+  if (!process.env.DATABASE_URL) return;
+  const secretsToStore: Record<string, string | undefined> = {
+    ASSISTBOT_TOKEN: process.env.ASSISTBOT_TOKEN,
+  };
+  const pg = await import("pg");
+  const pool = new pg.default.Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const client = await pool.connect();
+    try {
+      for (const [key, val] of Object.entries(secretsToStore)) {
+        if (!val) continue;
+        await client.query(
+          `INSERT INTO app_config (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2`,
+          [key, val]
+        );
+        console.log(`[BUILD] Stored ${key} in app_config (${val.length} chars)`);
+      }
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    console.error("[BUILD] Failed to store secrets to DB (non-fatal):", err);
+  } finally {
+    await pool.end();
+  }
+}
+
 async function buildAll() {
   console.log("cleaning dist...");
   await rm("dist", { recursive: true, force: true });
@@ -120,6 +148,9 @@ async function buildAll() {
 
   console.log("seeding production database if needed...");
   await seedProductionDB();
+
+  console.log("storing runtime secrets to database...");
+  await storeRuntimeSecretsToDb();
 
   console.log("building client...");
   await viteBuild();

@@ -131,8 +131,22 @@ function randomInterval(minMin: number, maxMin: number): number {
   return (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
 }
 
+async function getAssistBotToken(): Promise<string | null> {
+  if (process.env.ASSISTBOT_TOKEN) return process.env.ASSISTBOT_TOKEN;
+  try {
+    const rows = await db.select().from(appConfig);
+    for (const row of rows) {
+      if (row.key === "ASSISTBOT_TOKEN" && row.value) {
+        process.env.ASSISTBOT_TOKEN = row.value;
+        return row.value;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
 async function sendViaAssistBot(phone: string, text: string, bookingId: number): Promise<string | null> {
-  const token = process.env.ASSISTBOT_TOKEN;
+  const token = await getAssistBotToken();
 
   if (!token) {
     throw new Error("AssistBot not configured (ASSISTBOT_TOKEN missing)");
