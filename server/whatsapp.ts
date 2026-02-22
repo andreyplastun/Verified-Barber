@@ -131,33 +131,40 @@ function randomInterval(minMin: number, maxMin: number): number {
   return (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
 }
 
-async function getAssistBotToken(): Promise<string | null> {
-  if (process.env.ASSISTBOT_TOKEN) return process.env.ASSISTBOT_TOKEN;
+async function getAssistBotConfig(): Promise<{ token: string; accountId: number } | null> {
+  let token: string | null = process.env.ASSISTBOT_TOKEN || null;
+  let accountId: string | null = process.env.ASSISTBOT_ACCOUNT_ID || null;
   try {
     const rows = await db.select().from(appConfig);
     for (const row of rows) {
-      if (row.key === "ASSISTBOT_TOKEN" && row.value) {
+      if (row.key === "ASSISTBOT_TOKEN" && row.value && !token) {
+        token = row.value;
         process.env.ASSISTBOT_TOKEN = row.value;
-        return row.value;
+      }
+      if (row.key === "ASSISTBOT_ACCOUNT_ID" && row.value && !accountId) {
+        accountId = row.value;
+        process.env.ASSISTBOT_ACCOUNT_ID = row.value;
       }
     }
   } catch (e) {}
-  return null;
+  if (!token || !accountId) return null;
+  return { token, accountId: parseInt(accountId, 10) };
 }
 
 async function sendViaAssistBot(phone: string, text: string, bookingId: number): Promise<string | null> {
-  const token = await getAssistBotToken();
+  const config = await getAssistBotConfig();
 
-  if (!token) {
-    throw new Error("AssistBot not configured (ASSISTBOT_TOKEN missing)");
+  if (!config) {
+    throw new Error("AssistBot not configured (ASSISTBOT_TOKEN or ASSISTBOT_ACCOUNT_ID missing)");
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
 
   const payload = {
+    account_id: config.accountId,
     phone: cleanPhone,
     body: text,
-    type: "text",
+    type: "text" as const,
   };
 
   console.log(`[WA_SEND] Sending to phone=${cleanPhone} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
@@ -165,7 +172,7 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
   const response = await fetch("https://lk.assistbot.ru/api/web/index.php/send-message/", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${token}`,
+      "Authorization": `Bearer ${config.token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
