@@ -4,28 +4,80 @@ import { appConfig } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
 const PRIMARY_TEMPLATES = [
-  "{clientName}, спасибо за визит к {specialistName}.\nОставьте отзыв:\n{reviewLink}",
-  "{clientName}, благодарим за визит к {specialistName} ✨\nБудем признательны за отзыв:\n{reviewLink}",
-  "{clientName}, как прошёл визит к {specialistName}?\nОставить отзыв:\n{reviewLink}",
-  "{clientName}, спасибо, что выбрали {specialistName}.\nПоделитесь впечатлением:\n{reviewLink}",
-  "{clientName}, визит к {specialistName} завершён.\nОцените специалиста:\n{reviewLink}",
+  "{clientName}, спасибо за визит к {specialistNameDative}.\nОставьте отзыв:\n{reviewLink}",
+  "{clientName}, благодарим за визит к {specialistNameDative} ✨\nБудем признательны за отзыв:\n{reviewLink}",
+  "{clientName}, как прошёл визит к {specialistNameDative}?\nОставить отзыв:\n{reviewLink}",
+  "{clientName}, спасибо, что выбрали {specialistNameGenitive}.\nПоделитесь впечатлением:\n{reviewLink}",
+  "{clientName}, визит к {specialistNameDative} завершён.\nОцените специалиста:\n{reviewLink}",
 ];
 
 const REMINDER_TEMPLATES = [
-  "{clientName}, отзыв о визите к {specialistName} ещё можно оставить:\n{reviewLink}",
-  "{clientName}, напоминание об отзыве для {specialistName}.\nЭто займёт несколько секунд:\n{reviewLink}",
-  "{clientName}, если удобно — оставьте отзыв о визите к {specialistName}:\n{reviewLink}",
-  "{clientName}, оценка визита к {specialistName} всё ещё доступна:\n{reviewLink}",
-  "{clientName}, последняя возможность оценить визит к {specialistName}:\n{reviewLink}",
+  "{clientName}, отзыв о визите к {specialistNameDative} ещё можно оставить:\n{reviewLink}",
+  "{clientName}, напоминание об отзыве для {specialistNameGenitive}.\nЭто займёт несколько секунд:\n{reviewLink}",
+  "{clientName}, если удобно — оставьте отзыв о визите к {specialistNameDative}:\n{reviewLink}",
+  "{clientName}, оценка визита к {specialistNameDative} всё ещё доступна:\n{reviewLink}",
+  "{clientName}, последняя возможность оценить визит к {specialistNameDative}:\n{reviewLink}",
 ];
 
 function getTemplates(type: "primary" | "reminder"): string[] {
   return type === "primary" ? PRIMARY_TEMPLATES : REMINDER_TEMPLATES;
 }
 
+function toDative(name: string): string {
+  const n = name.trim();
+  if (!n) return n;
+  if (/[a-zA-Z]/.test(n)) return n;
+
+  if (n.endsWith("ия")) return n.slice(0, -2) + "ии";
+  if (n.endsWith("ья")) return n.slice(0, -2) + "ье";
+  if (n.endsWith("а")) return n.slice(0, -1) + "е";
+  if (n.endsWith("я")) return n.slice(0, -1) + "е";
+
+  if (n.endsWith("ий")) return n.slice(0, -2) + "ию";
+  if (n.endsWith("й")) return n.slice(0, -1) + "ю";
+
+  if (n.endsWith("ь")) return n.slice(0, -1) + "ю";
+
+  if (n.endsWith("ім")) return n.slice(0, -2) + "ім";
+
+  const lastChar = n[n.length - 1];
+  if ("бвгджзклмнпрстфхцчшщ".includes(lastChar.toLowerCase())) {
+    return n + "у";
+  }
+
+  return n;
+}
+
+function toGenitive(name: string): string {
+  const n = name.trim();
+  if (!n) return n;
+  if (/[a-zA-Z]/.test(n)) return n;
+
+  if (n.endsWith("ия")) return n.slice(0, -2) + "ии";
+  if (n.endsWith("ья")) return n.slice(0, -2) + "ьи";
+  if (n.endsWith("а")) return n.slice(0, -1) + "ы";
+  if (n.endsWith("я")) return n.slice(0, -1) + "и";
+
+  if (n.endsWith("ий")) return n.slice(0, -2) + "ия";
+  if (n.endsWith("й")) return n.slice(0, -1) + "я";
+
+  if (n.endsWith("ь")) return n.slice(0, -1) + "я";
+
+  if (n.endsWith("ім")) return n.slice(0, -2) + "ім";
+
+  const lastChar = n[n.length - 1];
+  if ("бвгджзклмнпрстфхцчшщ".includes(lastChar.toLowerCase())) {
+    return n + "а";
+  }
+
+  return n;
+}
+
 function renderTemplate(template: string, vars: { clientName: string; specialistName: string; reviewLink: string }): string {
   return template
     .replace(/\{clientName\}/g, vars.clientName)
+    .replace(/\{specialistNameDative\}/g, toDative(vars.specialistName))
+    .replace(/\{specialistNameGenitive\}/g, toGenitive(vars.specialistName))
     .replace(/\{specialistName\}/g, vars.specialistName)
     .replace(/\{reviewLink\}/g, vars.reviewLink);
 }
