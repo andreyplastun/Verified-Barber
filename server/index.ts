@@ -8,30 +8,41 @@ import { processWaQueue } from "./whatsapp";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
-// Load runtime env vars baked during build (Railway workaround)
+// Load runtime env vars baked during build
 try {
-  const envPath = join(process.cwd(), "dist", ".env.runtime");
-  if (existsSync(envPath)) {
-    const content = readFileSync(envPath, "utf-8");
-    let loaded = 0;
-    for (const line of content.split("\n")) {
-      const eqIdx = line.indexOf("=");
-      if (eqIdx === -1) continue;
-      const key = line.slice(0, eqIdx).trim();
-      const value = line.slice(eqIdx + 1).trim();
-      if (key && value && !process.env[key]) {
-        process.env[key] = value;
-        loaded++;
+  console.log(`[STARTUP] __dirname=${__dirname}, cwd=${process.cwd()}`);
+  const candidates = [
+    join(process.cwd(), ".env.runtime"),
+    join(process.cwd(), "dist", ".env.runtime"),
+    join(__dirname, ".env.runtime"),
+    join(__dirname, "..", ".env.runtime"),
+  ];
+  for (const envPath of candidates) {
+    if (existsSync(envPath)) {
+      const content = readFileSync(envPath, "utf-8");
+      let loaded = 0;
+      for (const line of content.split("\n")) {
+        const eqIdx = line.indexOf("=");
+        if (eqIdx === -1) continue;
+        const key = line.slice(0, eqIdx).trim();
+        const value = line.slice(eqIdx + 1).trim();
+        if (key && value && !process.env[key]) {
+          process.env[key] = value;
+          loaded++;
+        }
       }
+      if (loaded > 0) {
+        console.log(`[STARTUP] Loaded ${loaded} env vars from ${envPath}`);
+      }
+      break;
     }
-    console.log(`[STARTUP] Loaded ${loaded} env vars from .env.runtime`);
   }
 } catch (e) {
   // ignore - file may not exist in dev
 }
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-22-v78-wa-token-from-db";
+const BUILD_VERSION = "2026-02-22-v79-fix-env-runtime-path";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 const envKeys = Object.keys(process.env).sort();
 console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);
