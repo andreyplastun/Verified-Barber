@@ -153,7 +153,7 @@ if (уже есть magic_link для booking) → skip
 
 Реализация в `server/whatsapp.ts`, функция `sendViaAssistBot`.
 
-- **Endpoint**: `POST https://lk.assistbot.ru/api/send` (захардкожен)
+- **Endpoint**: `POST https://lk.assistbot.ru/api/web/index.php/send-message/`
 - **Авторизация**: `Authorization: Bearer {ASSISTBOT_TOKEN}`
 - **HTTP метод**: `POST`
 - **Content-Type**: `application/json`

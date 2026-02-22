@@ -153,22 +153,16 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
-  const clientId = `rateus_visit_${bookingId}`;
 
   const payload = {
-    destination_params: [
-      {
-        id: clientId,
-        phone: cleanPhone,
-      },
-    ],
-    text,
-    type: "whatsapp",
+    phone: cleanPhone,
+    body: text,
+    type: "text",
   };
 
   console.log(`[WA_SEND] Sending to phone=${cleanPhone} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
 
-  const response = await fetch("https://lk.assistbot.ru/api/send", {
+  const response = await fetch("https://lk.assistbot.ru/api/web/index.php/send-message/", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -180,8 +174,8 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
   const respBody = await response.text();
 
   if (!response.ok) {
-    console.error(`[WA_SEND] AssistBot error: status=${response.status} body=${respBody}`);
-    throw new Error(`AssistBot API error ${response.status}: ${respBody}`);
+    console.error(`[WA_SEND] AssistBot error: status=${response.status} body=${respBody.substring(0, 500)}`);
+    throw new Error(`AssistBot API error ${response.status}: ${respBody.substring(0, 300)}`);
   }
 
   let assistbotMessageId: string | null = null;
