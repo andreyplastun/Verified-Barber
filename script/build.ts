@@ -153,6 +153,7 @@ async function buildAll() {
     "ALTEGIO_WEBHOOK_SECRET",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SESSION_SECRET",
+    "ASSISTBOT_TOKEN",
   ];
   const envLines: string[] = [];
   for (const key of runtimeEnvKeys) {
