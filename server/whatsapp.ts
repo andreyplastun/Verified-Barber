@@ -131,57 +131,53 @@ function randomInterval(minMin: number, maxMin: number): number {
   return (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
 }
 
-async function getAssistBotConfig(): Promise<{ token: string; accountId: number } | null> {
-  let token: string | null = process.env.ASSISTBOT_TOKEN || null;
-  let accountId: string | null = process.env.ASSISTBOT_ACCOUNT_ID || null;
+async function getAssistBotToken(): Promise<string | null> {
+  if (process.env.ASSISTBOT_TOKEN) return process.env.ASSISTBOT_TOKEN;
   try {
     const rows = await db.select().from(appConfig);
     for (const row of rows) {
-      if (row.key === "ASSISTBOT_TOKEN" && row.value && !token) {
-        token = row.value;
+      if (row.key === "ASSISTBOT_TOKEN" && row.value) {
         process.env.ASSISTBOT_TOKEN = row.value;
-      }
-      if (row.key === "ASSISTBOT_ACCOUNT_ID" && row.value && !accountId) {
-        accountId = row.value;
-        process.env.ASSISTBOT_ACCOUNT_ID = row.value;
+        return row.value;
       }
     }
   } catch (e) {}
-  if (!token || !accountId) return null;
-  return { token, accountId: parseInt(accountId, 10) };
+  return null;
 }
 
 async function sendViaAssistBot(phone: string, text: string, bookingId: number): Promise<string | null> {
-  const config = await getAssistBotConfig();
+  const token = await getAssistBotToken();
 
-  if (!config) {
-    throw new Error("AssistBot not configured (ASSISTBOT_TOKEN or ASSISTBOT_ACCOUNT_ID missing)");
+  if (!token) {
+    throw new Error("AssistBot not configured (ASSISTBOT_TOKEN missing)");
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
 
   const payload = {
-    account_id: config.accountId,
     phone: cleanPhone,
     body: text,
-    type: "text" as const,
+    type: "text",
   };
 
-  console.log(`[WA_SEND] Sending to phone=${cleanPhone} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
+  console.log(`[WA_SEND] Sending to phone=${cleanPhone} bookingId=${bookingId} token_len=${token.length} text="${text.substring(0, 80)}..."`);
+  console.log(`[WA_SEND] Full payload: ${JSON.stringify(payload)}`);
 
   const response = await fetch("https://lk.assistbot.ru/api/web/index.php/send-message/", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${config.token}`,
+      "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
   });
 
   const respBody = await response.text();
+  const respHeaders: Record<string, string> = {};
+  response.headers.forEach((v, k) => { respHeaders[k] = v; });
 
   if (!response.ok) {
-    console.error(`[WA_SEND] AssistBot error: status=${response.status} body=${respBody.substring(0, 500)}`);
+    console.error(`[WA_SEND] AssistBot error: status=${response.status} headers=${JSON.stringify(respHeaders)} body=${respBody.substring(0, 500)}`);
     throw new Error(`AssistBot API error ${response.status}: ${respBody.substring(0, 300)}`);
   }
 
@@ -194,6 +190,40 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
   console.log(`[WA_SEND] Success: phone=${cleanPhone} bookingId=${bookingId} assistbot_message_id=${assistbotMessageId} response=${respBody.substring(0, 200)}`);
 
   return assistbotMessageId;
+}
+
+export async function testAssistBotConnection(): Promise<{ success: boolean; status?: number; body?: string; error?: string; tokenLength?: number }> {
+  const token = await getAssistBotToken();
+  if (!token) {
+    return { success: false, error: "ASSISTBOT_TOKEN not configured" };
+  }
+  try {
+    const testPayload = {
+      phone: "77000000000",
+      body: "test_connection",
+      type: "text",
+    };
+    console.log(`[WA_TEST] Testing AssistBot connection, token_len=${token.length}`);
+    const response = await fetch("https://lk.assistbot.ru/api/web/index.php/send-message/", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(testPayload),
+    });
+    const body = await response.text();
+    console.log(`[WA_TEST] Response: status=${response.status} body=${body.substring(0, 500)}`);
+    if (response.status === 401) {
+      return { success: false, status: 401, body: body.substring(0, 300), error: "Authentication failed - token rejected", tokenLength: token.length };
+    }
+    if (response.status === 403) {
+      return { success: false, status: 403, body: body.substring(0, 300), error: "Forbidden - check account permissions", tokenLength: token.length };
+    }
+    return { success: response.ok, status: response.status, body: body.substring(0, 300), tokenLength: token.length };
+  } catch (e: any) {
+    return { success: false, error: e.message, tokenLength: token.length };
+  }
 }
 
 export async function enqueueReviewMessage(params: {
