@@ -42,7 +42,7 @@ try {
 }
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-23-v83-fix-assistbot-api-format";
+const BUILD_VERSION = "2026-02-23-v84-fix-customer-phone-nullable";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 const envKeys = Object.keys(process.env).sort();
 console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);
@@ -176,6 +176,11 @@ app.use((req, res, next) => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_client boolean NOT NULL DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_pro boolean NOT NULL DEFAULT false;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS first_review_celebrated boolean NOT NULL DEFAULT false;
+      DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='customer_phone' AND is_nullable='NO') THEN
+          ALTER TABLE bookings ALTER COLUMN customer_phone DROP NOT NULL;
+        END IF;
+      END $$;
 
       CREATE TABLE IF NOT EXISTS wa_messages (
         id SERIAL PRIMARY KEY,
