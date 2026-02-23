@@ -131,6 +131,33 @@ function randomInterval(minMin: number, maxMin: number): number {
   return (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
 }
 
+const ALMATY_UTC_OFFSET = 5;
+const QUIET_START_HOUR = 20;
+const QUIET_END_HOUR = 10;
+const QUIET_END_MINUTE = 30;
+
+function adjustForQuietHours(date: Date): Date {
+  const almatyHour = (date.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
+  const almatyMinute = date.getUTCMinutes();
+
+  const inQuietHours =
+    almatyHour >= QUIET_START_HOUR ||
+    almatyHour < QUIET_END_HOUR ||
+    (almatyHour === QUIET_END_HOUR && almatyMinute < QUIET_END_MINUTE);
+
+  if (!inQuietHours) return date;
+
+  const nextMorning = new Date(date);
+  if (almatyHour >= QUIET_START_HOUR) {
+    nextMorning.setUTCDate(nextMorning.getUTCDate() + 1);
+  }
+  nextMorning.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
+  const jitterMs = Math.floor(Math.random() * 30 * 60 * 1000);
+  const adjusted = new Date(nextMorning.getTime() + jitterMs);
+  console.log(`[WA_QUIET] Adjusted ${date.toISOString()} → ${adjusted.toISOString()} (quiet hours 20:00-10:30 Almaty)`);
+  return adjusted;
+}
+
 async function getAssistBotToken(): Promise<string | null> {
   if (process.env.ASSISTBOT_TOKEN) return process.env.ASSISTBOT_TOKEN;
   try {
@@ -267,7 +294,7 @@ export async function enqueueReviewMessage(params: {
   const defaultDelay = params.messageType === "primary" && !params.delayMs
     ? randomInterval(60, 120)
     : (params.delayMs || 0);
-  const scheduledAt = new Date(Date.now() + defaultDelay);
+  const scheduledAt = adjustForQuietHours(new Date(Date.now() + defaultDelay));
 
   await storage.enqueueWaMessage({
     bookingId: params.bookingId,
@@ -296,6 +323,14 @@ export async function processWaQueue(): Promise<void> {
   const effectiveLimit = getWarmupDailyLimit(settings.warmupStartDate, settings.dailyLimit);
   if (effectiveLimit <= 0) {
     console.log("[WA_PROCESSOR] Warmup not started yet, skipping");
+    return;
+  }
+
+  const now = new Date();
+  const almatyHour = (now.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
+  const almatyMinute = now.getUTCMinutes();
+  const isQuiet = almatyHour >= QUIET_START_HOUR || almatyHour < QUIET_END_HOUR || (almatyHour === QUIET_END_HOUR && almatyMinute < QUIET_END_MINUTE);
+  if (isQuiet) {
     return;
   }
 
