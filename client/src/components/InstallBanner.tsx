@@ -67,11 +67,9 @@ export function InstallBanner() {
 
     const timer = setTimeout(() => {
       setVisible(true);
-      const views = parseInt(localStorage.getItem(STORAGE_KEYS.views) || "0", 10);
-      localStorage.setItem(STORAGE_KEYS.views, (views + 1).toString());
       localStorage.setItem(STORAGE_KEYS.lastShown, Date.now().toString());
       sessionStorage.setItem("installBannerShownThisSession", "true");
-      logEvent(`banner_shown views=${views + 1} next_delay=${getDaysDelay(views + 1)}d`);
+      logEvent("banner_shown");
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setAnimateIn(true));
       });
@@ -85,6 +83,9 @@ export function InstallBanner() {
     setAnimateIn(false);
     setTimeout(() => {
       setVisible(false);
+      const views = parseInt(localStorage.getItem(STORAGE_KEYS.views) || "0", 10);
+      localStorage.setItem(STORAGE_KEYS.views, (views + 1).toString());
+      localStorage.setItem(STORAGE_KEYS.lastShown, Date.now().toString());
     }, 300);
   }, []);
 
