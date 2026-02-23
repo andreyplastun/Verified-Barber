@@ -3137,6 +3137,12 @@ ${magicLink}`;
   });
 
   // =====================
+  // ASSISTBOT DELIVERY WEBHOOK
+  app.post("/api/webhooks/assistbot-delivery", async (req, res) => {
+    console.log(`[ASSISTBOT_WEBHOOK] Delivery callback received: ${JSON.stringify(req.body).substring(0, 500)}`);
+    res.json({ ok: true });
+  });
+
   // WHATSAPP ADMIN ROUTES
   // =====================
 

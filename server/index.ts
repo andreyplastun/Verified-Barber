@@ -42,7 +42,7 @@ try {
 }
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-02-23-v82-test-assistbot";
+const BUILD_VERSION = "2026-02-23-v83-fix-assistbot-api-format";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 const envKeys = Object.keys(process.env).sort();
 console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);

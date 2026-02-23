@@ -153,7 +153,7 @@ if (уже есть magic_link для booking) → skip
 
 Реализация в `server/whatsapp.ts`, функция `sendViaAssistBot`.
 
-- **Endpoint**: `POST https://lk.assistbot.ru/api/web/index.php/send-message/`
+- **Endpoint**: `POST https://lk.assistbot.ru/api/web/index.php/sms/`
 - **Авторизация**: `Authorization: Bearer {ASSISTBOT_TOKEN}`
 - **HTTP метод**: `POST`
 - **Content-Type**: `application/json`
@@ -164,16 +164,21 @@ if (уже есть magic_link для booking) → skip
   "destination_params": [
     {
       "id": "rateus_visit_123",
-      "phone": "77001234567"
+      "phone": "+77001234567"
     }
   ],
   "text": "Текст сообщения",
-  "type": "whatsapp"
+  "salon": "",
+  "type": "sms",
+  "delivery_callback_url": "https://www.rateus.kz/api/webhooks/assistbot-delivery"
 }
 ```
 
 - `id` формируется как `rateus_visit_{bookingId}`
-- `phone` — только цифры (очищен от +, пробелов, скобок)
+- `phone` — в формате `+7XXXXXXXXXX`
+- `salon` — пустая строка (не используется)
+- `type` — `"sms"` (AssistBot сам маршрутизирует через WhatsApp)
+- `delivery_callback_url` — URL для callback-ов о статусе доставки
 
 - **Env vars**: `ASSISTBOT_TOKEN` (обязательно)
 - **Сохранение ответа**: `assistbot_message_id` из ответа API сохраняется в таблицу `wa_messages`

@@ -153,17 +153,25 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
+  const phoneFormatted = cleanPhone.startsWith("7") ? `+${cleanPhone}` : `+7${cleanPhone}`;
 
   const payload = {
-    phone: cleanPhone,
-    body: text,
-    type: "text",
+    destination_params: [
+      {
+        id: `rateus_visit_${bookingId}`,
+        phone: phoneFormatted,
+      },
+    ],
+    text: text,
+    salon: "",
+    type: "sms",
+    delivery_callback_url: "https://www.rateus.kz/api/webhooks/assistbot-delivery",
   };
 
-  console.log(`[WA_SEND] Sending to phone=${cleanPhone} bookingId=${bookingId} token_len=${token.length} text="${text.substring(0, 80)}..."`);
+  console.log(`[WA_SEND] Sending to phone=${phoneFormatted} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
   console.log(`[WA_SEND] Full payload: ${JSON.stringify(payload)}`);
 
-  const response = await fetch("https://lk.assistbot.ru/api/web/index.php/send-message/", {
+  const response = await fetch("https://lk.assistbot.ru/api/web/index.php/sms/", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -173,21 +181,19 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
   });
 
   const respBody = await response.text();
-  const respHeaders: Record<string, string> = {};
-  response.headers.forEach((v, k) => { respHeaders[k] = v; });
 
   if (!response.ok) {
-    console.error(`[WA_SEND] AssistBot error: status=${response.status} headers=${JSON.stringify(respHeaders)} body=${respBody.substring(0, 500)}`);
+    console.error(`[WA_SEND] AssistBot error: status=${response.status} body=${respBody.substring(0, 500)}`);
     throw new Error(`AssistBot API error ${response.status}: ${respBody.substring(0, 300)}`);
   }
 
   let assistbotMessageId: string | null = null;
   try {
     const respJson = JSON.parse(respBody);
-    assistbotMessageId = respJson?.message_id || respJson?.id || null;
+    assistbotMessageId = respJson?.message_id || respJson?.id || respJson?.data?.id || null;
   } catch {}
 
-  console.log(`[WA_SEND] Success: phone=${cleanPhone} bookingId=${bookingId} assistbot_message_id=${assistbotMessageId} response=${respBody.substring(0, 200)}`);
+  console.log(`[WA_SEND] Success: phone=${phoneFormatted} bookingId=${bookingId} assistbot_message_id=${assistbotMessageId} response=${respBody.substring(0, 200)}`);
 
   return assistbotMessageId;
 }
@@ -199,12 +205,19 @@ export async function testAssistBotConnection(): Promise<{ success: boolean; sta
   }
   try {
     const testPayload = {
-      phone: "77000000000",
-      body: "test_connection",
-      type: "text",
+      destination_params: [
+        {
+          id: "rateus_test_connection",
+          phone: "+77000000000",
+        },
+      ],
+      text: "test_connection",
+      salon: "",
+      type: "sms",
+      delivery_callback_url: "https://www.rateus.kz/api/webhooks/assistbot-delivery",
     };
     console.log(`[WA_TEST] Testing AssistBot connection, token_len=${token.length}`);
-    const response = await fetch("https://lk.assistbot.ru/api/web/index.php/send-message/", {
+    const response = await fetch("https://lk.assistbot.ru/api/web/index.php/sms/", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
@@ -214,13 +227,7 @@ export async function testAssistBotConnection(): Promise<{ success: boolean; sta
     });
     const body = await response.text();
     console.log(`[WA_TEST] Response: status=${response.status} body=${body.substring(0, 500)}`);
-    if (response.status === 401) {
-      return { success: false, status: 401, body: body.substring(0, 300), error: "Authentication failed - token rejected", tokenLength: token.length };
-    }
-    if (response.status === 403) {
-      return { success: false, status: 403, body: body.substring(0, 300), error: "Forbidden - check account permissions", tokenLength: token.length };
-    }
-    return { success: response.ok, status: response.status, body: body.substring(0, 300), tokenLength: token.length };
+    return { success: response.ok || response.status === 200, status: response.status, body: body.substring(0, 300), tokenLength: token.length };
   } catch (e: any) {
     return { success: false, error: e.message, tokenLength: token.length };
   }
