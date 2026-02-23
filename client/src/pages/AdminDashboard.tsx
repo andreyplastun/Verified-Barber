@@ -1067,14 +1067,19 @@ export default function AdminDashboard() {
                             variant={
                               msg.status === "sent" ? "default" :
                               msg.status === "failed" ? "destructive" :
+                              msg.status === "skipped" && msg.skipReason === "review_already_submitted" ? "default" :
                               msg.status === "skipped" ? "secondary" :
                               "outline"
                             }
+                            className={msg.status === "skipped" && msg.skipReason === "review_already_submitted" ? "bg-green-600 hover:bg-green-700 text-white" : ""}
                             data-testid={`badge-wa-status-${msg.id}`}
                           >
-                            {msg.status === "sent" ? "Отправлено" :
+                            {msg.status === "sent" && msg.messageType === "reminder" ? "Follow-up отправлен" :
+                             msg.status === "sent" ? "Отправлено" :
                              msg.status === "failed" ? "Ошибка" :
+                             msg.status === "skipped" && msg.skipReason === "review_already_submitted" ? "✓ Отзыв оставлен" :
                              msg.status === "skipped" ? "Пропущено" :
+                             msg.status === "queued" && msg.messageType === "reminder" ? "Follow-up в очереди" :
                              msg.status === "queued" ? "В очереди" :
                              msg.status === "sending" ? "Отправка..." : msg.status}
                           </Badge>
@@ -1093,7 +1098,7 @@ export default function AdminDashboard() {
                             {msg.lastError.substring(0, 100)}
                           </p>
                         )}
-                        {msg.skipReason && (
+                        {msg.skipReason && msg.skipReason !== "review_already_submitted" && (
                           <p className="text-xs text-muted-foreground">Причина: {msg.skipReason}</p>
                         )}
                         <p className="text-xs text-muted-foreground">
