@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info } from 'lucide-react';
+import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
@@ -43,6 +43,11 @@ export default function SpecialistDashboard() {
   const [altegioManualId, setAltegioManualId] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
   const [altegioConnecting, setAltegioConnecting] = useState(false);
+  const [showNewBookingForm, setShowNewBookingForm] = useState(false);
+  const [newBookingName, setNewBookingName] = useState('');
+  const [newBookingPhone, setNewBookingPhone] = useState('');
+  const [newBookingDate, setNewBookingDate] = useState('');
+  const [newBookingTime, setNewBookingTime] = useState('');
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -434,6 +439,42 @@ export default function SpecialistDashboard() {
     },
   });
 
+
+  const createBookingMutation = useMutation({
+    mutationFn: async () => {
+      if (!currentUser?.id) throw new Error('Not authorized');
+      const appointmentTime = new Date(`${newBookingDate}T${newBookingTime}`);
+      const res = await fetch('/api/specialist/bookings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({
+          customerName: newBookingName,
+          customerPhone: newBookingPhone,
+          appointmentTime: appointmentTime.toISOString(),
+        }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Ошибка');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      toast({ title: 'Запись создана' });
+      setShowNewBookingForm(false);
+      setNewBookingName('');
+      setNewBookingPhone('');
+      setNewBookingDate('');
+      setNewBookingTime('');
+    },
+    onError: (err: Error) => {
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    },
+  });
 
   const activeBookings = (bookings?.filter(b => 
     b.status === 'scheduled' || b.status === 'ready_to_complete' || b.status === 'payment_pending'
@@ -1097,19 +1138,96 @@ export default function SpecialistDashboard() {
               <Calendar className="w-5 h-5" />
               <CardTitle>Предстоящие записи</CardTitle>
             </div>
-            {activeBookings.length > 0 && (
-              <Badge variant="secondary" data-testid="badge-upcoming-count">
-                {activeBookings.length}
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              {activeBookings.length > 0 && (
+                <Badge variant="secondary" data-testid="badge-upcoming-count">
+                  {activeBookings.length}
+                </Badge>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowNewBookingForm(!showNewBookingForm)}
+                data-testid="button-new-booking"
+              >
+                <Plus className="w-4 h-4 mr-1" />
+                Записать
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
+            {showNewBookingForm && (
+              <div className="mb-4 p-3 rounded-md bg-muted/50 space-y-3" data-testid="form-new-booking">
+                <div className="space-y-2">
+                  <Label htmlFor="new-booking-name">Имя клиента *</Label>
+                  <Input
+                    id="new-booking-name"
+                    placeholder="Имя клиента"
+                    value={newBookingName}
+                    onChange={(e) => setNewBookingName(e.target.value)}
+                    data-testid="input-new-booking-name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="new-booking-phone">Телефон клиента</Label>
+                  <Input
+                    id="new-booking-phone"
+                    placeholder="+7 777 123 4567"
+                    value={newBookingPhone}
+                    onChange={(e) => setNewBookingPhone(e.target.value)}
+                    data-testid="input-new-booking-phone"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="new-booking-date">Дата *</Label>
+                    <Input
+                      id="new-booking-date"
+                      type="date"
+                      value={newBookingDate}
+                      onChange={(e) => setNewBookingDate(e.target.value)}
+                      data-testid="input-new-booking-date"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="new-booking-time">Время *</Label>
+                    <Input
+                      id="new-booking-time"
+                      type="time"
+                      value={newBookingTime}
+                      onChange={(e) => setNewBookingTime(e.target.value)}
+                      data-testid="input-new-booking-time"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => createBookingMutation.mutate()}
+                    disabled={!newBookingName || !newBookingDate || !newBookingTime || createBookingMutation.isPending}
+                    data-testid="button-create-booking"
+                  >
+                    {createBookingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
+                    Создать запись
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setShowNewBookingForm(false)}
+                    data-testid="button-cancel-new-booking"
+                  >
+                    Отмена
+                  </Button>
+                </div>
+              </div>
+            )}
             {loadingBookings ? (
               <div className="space-y-2">
                 <Skeleton className="h-16 w-full" />
                 <Skeleton className="h-16 w-full" />
               </div>
-            ) : activeBookings.length === 0 ? (
+            ) : activeBookings.length === 0 && !showNewBookingForm ? (
               <p className="text-muted-foreground text-sm">Нет предстоящих записей</p>
             ) : (
               <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">

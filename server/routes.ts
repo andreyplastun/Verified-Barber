@@ -1405,6 +1405,62 @@ ${magicLink}`;
   }
 
   // =====================
+  // SPECIALIST: CREATE BOOKING ENDPOINT
+  // =====================
+
+  app.post("/api/specialist/bookings", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || (user.role !== 'specialist' && user.role !== 'admin')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (!user.specialistId) {
+        return res.status(403).json({ message: "Нет привязанного профиля специалиста" });
+      }
+
+      const { customerName, customerPhone, appointmentTime } = req.body;
+
+      if (!customerName || !appointmentTime) {
+        return res.status(400).json({ message: "Имя клиента и время записи обязательны" });
+      }
+
+      const normalized = normalizePhone(customerPhone || '');
+
+      const booking = await storage.createBooking({
+        specialistId: user.specialistId,
+        customerName,
+        customerPhone: customerPhone || '',
+        appointmentTime: new Date(appointmentTime),
+        normalizedPhone: normalized,
+        isNewClient: !normalized,
+      } as any);
+
+      if (isAltegioConfigured()) {
+        const specialist = await storage.getSpecialist(user.specialistId);
+        await storage.updateBooking(booking.id, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
+        syncWithRetry(
+          { ...booking, updatedFrom: "rateus" },
+          specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
+          "create",
+        );
+      }
+
+      console.log(`[SPECIALIST_BOOKING] Created booking: specialistId=${user.specialistId}, customer=${customerName}, time=${appointmentTime}`);
+
+      res.status(201).json(booking);
+    } catch (err: any) {
+      console.error("Error creating specialist booking:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =====================
   // SPECIALIST: COMPLETE + REQUEST PAYMENT ENDPOINT
   // ReadyToComplete → PaymentPending
   // =====================
