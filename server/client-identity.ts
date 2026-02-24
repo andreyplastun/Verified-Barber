@@ -1,14 +1,19 @@
 import { storage } from "./storage";
 import type { Booking } from "@shared/schema";
 
+const VALID_KZ_MOBILE_PREFIXES = new Set([
+  "700", "701", "702", "703", "704", "705", "706", "707", "708", "709",
+  "747", "750", "751", "760", "761", "762", "763", "764",
+  "771", "775", "776", "777", "778",
+]);
+
 export function isValidKzPhone(normalizedPhone: string | null): boolean {
   if (!normalizedPhone) return false;
   const digits = normalizedPhone.replace(/\D/g, "");
   if (digits.length !== 11) return false;
   if (!digits.startsWith("7")) return false;
-  const prefix = digits.substring(1, 2);
-  if (prefix !== "7" && prefix !== "6") return false;
-  return true;
+  const prefix3 = digits.substring(1, 4);
+  return VALID_KZ_MOBILE_PREFIXES.has(prefix3);
 }
 
 export function normalizePhone(phone: string | null | undefined): string | null {
