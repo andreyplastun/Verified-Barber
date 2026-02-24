@@ -391,7 +391,7 @@ export async function enqueueReviewMessage(params: {
 
   const baseTime = params.delayMs
     ? new Date(Date.now() + params.delayMs)
-    : new Date(Date.now() + randomInterval(30, 60));
+    : new Date();
   const scheduledAt = await spreadAcrossActiveWindow(baseTime, params.messageType);
 
   await storage.enqueueWaMessage({
