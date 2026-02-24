@@ -67,9 +67,11 @@ export function InstallBanner() {
 
     const timer = setTimeout(() => {
       setVisible(true);
+      const views = parseInt(localStorage.getItem(STORAGE_KEYS.views) || "0", 10);
+      localStorage.setItem(STORAGE_KEYS.views, (views + 1).toString());
       localStorage.setItem(STORAGE_KEYS.lastShown, Date.now().toString());
       sessionStorage.setItem("installBannerShownThisSession", "true");
-      logEvent("banner_shown");
+      logEvent(`banner_shown (view #${views + 1})`);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setAnimateIn(true));
       });
