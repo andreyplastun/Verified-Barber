@@ -404,14 +404,21 @@ export default function SpecialistDashboard() {
       setCompletingBookingId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      const magicLinkInfo = data.magicLinkCreated
+        ? '\nСсылка для отзыва создана и отправлена клиенту.'
+        : '\nСсылка для отзыва не создана (нет контактных данных клиента).';
       if (data.reducedTrustNotice) {
         toast({
           title: 'Визит завершён',
-          description: data.reducedTrustNotice,
+          description: data.reducedTrustNotice + magicLinkInfo,
           duration: 8000,
         });
       } else {
-        toast({ title: 'Визит завершён, отзыв запрошен' });
+        toast({
+          title: 'Визит завершён',
+          description: 'Отзыв запрошен.' + magicLinkInfo,
+          duration: 6000,
+        });
       }
     },
     onError: (err: Error) => {
@@ -1301,7 +1308,7 @@ export default function SpecialistDashboard() {
                           <span data-testid={`text-customer-${booking.id}`}>{booking.customerName}</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                          {(booking as any).altegioSyncStatus === 'synced' && (
+                          {(booking as any).bookingSource !== 'specialist_manual' && (booking as any).altegioSyncStatus === 'synced' && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <CircleCheck className="w-3.5 h-3.5 text-green-500" data-testid={`icon-sync-ok-${booking.id}`} />
@@ -1309,7 +1316,7 @@ export default function SpecialistDashboard() {
                               <TooltipContent>Синхронизировано с Altegio</TooltipContent>
                             </Tooltip>
                           )}
-                          {(booking as any).altegioSyncStatus === 'error' && (
+                          {(booking as any).bookingSource !== 'specialist_manual' && (booking as any).altegioSyncStatus === 'error' && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <AlertTriangle className="w-3.5 h-3.5 text-amber-500" data-testid={`icon-sync-error-${booking.id}`} />
@@ -1317,7 +1324,7 @@ export default function SpecialistDashboard() {
                               <TooltipContent>Не удалось синхронизировать</TooltipContent>
                             </Tooltip>
                           )}
-                          {(booking as any).altegioSyncStatus === 'pending' && (
+                          {(booking as any).bookingSource !== 'specialist_manual' && (booking as any).altegioSyncStatus === 'pending' && (
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin" data-testid={`icon-sync-pending-${booking.id}`} />
@@ -1330,7 +1337,7 @@ export default function SpecialistDashboard() {
                           </Badge>
                         </div>
                       </div>
-                      {!suppressIndividualBanners && (
+                      {!suppressIndividualBanners && (booking as any).bookingSource !== 'specialist_manual' && (
                         <AltegioSyncBanner
                           config={getBookingSyncBannerConfig(
                             (booking as any).altegioSyncStatus,
@@ -1371,7 +1378,7 @@ export default function SpecialistDashboard() {
                               disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
                               data-testid={`button-send-review-${booking.id}`}
                             >
-                              {completingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Только отзыв'}
+                              {completingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Завершить визит'}
                             </Button>
                           </div>
                           <div className="flex justify-end">
@@ -1545,7 +1552,7 @@ export default function SpecialistDashboard() {
                       <span>{booking.customerName}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {(booking as any).altegioSyncStatus === 'synced' && (
+                      {(booking as any).bookingSource !== 'specialist_manual' && (booking as any).altegioSyncStatus === 'synced' && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <CircleCheck className="w-3.5 h-3.5 text-green-500" />
@@ -1553,7 +1560,7 @@ export default function SpecialistDashboard() {
                           <TooltipContent>Синхронизировано с Altegio</TooltipContent>
                         </Tooltip>
                       )}
-                      {(booking as any).altegioSyncStatus === 'error' && (
+                      {(booking as any).bookingSource !== 'specialist_manual' && (booking as any).altegioSyncStatus === 'error' && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
@@ -1561,7 +1568,7 @@ export default function SpecialistDashboard() {
                           <TooltipContent>Не удалось синхронизировать</TooltipContent>
                         </Tooltip>
                       )}
-                      {(booking as any).altegioSyncStatus === 'pending' && (
+                      {(booking as any).bookingSource !== 'specialist_manual' && (booking as any).altegioSyncStatus === 'pending' && (
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Loader2 className="w-3.5 h-3.5 text-amber-500 animate-spin" />
@@ -1585,7 +1592,7 @@ export default function SpecialistDashboard() {
                     </div>
                   </div>
                   
-                  {!suppressIndividualBanners && (
+                  {!suppressIndividualBanners && (booking as any).bookingSource !== 'specialist_manual' && (
                     <AltegioSyncBanner
                       config={getBookingSyncBannerConfig(
                         (booking as any).altegioSyncStatus,

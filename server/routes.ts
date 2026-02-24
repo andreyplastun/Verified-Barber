@@ -1489,16 +1489,6 @@ ${magicLink}`;
         invalidPhone: phoneIsInvalid,
       } as any);
 
-      if (isAltegioConfigured()) {
-        const specialist = await storage.getSpecialist(user.specialistId);
-        await storage.updateBooking(booking.id, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
-        syncWithRetry(
-          { ...booking, updatedFrom: "rateus" },
-          specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
-          "create",
-        );
-      }
-
       console.log(`[SPECIALIST_BOOKING] Created booking: specialistId=${user.specialistId}, customer=${customerName}, time=${appointmentTime}, source=specialist_manual, invalidPhone=${phoneIsInvalid}`);
 
       res.status(201).json(booking);
@@ -1548,7 +1538,8 @@ ${magicLink}`;
 
       const specialist = await storage.getSpecialist(booking.specialistId);
 
-      if (isAltegioConfigured() && booking.updatedFrom !== "altegio") {
+      const isManualBooking = (booking as any).bookingSource === "specialist_manual";
+      if (isAltegioConfigured() && booking.updatedFrom !== "altegio" && !isManualBooking) {
         await storage.updateBooking(bookingId, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
         syncWithRetry(
           { ...booking, status: "payment_pending", updatedFrom: "rateus" },
@@ -1557,7 +1548,7 @@ ${magicLink}`;
         );
       }
 
-      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=payment_pending source=specialist_request_payment userId=${userId}`);
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=payment_pending source=specialist_request_payment userId=${userId} manualBooking=${isManualBooking}`);
 
       res.json({ booking: updated });
     } catch (err: any) {
@@ -1610,7 +1601,7 @@ ${magicLink}`;
 
       const specialist = await storage.getSpecialist(booking.specialistId);
 
-      if (isAltegioConfigured() && booking.updatedFrom !== "altegio") {
+      if (isAltegioConfigured() && booking.updatedFrom !== "altegio" && !isManualBooking) {
         await storage.updateBooking(bookingId, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
         syncWithRetry(
           { ...booking, status: "completed", updatedFrom: "rateus" },
@@ -1683,7 +1674,8 @@ ${magicLink}`;
       const updated = await storage.updateBookingStatus(bookingId, "cancelled");
 
       const specialist = await storage.getSpecialist(booking.specialistId);
-      if (isAltegioConfigured() && booking.updatedFrom !== "altegio") {
+      const isManualBooking = (booking as any).bookingSource === "specialist_manual";
+      if (isAltegioConfigured() && booking.updatedFrom !== "altegio" && !isManualBooking) {
         await storage.updateBooking(bookingId, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
         syncWithRetry(
           { ...booking, status: "cancelled", updatedFrom: "rateus" },
@@ -1692,7 +1684,7 @@ ${magicLink}`;
         );
       }
 
-      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=cancelled source=specialist_manual userId=${userId}`);
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=cancelled source=specialist userId=${userId} manualBooking=${isManualBooking}`);
 
       res.json({ booking: updated });
     } catch (err: any) {
