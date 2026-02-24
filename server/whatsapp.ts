@@ -23,10 +23,23 @@ function getTemplates(type: "primary" | "reminder"): string[] {
   return type === "primary" ? PRIMARY_TEMPLATES : REMINDER_TEMPLATES;
 }
 
+const NON_DECLINABLE_NAMES = new Set([
+  "перизат", "айжан", "балжан", "гаухар", "жанар", "динар",
+  "томирис", "жулдыз", "алтын", "жибек", "камшат", "куралай",
+  "назгуль", "айгуль", "нургуль", "айнур", "нурсулу",
+  "мейрамгуль", "жаннур", "гульнур", "актолкын",
+  "жансулу", "карлыгаш", "инжу", "маржан", "айсулу",
+]);
+
+function isNonDeclinable(name: string): boolean {
+  return NON_DECLINABLE_NAMES.has(name.toLowerCase());
+}
+
 function toDative(name: string): string {
   const n = name.trim();
   if (!n) return n;
   if (/[a-zA-Z]/.test(n)) return n;
+  if (isNonDeclinable(n)) return n;
 
   if (n.endsWith("ия")) return n.slice(0, -2) + "ии";
   if (n.endsWith("ья")) return n.slice(0, -2) + "ье";
@@ -52,6 +65,7 @@ function toGenitive(name: string): string {
   const n = name.trim();
   if (!n) return n;
   if (/[a-zA-Z]/.test(n)) return n;
+  if (isNonDeclinable(n)) return n;
 
   if (n.endsWith("ия")) return n.slice(0, -2) + "ии";
   if (n.endsWith("ья")) return n.slice(0, -2) + "ьи";
