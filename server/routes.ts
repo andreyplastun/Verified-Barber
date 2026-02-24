@@ -8,7 +8,7 @@ import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
 import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig } from "./altegio";
-import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater } from "./client-identity";
+import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
 import { appConfig } from "@shared/schema";
 import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection } from "./whatsapp";
@@ -1022,6 +1022,36 @@ export async function registerRoutes(
   });
 
   // =====================
+  // =====================
+  // ADMIN: ANTIFRAUD FLAGS
+  // =====================
+
+  app.get("/api/admin/antifraud-flags", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+
+      const allSpecialists = await storage.getSpecialists();
+      const flags: Array<{ specialistId: number; specialistName: string; invalidPhoneCount: number }> = [];
+
+      for (const spec of allSpecialists) {
+        const count = await storage.getInvalidPhoneCountToday(spec.id);
+        if (count >= 2) {
+          flags.push({
+            specialistId: spec.id,
+            specialistName: spec.name,
+            invalidPhoneCount: count,
+          });
+        }
+      }
+
+      res.json({ flags });
+    } catch (err: any) {
+      console.error("Error fetching antifraud flags:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // MAGIC LINK ENDPOINTS
   // =====================
 
@@ -1424,13 +1454,29 @@ ${magicLink}`;
         return res.status(403).json({ message: "Нет привязанного профиля специалиста" });
       }
 
-      const { customerName, customerPhone, appointmentTime } = req.body;
+      const { customerName, customerPhone, appointmentTime, force } = req.body;
 
       if (!customerName || !appointmentTime) {
         return res.status(400).json({ message: "Имя клиента и время записи обязательны" });
       }
 
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const recentBookings = await storage.getRecentSpecialistManualBookings(user.specialistId, oneHourAgo);
+      if (recentBookings.length >= 3 && !force) {
+        console.log(`[ANTIFRAUD_RATE_LIMIT] specialist=${user.specialistId} recentCount=${recentBookings.length} — warning shown`);
+        return res.status(200).json({
+          warning: true,
+          message: "Вы создали более 3 записей за последний час. Создавайте записи по мере их появления.",
+          recentCount: recentBookings.length,
+        });
+      }
+
       const normalized = normalizePhone(customerPhone || '');
+      const phoneIsInvalid = normalized ? !isValidKzPhone(normalized) : false;
+
+      if (phoneIsInvalid) {
+        console.log(`[ANTIFRAUD_INVALID_PHONE] specialist=${user.specialistId} phone=${normalized} — invalid KZ phone prefix`);
+      }
 
       const booking = await storage.createBooking({
         specialistId: user.specialistId,
@@ -1439,6 +1485,8 @@ ${magicLink}`;
         appointmentTime: new Date(appointmentTime),
         normalizedPhone: normalized,
         isNewClient: !normalized,
+        bookingSource: "specialist_manual",
+        invalidPhone: phoneIsInvalid,
       } as any);
 
       if (isAltegioConfigured()) {
@@ -1451,7 +1499,7 @@ ${magicLink}`;
         );
       }
 
-      console.log(`[SPECIALIST_BOOKING] Created booking: specialistId=${user.specialistId}, customer=${customerName}, time=${appointmentTime}`);
+      console.log(`[SPECIALIST_BOOKING] Created booking: specialistId=${user.specialistId}, customer=${customerName}, time=${appointmentTime}, source=specialist_manual, invalidPhone=${phoneIsInvalid}`);
 
       res.status(201).json(booking);
     } catch (err: any) {
@@ -1549,10 +1597,13 @@ ${magicLink}`;
         return res.status(409).json({ message: "Визит должен быть в статусе 'Готов к завершению'" });
       }
 
+      const isManualBooking = (booking as any).bookingSource === "specialist_manual";
+      const trustWeight = isManualBooking ? 0.6 : 1.0;
+
       const updated = await storage.updateBooking(bookingId, {
         status: "completed",
         completionType: "with_review",
-        visitTrustWeight: 1.0,
+        visitTrustWeight: trustWeight,
       } as any);
 
       await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
@@ -1568,11 +1619,15 @@ ${magicLink}`;
         );
       }
 
-      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=completed source=specialist_send_review userId=${userId} score+1`);
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=completed source=specialist_send_review userId=${userId} score+1 trustWeight=${trustWeight} manualBooking=${isManualBooking}`);
 
       const magicLinkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, 'specialist_send_review');
 
-      res.json({ booking: updated, magicLinkCreated });
+      res.json({
+        booking: updated,
+        magicLinkCreated,
+        reducedTrustNotice: isManualBooking ? "Визит завершён без подтверждённой оплаты. Такие визиты учитываются с пониженным уровнем доверия." : null,
+      });
     } catch (err: any) {
       console.error("Error completing visit with review:", err);
       res.status(500).json({ message: err.message });
@@ -1696,12 +1751,33 @@ ${magicLink}`;
       if (!booking || booking.status !== 'completed') return false;
       if ((booking as any).paymentStatus === 'refunded') return false;
 
+      if ((booking as any).invalidPhone) {
+        console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: invalid phone number (source=${source})`);
+        await storage.updateBooking(bookingId, {
+          reviewEligibility: false,
+          reviewEligibilityReason: 'invalid_phone',
+        } as any);
+        return false;
+      }
+
       const hasClientId = !!booking.clientId;
       const hasPhone = !!booking.normalizedPhone || !!booking.customerPhone;
 
       if (!hasClientId && !hasPhone) {
         console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: no clientId and no phone (source=${source})`);
         return false;
+      }
+
+      if (booking.normalizedPhone) {
+        const recentLinkExists = await storage.getRecentMagicLinkByPhone(booking.specialistId, booking.normalizedPhone, 28);
+        if (recentLinkExists) {
+          console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: same phone ${booking.normalizedPhone} already had magic link for specialist ${booking.specialistId} within 28 days (source=${source})`);
+          await storage.updateBooking(bookingId, {
+            reviewEligibility: false,
+            reviewEligibilityReason: 'repeat_phone_28d',
+          } as any);
+          return false;
+        }
       }
 
       if (hasClientId) {
@@ -2837,6 +2913,7 @@ ${magicLink}`;
             isNewClient: identity.isNewClient,
             status: "scheduled",
             updatedFrom: "altegio",
+            bookingSource: "altegio",
           });
           console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}, newClient=${identity.isNewClient}`);
           break;
@@ -2883,6 +2960,7 @@ ${magicLink}`;
               isNewClient: identity.isNewClient,
               status: isNewVisitCompleted ? "completed" : "scheduled",
               updatedFrom: "altegio",
+              bookingSource: "altegio",
             });
             console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}, newClient=${identity.isNewClient}`);
 

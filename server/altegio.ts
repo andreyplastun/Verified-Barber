@@ -1194,6 +1194,7 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           isNewClient: identity.isNewClient,
           status,
           updatedFrom: "altegio",
+          bookingSource: "altegio",
         });
         imported++;
       } catch (err: any) {

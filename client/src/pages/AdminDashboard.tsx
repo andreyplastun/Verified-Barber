@@ -79,6 +79,20 @@ export default function AdminDashboard() {
     enabled: !!currentUser,
   });
 
+  const { data: antifraudFlags = [] } = useQuery<Array<{ specialistId: number; specialistName: string; invalidPhoneCount: number }>>({
+    queryKey: ["/api/admin/antifraud-flags"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/antifraud-flags", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.flags || [];
+    },
+    enabled: !!currentUser,
+    refetchInterval: 60000,
+  });
+
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/admin/bookings"],
     queryFn: async () => {
@@ -810,12 +824,22 @@ export default function AdminDashboard() {
                 <h3 className="text-sm font-medium text-muted-foreground mb-2">
                   Активные ({specialists.filter(s => s.status === 'active').length})
                 </h3>
-                {specialists.filter(s => s.status === 'active').map((s) => (
+                {specialists.filter(s => s.status === 'active').map((s) => {
+                  const flag = antifraudFlags.find(f => f.specialistId === s.id);
+                  return (
                   <div key={s.id} className="flex items-center justify-between p-3 border rounded-lg">
                     <div className="flex items-center gap-3">
                       <UserCheck className="h-5 w-5 text-green-500" />
                       <div>
-                        <p className="font-medium">{s.name}</p>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium">{s.name}</p>
+                          {flag && (
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-[10px] font-medium" data-testid={`badge-antifraud-${s.id}`} title={`${flag.invalidPhoneCount} невалидных номеров сегодня`}>
+                              <AlertTriangle className="h-3 w-3" />
+                              {flag.invalidPhoneCount}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           {categoryLabels[s.category as keyof typeof categoryLabels] || s.category} • {s.city}
                           {s.phone && ` • ${s.phone}`}
@@ -858,7 +882,8 @@ export default function AdminDashboard() {
                       </Button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

@@ -1,6 +1,16 @@
 import { storage } from "./storage";
 import type { Booking } from "@shared/schema";
 
+export function isValidKzPhone(normalizedPhone: string | null): boolean {
+  if (!normalizedPhone) return false;
+  const digits = normalizedPhone.replace(/\D/g, "");
+  if (digits.length !== 11) return false;
+  if (!digits.startsWith("7")) return false;
+  const prefix = digits.substring(1, 2);
+  if (prefix !== "7" && prefix !== "6") return false;
+  return true;
+}
+
 export function normalizePhone(phone: string | null | undefined): string | null {
   if (!phone) return null;
 

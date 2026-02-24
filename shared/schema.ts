@@ -130,6 +130,8 @@ export const bookings = pgTable("bookings", {
   altegioClientId: integer("altegio_client_id"),
   isNewClient: boolean("is_new_client").default(false),
   normalizedPhone: text("normalized_phone"),
+  bookingSource: text("booking_source", { enum: ["specialist_manual", "altegio", "client_app"] }),
+  invalidPhone: boolean("invalid_phone").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

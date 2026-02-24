@@ -1,7 +1,7 @@
 import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
-import { eq, desc, and, lt, asc, sql } from "drizzle-orm";
+import { eq, desc, and, lt, gte, asc, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -40,6 +40,9 @@ export interface IStorage {
   getBooking(id: number): Promise<Booking | undefined>;
   getBookingByAltegioId(altegioAppointmentId: number): Promise<Booking | undefined>;
   getBookingsByNormalizedPhone(normalizedPhone: string): Promise<Booking[]>;
+  getRecentSpecialistManualBookings(specialistId: number, since: Date): Promise<Booking[]>;
+  getInvalidPhoneCountToday(specialistId: number): Promise<number>;
+  getRecentMagicLinkByPhone(specialistId: number, normalizedPhone: string, withinDays: number): Promise<boolean>;
   getBookings(): Promise<Booking[]>; // Admin/Debug
   getBookingsForSpecialist(specialistId: number): Promise<Booking[]>;
   getBookingsForClient(clientId: string): Promise<Booking[]>;
@@ -533,6 +536,43 @@ export class DatabaseStorage implements IStorage {
 
   async getBookingsByNormalizedPhone(normalizedPhone: string): Promise<Booking[]> {
     return await db.select().from(bookings).where(eq(bookings.normalizedPhone, normalizedPhone));
+  }
+
+  async getRecentSpecialistManualBookings(specialistId: number, since: Date): Promise<Booking[]> {
+    return await db.select().from(bookings).where(
+      and(
+        eq(bookings.specialistId, specialistId),
+        eq(bookings.bookingSource, "specialist_manual"),
+        gte(bookings.createdAt, since)
+      )
+    );
+  }
+
+  async getInvalidPhoneCountToday(specialistId: number): Promise<number> {
+    const almatyOffset = 5 * 60 * 60 * 1000;
+    const almatyNow = new Date(Date.now() + almatyOffset);
+    const startOfDayAlmaty = new Date(Date.UTC(almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(), 0, 0, 0) - almatyOffset);
+    const result = await db.select().from(bookings).where(
+      and(
+        eq(bookings.specialistId, specialistId),
+        eq(bookings.invalidPhone, true),
+        eq(bookings.bookingSource, "specialist_manual"),
+        gte(bookings.createdAt, startOfDayAlmaty)
+      )
+    );
+    return result.length;
+  }
+
+  async getRecentMagicLinkByPhone(specialistId: number, normalizedPhone: string, withinDays: number): Promise<boolean> {
+    const cutoff = new Date(Date.now() - withinDays * 24 * 60 * 60 * 1000);
+    const result = await db.select().from(magicLinks).where(
+      and(
+        eq(magicLinks.specialistId, specialistId),
+        eq(magicLinks.customerPhone, normalizedPhone),
+        gte(magicLinks.createdAt, cutoff)
+      )
+    );
+    return result.length > 0;
   }
 
   async getBookings(): Promise<Booking[]> {

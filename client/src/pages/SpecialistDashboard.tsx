@@ -48,6 +48,7 @@ export default function SpecialistDashboard() {
   const [newBookingPhone, setNewBookingPhone] = useState('');
   const [newBookingDate, setNewBookingDate] = useState('');
   const [newBookingTime, setNewBookingTime] = useState('');
+  const [rateLimitWarningOpen, setRateLimitWarningOpen] = useState(false);
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -399,11 +400,19 @@ export default function SpecialistDashboard() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setCompletingBookingId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-      toast({ title: 'Визит завершён, отзыв запрошен' });
+      if (data.reducedTrustNotice) {
+        toast({
+          title: 'Визит завершён',
+          description: data.reducedTrustNotice,
+          duration: 8000,
+        });
+      } else {
+        toast({ title: 'Визит завершён, отзыв запрошен' });
+      }
     },
     onError: (err: Error) => {
       setCompletingBookingId(null);
@@ -441,7 +450,7 @@ export default function SpecialistDashboard() {
 
 
   const createBookingMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (opts?: { force?: boolean }) => {
       if (!currentUser?.id) throw new Error('Not authorized');
       const appointmentTime = new Date(`${newBookingDate}T${newBookingTime}`);
       const res = await fetch('/api/specialist/bookings', {
@@ -454,6 +463,7 @@ export default function SpecialistDashboard() {
           customerName: newBookingName,
           customerPhone: newBookingPhone,
           appointmentTime: appointmentTime.toISOString(),
+          force: opts?.force || false,
         }),
       });
       if (!res.ok) {
@@ -462,7 +472,11 @@ export default function SpecialistDashboard() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      if (data.warning) {
+        setRateLimitWarningOpen(true);
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       toast({ title: 'Запись создана' });
       setShowNewBookingForm(false);
@@ -968,6 +982,40 @@ export default function SpecialistDashboard() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={rateLimitWarningOpen} onOpenChange={setRateLimitWarningOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-orange-500" />
+              Внимание
+            </DialogTitle>
+            <DialogDescription>
+              Вы создали более 3 записей за последний час. Создавайте записи по мере их появления.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 mt-2">
+            <Button
+              className="flex-1"
+              onClick={() => {
+                setRateLimitWarningOpen(false);
+                createBookingMutation.mutate({ force: true });
+              }}
+              data-testid="button-force-create-booking"
+            >
+              Всё равно создать
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setRateLimitWarningOpen(false)}
+              data-testid="button-cancel-rate-limit"
+            >
+              Отмена
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Card>
         <CardHeader className="flex flex-row items-center gap-2">
           <UserPlus className="w-5 h-5" />
@@ -1204,7 +1252,7 @@ export default function SpecialistDashboard() {
                   <Button
                     size="sm"
                     className="flex-1"
-                    onClick={() => createBookingMutation.mutate()}
+                    onClick={() => createBookingMutation.mutate({})}
                     disabled={!newBookingName || !newBookingDate || !newBookingTime || createBookingMutation.isPending}
                     data-testid="button-create-booking"
                   >
