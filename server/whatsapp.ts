@@ -1,7 +1,7 @@
 import { storage } from "./storage";
 import { db } from "./db";
-import { appConfig } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { appConfig, waMessages } from "@shared/schema";
+import { eq, and, asc, sql } from "drizzle-orm";
 
 const PRIMARY_TEMPLATES = [
   "{clientName}, спасибо за визит к {specialistNameDative}.\nОставьте отзыв:\n{reviewLink}",
@@ -150,26 +150,110 @@ const QUIET_START_HOUR = 20;
 const QUIET_END_HOUR = 10;
 const QUIET_END_MINUTE = 30;
 
-function adjustForQuietHours(date: Date): Date {
+function isInQuietHours(date: Date): boolean {
   const almatyHour = (date.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
   const almatyMinute = date.getUTCMinutes();
-
-  const inQuietHours =
-    almatyHour >= QUIET_START_HOUR ||
+  return almatyHour >= QUIET_START_HOUR ||
     almatyHour < QUIET_END_HOUR ||
     (almatyHour === QUIET_END_HOUR && almatyMinute < QUIET_END_MINUTE);
+}
 
-  if (!inQuietHours) return date;
-
-  const nextMorning = new Date(date);
-  if (almatyHour >= QUIET_START_HOUR) {
-    nextMorning.setUTCDate(nextMorning.getUTCDate() + 1);
+function getActiveWindowForDate(date: Date): { start: Date; end: Date } {
+  const dayStart = new Date(date);
+  dayStart.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
+  const dayEnd = new Date(date);
+  dayEnd.setUTCHours(QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0);
+  if (dayEnd <= dayStart) {
+    dayEnd.setUTCDate(dayEnd.getUTCDate() + 1);
   }
-  nextMorning.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
-  const jitterMs = Math.floor(Math.random() * 30 * 60 * 1000);
-  const adjusted = new Date(nextMorning.getTime() + jitterMs);
-  console.log(`[WA_QUIET] Adjusted ${date.toISOString()} → ${adjusted.toISOString()} (quiet hours 20:00-10:30 Almaty)`);
-  return adjusted;
+  return { start: dayStart, end: dayEnd };
+}
+
+async function spreadAcrossActiveWindow(baseDate: Date, messageType: "primary" | "reminder"): Promise<Date> {
+  const now = new Date();
+  let targetDate = new Date(baseDate);
+
+  if (isInQuietHours(targetDate)) {
+    const almatyHour = (targetDate.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
+    if (almatyHour >= QUIET_START_HOUR) {
+      targetDate.setUTCDate(targetDate.getUTCDate() + 1);
+    }
+    targetDate.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
+  }
+
+  const { start: windowStart, end: windowEnd } = getActiveWindowForDate(targetDate);
+  const effectiveStart = targetDate > windowStart ? targetDate : windowStart;
+  const windowMs = windowEnd.getTime() - effectiveStart.getTime();
+
+  if (windowMs <= 0) {
+    const nextDay = new Date(targetDate);
+    nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+    nextDay.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
+    const randomOffsetMs = Math.floor(Math.random() * 9 * 60 * 60 * 1000);
+    const result = new Date(nextDay.getTime() + randomOffsetMs);
+    console.log(`[WA_SPREAD] No window left today, moved to next day: ${result.toISOString()}`);
+    return result;
+  }
+
+  try {
+    const queuedForWindow = await db.select({ scheduledAt: waMessages.scheduledAt })
+      .from(waMessages)
+      .where(and(
+        sql`${waMessages.status} IN ('queued', 'sending')`,
+        sql`${waMessages.scheduledAt} >= ${effectiveStart}`,
+        sql`${waMessages.scheduledAt} < ${windowEnd}`
+      ))
+      .orderBy(asc(waMessages.scheduledAt));
+
+    const occupiedSlots = queuedForWindow.map(m => m.scheduledAt!.getTime());
+    const MIN_GAP_MS = 30 * 60 * 1000;
+
+    let candidateTime: Date;
+    if (occupiedSlots.length === 0) {
+      const randomOffsetMs = Math.floor(Math.random() * windowMs);
+      candidateTime = new Date(effectiveStart.getTime() + randomOffsetMs);
+    } else {
+      const gaps: Array<{ start: number; end: number; size: number }> = [];
+      gaps.push({
+        start: effectiveStart.getTime(),
+        end: occupiedSlots[0] - MIN_GAP_MS,
+        size: occupiedSlots[0] - MIN_GAP_MS - effectiveStart.getTime()
+      });
+      for (let i = 0; i < occupiedSlots.length - 1; i++) {
+        const gapStart = occupiedSlots[i] + MIN_GAP_MS;
+        const gapEnd = occupiedSlots[i + 1] - MIN_GAP_MS;
+        gaps.push({ start: gapStart, end: gapEnd, size: gapEnd - gapStart });
+      }
+      gaps.push({
+        start: occupiedSlots[occupiedSlots.length - 1] + MIN_GAP_MS,
+        end: windowEnd.getTime(),
+        size: windowEnd.getTime() - (occupiedSlots[occupiedSlots.length - 1] + MIN_GAP_MS)
+      });
+
+      const validGaps = gaps.filter(g => g.size > 0);
+      if (validGaps.length > 0) {
+        const totalGapSize = validGaps.reduce((sum, g) => sum + g.size, 0);
+        let pick = Math.random() * totalGapSize;
+        let chosenGap = validGaps[0];
+        for (const gap of validGaps) {
+          pick -= gap.size;
+          if (pick <= 0) { chosenGap = gap; break; }
+        }
+        candidateTime = new Date(chosenGap.start + Math.random() * chosenGap.size);
+      } else {
+        const randomOffsetMs = Math.floor(Math.random() * windowMs);
+        candidateTime = new Date(effectiveStart.getTime() + randomOffsetMs);
+      }
+    }
+
+    console.log(`[WA_SPREAD] Scheduled ${messageType}: ${candidateTime.toISOString()} (${occupiedSlots.length} already in window, gap=30min)`);
+    return candidateTime;
+  } catch (err) {
+    const randomOffsetMs = Math.floor(Math.random() * windowMs);
+    const fallback = new Date(effectiveStart.getTime() + randomOffsetMs);
+    console.log(`[WA_SPREAD] Fallback scheduling: ${fallback.toISOString()}`);
+    return fallback;
+  }
 }
 
 async function getAssistBotToken(): Promise<string | null> {
@@ -305,10 +389,10 @@ export async function enqueueReviewMessage(params: {
     reviewLink: params.reviewLink,
   });
 
-  const defaultDelay = params.messageType === "primary" && !params.delayMs
-    ? randomInterval(60, 120)
-    : (params.delayMs || 0);
-  const scheduledAt = adjustForQuietHours(new Date(Date.now() + defaultDelay));
+  const baseTime = params.delayMs
+    ? new Date(Date.now() + params.delayMs)
+    : new Date(Date.now() + randomInterval(30, 60));
+  const scheduledAt = await spreadAcrossActiveWindow(baseTime, params.messageType);
 
   await storage.enqueueWaMessage({
     bookingId: params.bookingId,
@@ -323,8 +407,7 @@ export async function enqueueReviewMessage(params: {
     scheduledAt,
   });
 
-  const delayMin = Math.round(defaultDelay / 60000);
-  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()} (delay=${delayMin}min)`);
+  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()}`);
 }
 
 export async function processWaQueue(): Promise<void> {
@@ -341,10 +424,7 @@ export async function processWaQueue(): Promise<void> {
   }
 
   const now = new Date();
-  const almatyHour = (now.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
-  const almatyMinute = now.getUTCMinutes();
-  const isQuiet = almatyHour >= QUIET_START_HOUR || almatyHour < QUIET_END_HOUR || (almatyHour === QUIET_END_HOUR && almatyMinute < QUIET_END_MINUTE);
-  if (isQuiet) {
+  if (isInQuietHours(now)) {
     return;
   }
 
