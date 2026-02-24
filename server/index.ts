@@ -211,6 +211,9 @@ app.use((req, res, next) => {
 
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS assistbot_message_id TEXT;
 
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source text;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invalid_phone boolean DEFAULT false;
+
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'false') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '20') ON CONFLICT (key) DO NOTHING;
