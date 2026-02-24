@@ -28,6 +28,8 @@ import { ArrowLeft, CheckCircle } from "lucide-react";
 
 const signupSchema = z.object({
   name: z.string().min(2, "Имя должно быть не менее 2 символов"),
+  email: z.string().email("Введите корректный email"),
+  password: z.string().min(6, "Пароль должен быть не менее 6 символов"),
   category: z.enum(["barber", "manicure", "cosmetology", "doctor", "trainer", "auto_service"]),
   subcategory: z.string().optional(),
   city: z.string().default("Алматы"),
@@ -46,6 +48,8 @@ export default function SpecialistSignup() {
     resolver: zodResolver(signupSchema),
     defaultValues: {
       name: "",
+      email: "",
+      password: "",
       category: "barber",
       subcategory: "",
       city: "Алматы",
@@ -91,15 +95,15 @@ export default function SpecialistSignup() {
               Заявка принята
             </h1>
             <p className="text-muted-foreground">
-              Профиль станет доступен после первых отзывов от клиентов.
+              Аккаунт создан. Вы сможете войти с указанным email и паролем после активации профиля администратором.
             </p>
             <Button
               variant="outline"
-              onClick={() => setLocation("/")}
+              onClick={() => setLocation("/login")}
               className="w-full"
-              data-testid="button-go-home"
+              data-testid="button-go-login"
             >
-              Вернуться на главную
+              Перейти ко входу
             </Button>
           </div>
         </div>
@@ -137,6 +141,44 @@ export default function SpecialistSignup() {
                       placeholder="Иван Иванов" 
                       {...field} 
                       data-testid="input-name"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email (для входа в аккаунт)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="email"
+                      placeholder="your@email.com" 
+                      {...field} 
+                      data-testid="input-email"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Пароль</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="password"
+                      placeholder="Минимум 6 символов" 
+                      {...field} 
+                      data-testid="input-password"
                     />
                   </FormControl>
                   <FormMessage />

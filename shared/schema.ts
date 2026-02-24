@@ -331,13 +331,15 @@ export type CreateSpecialistRequest = z.infer<typeof insertSpecialistSchema>;
 // Schema for specialist self-signup (minimal required fields)
 export const specialistSignupSchema = z.object({
   name: z.string().min(2, "Имя должно быть не менее 2 символов"),
+  email: z.string().email("Введите корректный email"),
+  password: z.string().min(6, "Пароль должен быть не менее 6 символов"),
   category: z.enum(["barber", "manicure", "cosmetology", "doctor", "trainer", "auto_service"]),
   subcategory: z.string().optional(),
   city: z.string().default("Алматы"),
   serviceLocation: z.string().min(1, "Укажите место приёма"),
   phone: z.string().min(10, "Введите корректный номер телефона"),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
-  referredBySpecialistId: z.number().optional(), // ID of specialist who shared invite link
+  referredBySpecialistId: z.number().optional(),
 });
 
 export type SpecialistSignupRequest = z.infer<typeof specialistSignupSchema>;

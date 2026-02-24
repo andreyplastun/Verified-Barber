@@ -366,13 +366,41 @@ export async function registerRoutes(
         });
       }
 
-      const { name, category, subcategory, city, serviceLocation, phone, referredBySpecialistId } = result.data;
+      const { name, email, password, category, subcategory, city, serviceLocation, phone, referredBySpecialistId } = result.data;
 
       // Check if phone already exists
       const existingSpecialist = await storage.getSpecialistByPhone(phone);
       if (existingSpecialist) {
         return res.status(400).json({ message: "Специалист с таким номером телефона уже зарегистрирован" });
       }
+
+      // Check if email already registered
+      const existingUser = await storage.getUserByEmail(email.toLowerCase());
+      if (existingUser) {
+        return res.status(400).json({ message: "Пользователь с таким email уже зарегистрирован" });
+      }
+
+      // Create Supabase auth user
+      const { supabaseAdmin } = await import("./supabase-storage");
+      if (!supabaseAdmin) {
+        return res.status(500).json({ message: "Сервис авторизации недоступен" });
+      }
+
+      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        password,
+        email_confirm: true,
+      });
+
+      if (authError || !authData.user) {
+        console.error("[SIGNUP] Supabase auth error:", authError);
+        if (authError?.message?.includes("already been registered")) {
+          return res.status(400).json({ message: "Пользователь с таким email уже зарегистрирован" });
+        }
+        return res.status(500).json({ message: "Ошибка создания аккаунта" });
+      }
+
+      const authUserId = authData.user.id;
 
       // Validate referrer if provided (silently ignore invalid)
       let validReferrerId: number | null = null;
@@ -383,26 +411,41 @@ export async function registerRoutes(
         }
       }
 
-      // Create specialist with pending status
-      const specialist = await storage.createSpecialist({
-        name,
-        category: category as any,
-        subcategory: subcategory || null,
-        city,
-        serviceLocation,
-        phone,
-        specialty: category, // Use category as specialty
-        bio: "",
-        imageUrl: "",
-        isActive: false,
-        status: "pending" as any,
-        referredBySpecialistId: validReferrerId,
-      });
+      // Create specialist with pending status, linked to auth user
+      let specialist;
+      try {
+        specialist = await storage.createSpecialist({
+          name,
+          category: category as any,
+          subcategory: subcategory || null,
+          city,
+          serviceLocation,
+          phone,
+          specialty: category,
+          bio: "",
+          imageUrl: "",
+          isActive: false,
+          status: "pending" as any,
+          referredBySpecialistId: validReferrerId,
+          ownerUserId: authUserId,
+        });
 
-      console.log(`[SIGNUP] New specialist signup: ${name}, category: ${category}, phone: ${phone}${validReferrerId ? `, referred by: ${validReferrerId}` : ''}`);
+        await storage.createUser({
+          id: authUserId,
+          email: email.toLowerCase(),
+          role: "specialist",
+          specialistId: specialist.id,
+        });
+      } catch (dbErr) {
+        console.error("[SIGNUP] DB error, rolling back auth user:", dbErr);
+        await supabaseAdmin.auth.admin.deleteUser(authUserId);
+        throw dbErr;
+      }
+
+      console.log(`[SIGNUP] New specialist signup: ${name}, email: ${email}, category: ${category}, phone: ${phone}, userId: ${authUserId}, specialistId: ${specialist.id}${validReferrerId ? `, referred by: ${validReferrerId}` : ''}`);
 
       res.status(201).json({ 
-        message: "Заявка принята. Профиль станет доступен после первых отзывов.",
+        message: "Заявка принята. Вы можете войти с вашим email и паролем после активации профиля.",
         id: specialist.id 
       });
     } catch (err: any) {
