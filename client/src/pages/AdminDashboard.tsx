@@ -415,6 +415,7 @@ export default function AdminDashboard() {
   });
 
   const pendingClaimsCount = claimRequests.filter(c => c.status === "pending").length;
+  const pendingSpecialistsCount = specialists.filter(s => s.status === "pending").length;
 
   const filteredBookings = bookings.filter((booking) => {
     if (statusFilter === "all") return true;
@@ -440,9 +441,14 @@ export default function AdminDashboard() {
               <Calendar className="h-4 w-4 mr-1" />
               <span className="text-xs">Записи</span>
             </TabsTrigger>
-            <TabsTrigger value="specialists" data-testid="tab-specialists-main">
+            <TabsTrigger value="specialists" data-testid="tab-specialists-main" className="relative">
               <Users className="h-4 w-4 mr-1" />
               <span className="text-xs">Спец-ты</span>
+              {pendingSpecialistsCount > 0 && (
+                <span className="absolute -top-1 -right-1 bg-orange-500 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center" data-testid="badge-pending-specialists">
+                  {pendingSpecialistsCount}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="claims" data-testid="tab-claims-main" className="relative">
               <UserCheck className="h-4 w-4 mr-1" />
