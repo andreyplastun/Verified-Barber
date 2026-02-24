@@ -81,7 +81,14 @@ export async function signIn(email: string, password: string) {
 
 export async function signOut() {
   await supabase.auth.signOut()
-  localStorage.clear()
+  const keysToRemove: string[] = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (key && (key.startsWith("sb-") || key.startsWith("supabase"))) {
+      keysToRemove.push(key);
+    }
+  }
+  keysToRemove.forEach((k) => localStorage.removeItem(k));
   sessionStorage.clear()
   document.cookie.split(";").forEach((c) => {
     document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");

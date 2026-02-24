@@ -85,9 +85,6 @@ export function InstallBanner() {
     setAnimateIn(false);
     setTimeout(() => {
       setVisible(false);
-      const views = parseInt(localStorage.getItem(STORAGE_KEYS.views) || "0", 10);
-      localStorage.setItem(STORAGE_KEYS.views, (views + 1).toString());
-      localStorage.setItem(STORAGE_KEYS.lastShown, Date.now().toString());
     }, 300);
   }, []);
 
