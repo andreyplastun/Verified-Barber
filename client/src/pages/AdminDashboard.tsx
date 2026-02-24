@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2, Send, Power, PowerOff, AlertTriangle } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2, Send, Power, PowerOff, AlertTriangle, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -55,6 +55,7 @@ export default function AdminDashboard() {
   });
 
   const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims" | "whatsapp">("bookings");
+  const [waMessageLimit, setWaMessageLimit] = useState(50);
   const [specialistFormOpen, setSpecialistFormOpen] = useState(false);
   const [editingSpecialist, setEditingSpecialist] = useState<Specialist | null>(null);
   const [specialistForm, setSpecialistForm] = useState({
@@ -77,6 +78,19 @@ export default function AdminDashboard() {
       return res.json();
     },
     enabled: !!currentUser,
+  });
+
+  const { data: reviewsTodayData } = useQuery<{ count: number }>({
+    queryKey: ["/api/admin/reviews-today"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/reviews-today", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) return { count: 0 };
+      return res.json();
+    },
+    enabled: !!currentUser,
+    refetchInterval: 60000,
   });
 
   const { data: antifraudFlags = [] } = useQuery<Array<{ specialistId: number; specialistName: string; invalidPhoneCount: number }>>({
@@ -398,9 +412,9 @@ export default function AdminDashboard() {
   });
 
   const { data: waMessagesData, refetch: refetchWaMessages } = useQuery<{ messages: WaMessageType[]; total: number; sentToday: number }>({
-    queryKey: ["/api/admin/whatsapp/messages"],
+    queryKey: ["/api/admin/whatsapp/messages", waMessageLimit],
     queryFn: async () => {
-      const res = await fetch("/api/admin/whatsapp/messages?limit=50", {
+      const res = await fetch(`/api/admin/whatsapp/messages?limit=${waMessageLimit}`, {
         headers: { "x-user-id": currentUser?.id || "" },
       });
       if (!res.ok) throw new Error("Failed");
@@ -451,9 +465,14 @@ export default function AdminDashboard() {
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims" | "whatsapp")}>
           <TabsList className="grid w-full grid-cols-4 mb-4">
-            <TabsTrigger value="bookings" data-testid="tab-bookings-main">
+            <TabsTrigger value="bookings" data-testid="tab-bookings-main" className="relative">
               <Calendar className="h-4 w-4 mr-1" />
               <span className="text-xs">Записи</span>
+              {(reviewsTodayData?.count || 0) > 0 && (
+                <span className="absolute -top-1 -right-1 bg-green-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-0.5" data-testid="badge-reviews-today">
+                  {reviewsTodayData?.count}
+                </span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="specialists" data-testid="tab-specialists-main" className="relative">
               <Users className="h-4 w-4 mr-1" />
@@ -482,31 +501,40 @@ export default function AdminDashboard() {
 
         {activeTab === "bookings" && (
           <>
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-4 gap-3">
           <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <Calendar className="h-8 w-8 text-muted-foreground" />
+            <CardContent className="p-3 flex items-center gap-2">
+              <Calendar className="h-6 w-6 text-muted-foreground flex-shrink-0" />
               <div>
-                <p className="text-2xl font-bold" data-testid="text-total-bookings">{bookings.length}</p>
-                <p className="text-xs text-muted-foreground">Всего записей</p>
+                <p className="text-xl font-bold" data-testid="text-total-bookings">{bookings.length}</p>
+                <p className="text-[10px] text-muted-foreground">Записей</p>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <Clock className="h-8 w-8 text-yellow-500" />
+            <CardContent className="p-3 flex items-center gap-2">
+              <Clock className="h-6 w-6 text-yellow-500 flex-shrink-0" />
               <div>
-                <p className="text-2xl font-bold" data-testid="text-pending-count">{pendingCount}</p>
-                <p className="text-xs text-muted-foreground">Ожидают</p>
+                <p className="text-xl font-bold" data-testid="text-pending-count">{pendingCount}</p>
+                <p className="text-[10px] text-muted-foreground">Ожидают</p>
               </div>
             </CardContent>
           </Card>
           <Card>
-            <CardContent className="p-4 flex items-center gap-3">
-              <CheckCircle className="h-8 w-8 text-green-500" />
+            <CardContent className="p-3 flex items-center gap-2">
+              <CheckCircle className="h-6 w-6 text-green-500 flex-shrink-0" />
               <div>
-                <p className="text-2xl font-bold" data-testid="text-completed-count">{completedCount}</p>
-                <p className="text-xs text-muted-foreground">Завершено</p>
+                <p className="text-xl font-bold" data-testid="text-completed-count">{completedCount}</p>
+                <p className="text-[10px] text-muted-foreground">Завершено</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className={(reviewsTodayData?.count || 0) > 0 ? "border-green-500/50 bg-green-50/50 dark:bg-green-950/20" : ""}>
+            <CardContent className="p-3 flex items-center gap-2">
+              <Star className={`h-6 w-6 flex-shrink-0 ${(reviewsTodayData?.count || 0) > 0 ? "text-green-500" : "text-muted-foreground"}`} />
+              <div>
+                <p className="text-xl font-bold" data-testid="text-reviews-today">{reviewsTodayData?.count || 0}</p>
+                <p className="text-[10px] text-muted-foreground">Отзывов сегодня</p>
               </div>
             </CardContent>
           </Card>
@@ -1139,6 +1167,17 @@ export default function AdminDashboard() {
                         </p>
                       </div>
                     ))}
+                    {waMessagesData.total > waMessagesData.messages.length && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full mt-2"
+                        onClick={() => setWaMessageLimit(prev => Math.min(prev + 50, 200))}
+                        data-testid="button-wa-load-more"
+                      >
+                        Загрузить ещё ({waMessagesData.total - waMessagesData.messages.length} осталось)
+                      </Button>
+                    )}
                   </div>
                 )}
               </CardContent>

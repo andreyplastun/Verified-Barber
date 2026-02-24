@@ -58,6 +58,7 @@ export interface IStorage {
   getReviewsForSpecialist(specialistId: number): Promise<Review[]>;
   getReviewByBookingId(bookingId: number): Promise<Review | undefined>;
   checkAndFinalizeReviews(): Promise<void>;
+  countTodayReviews(): Promise<number>;
   
   // Specialist Photos
   getPhotosForSpecialist(specialistId: number): Promise<SpecialistPhoto[]>;
@@ -730,6 +731,15 @@ export class DatabaseStorage implements IStorage {
       .where(eq(reviews.bookingId, bookingId))
       .limit(1);
     return result[0];
+  }
+
+  async countTodayReviews(): Promise<number> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const result = await db.select({ count: sql<number>`count(*)` })
+      .from(reviews)
+      .where(sql`${reviews.createdAt} >= ${todayStart}`);
+    return Number(result[0]?.count || 0);
   }
 
   // Specialist Photos

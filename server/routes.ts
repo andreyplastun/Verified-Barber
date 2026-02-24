@@ -1026,6 +1026,17 @@ export async function registerRoutes(
   // ADMIN: ANTIFRAUD FLAGS
   // =====================
 
+  app.get("/api/admin/reviews-today", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const count = await storage.countTodayReviews();
+      res.json({ count });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/admin/antifraud-flags", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
