@@ -134,6 +134,8 @@ export interface IStorage {
     reminderSent: number;
     primaryReviewed: number;
     reminderReviewed: number;
+    primaryQueued: number;
+    reminderQueued: number;
   }>;
 
   // WhatsApp Opt-outs
@@ -1161,6 +1163,8 @@ export class DatabaseStorage implements IStorage {
     reminderSent: number;
     primaryReviewed: number;
     reminderReviewed: number;
+    primaryQueued: number;
+    reminderQueued: number;
   }> {
     const allMessages = await db.select({
       messageType: waMessages.messageType,
@@ -1168,24 +1172,28 @@ export class DatabaseStorage implements IStorage {
       status: waMessages.status,
       sentAt: waMessages.sentAt,
       createdAt: waMessages.createdAt,
+      scheduledAt: waMessages.scheduledAt,
     }).from(waMessages).where(
       sql`(${waMessages.status} = 'sent' AND ${waMessages.sentAt} >= ${from} AND ${waMessages.sentAt} < ${to})
-       OR (${waMessages.status} IN ('queued', 'sending', 'skipped', 'failed') AND ${waMessages.createdAt} >= ${from} AND ${waMessages.createdAt} < ${to})`
+       OR (${waMessages.status} IN ('queued', 'sending') AND ${waMessages.scheduledAt} >= ${from} AND ${waMessages.scheduledAt} < ${to})
+       OR (${waMessages.status} IN ('skipped', 'failed') AND ${waMessages.createdAt} >= ${from} AND ${waMessages.createdAt} < ${to})`
     );
 
     const sentPrimary = allMessages.filter(m => m.status === "sent" && m.messageType === "primary");
     const sentReminder = allMessages.filter(m => m.status === "sent" && m.messageType === "reminder");
+    const queuedPrimary = allMessages.filter(m => (m.status === "queued" || m.status === "sending") && m.messageType === "primary");
+    const queuedReminder = allMessages.filter(m => (m.status === "queued" || m.status === "sending") && m.messageType === "reminder");
 
-    const allBookingIds = [...new Set([
+    const allSentBookingIds = [...new Set([
       ...sentPrimary.map(m => m.bookingId),
       ...sentReminder.map(m => m.bookingId),
     ])];
 
     let reviewedSet = new Set<number>();
-    if (allBookingIds.length > 0) {
+    if (allSentBookingIds.length > 0) {
       const reviewedBookings = await db.select({ bookingId: reviews.bookingId })
         .from(reviews)
-        .where(sql`${reviews.bookingId} IN (${sql.join(allBookingIds.map(id => sql`${id}`), sql`, `)})`);
+        .where(sql`${reviews.bookingId} IN (${sql.join(allSentBookingIds.map(id => sql`${id}`), sql`, `)})`);
       reviewedSet = new Set(reviewedBookings.map(r => r.bookingId));
     }
 
@@ -1194,6 +1202,8 @@ export class DatabaseStorage implements IStorage {
       reminderSent: sentReminder.length,
       primaryReviewed: sentPrimary.filter(m => reviewedSet.has(m.bookingId)).length,
       reminderReviewed: sentReminder.filter(m => reviewedSet.has(m.bookingId)).length,
+      primaryQueued: queuedPrimary.length,
+      reminderQueued: queuedReminder.length,
     };
   }
 

@@ -429,6 +429,8 @@ export default function AdminDashboard() {
     reminderSent: number;
     primaryReviewed: number;
     reminderReviewed: number;
+    primaryQueued: number;
+    reminderQueued: number;
     days: number;
   }>({
     queryKey: ["/api/admin/whatsapp/conversion", waStatsPeriod],
@@ -1146,7 +1148,12 @@ export default function AdminDashboard() {
                     <div className="grid grid-cols-2 gap-3">
                       <div className="border rounded-lg p-3 space-y-1">
                         <p className="text-xs text-muted-foreground">1-е сообщение</p>
-                        <p className="text-2xl font-bold" data-testid="text-wa-primary-sent">{waConversion.primarySent}</p>
+                        <div className="flex items-baseline gap-1.5">
+                          <p className="text-2xl font-bold" data-testid="text-wa-primary-sent">{waConversion.primarySent}</p>
+                          {waConversion.primaryQueued > 0 && (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400">+{waConversion.primaryQueued} ожид.</span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs text-green-600 dark:text-green-400 font-medium" data-testid="text-wa-primary-reviewed">
                             {waConversion.primaryReviewed} отзыв{waConversion.primaryReviewed === 1 ? '' : waConversion.primaryReviewed >= 2 && waConversion.primaryReviewed <= 4 ? 'а' : 'ов'}
@@ -1160,7 +1167,12 @@ export default function AdminDashboard() {
                       </div>
                       <div className="border rounded-lg p-3 space-y-1">
                         <p className="text-xs text-muted-foreground">Follow-up</p>
-                        <p className="text-2xl font-bold" data-testid="text-wa-reminder-sent">{waConversion.reminderSent}</p>
+                        <div className="flex items-baseline gap-1.5">
+                          <p className="text-2xl font-bold" data-testid="text-wa-reminder-sent">{waConversion.reminderSent}</p>
+                          {waConversion.reminderQueued > 0 && (
+                            <span className="text-xs text-yellow-600 dark:text-yellow-400">+{waConversion.reminderQueued} ожид.</span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-xs text-green-600 dark:text-green-400 font-medium" data-testid="text-wa-reminder-reviewed">
                             {waConversion.reminderReviewed} отзыв{waConversion.reminderReviewed === 1 ? '' : waConversion.reminderReviewed >= 2 && waConversion.reminderReviewed <= 4 ? 'а' : 'ов'}
