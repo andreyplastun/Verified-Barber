@@ -56,6 +56,7 @@ export default function AdminDashboard() {
 
   const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims" | "whatsapp">("bookings");
   const [waMessageLimit, setWaMessageLimit] = useState(50);
+  const [waStatsPeriod, setWaStatsPeriod] = useState(7);
   const [specialistFormOpen, setSpecialistFormOpen] = useState(false);
   const [editingSpecialist, setEditingSpecialist] = useState<Specialist | null>(null);
   const [specialistForm, setSpecialistForm] = useState({
@@ -415,6 +416,24 @@ export default function AdminDashboard() {
     queryKey: ["/api/admin/whatsapp/messages", waMessageLimit],
     queryFn: async () => {
       const res = await fetch(`/api/admin/whatsapp/messages?limit=${waMessageLimit}`, {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    enabled: !!currentUser && activeTab === "whatsapp",
+  });
+
+  const { data: waConversion } = useQuery<{
+    primarySent: number;
+    reminderSent: number;
+    primaryReviewed: number;
+    reminderReviewed: number;
+    days: number;
+  }>({
+    queryKey: ["/api/admin/whatsapp/conversion", waStatsPeriod],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/whatsapp/conversion?days=${waStatsPeriod}`, {
         headers: { "x-user-id": currentUser?.id || "" },
       });
       if (!res.ok) throw new Error("Failed");
@@ -1100,6 +1119,68 @@ export default function AdminDashboard() {
                       Всего: {waMessagesData.total}
                     </Badge>
                   </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">Конверсия</CardTitle>
+                  <Select value={String(waStatsPeriod)} onValueChange={(v) => setWaStatsPeriod(Number(v))}>
+                    <SelectTrigger className="w-[130px] h-8 text-xs" data-testid="select-wa-stats-period">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="1">Сегодня</SelectItem>
+                      <SelectItem value="7">7 дней</SelectItem>
+                      <SelectItem value="14">14 дней</SelectItem>
+                      <SelectItem value="30">30 дней</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {waConversion ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="border rounded-lg p-3 space-y-1">
+                        <p className="text-xs text-muted-foreground">1-е сообщение</p>
+                        <p className="text-2xl font-bold" data-testid="text-wa-primary-sent">{waConversion.primarySent}</p>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-green-600 dark:text-green-400 font-medium" data-testid="text-wa-primary-reviewed">
+                            {waConversion.primaryReviewed} отзыв{waConversion.primaryReviewed === 1 ? '' : waConversion.primaryReviewed >= 2 && waConversion.primaryReviewed <= 4 ? 'а' : 'ов'}
+                          </span>
+                          {waConversion.primarySent > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              ({Math.round(waConversion.primaryReviewed / waConversion.primarySent * 100)}%)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="border rounded-lg p-3 space-y-1">
+                        <p className="text-xs text-muted-foreground">Follow-up</p>
+                        <p className="text-2xl font-bold" data-testid="text-wa-reminder-sent">{waConversion.reminderSent}</p>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-green-600 dark:text-green-400 font-medium" data-testid="text-wa-reminder-reviewed">
+                            {waConversion.reminderReviewed} отзыв{waConversion.reminderReviewed === 1 ? '' : waConversion.reminderReviewed >= 2 && waConversion.reminderReviewed <= 4 ? 'а' : 'ов'}
+                          </span>
+                          {waConversion.reminderSent > 0 && (
+                            <span className="text-xs text-muted-foreground">
+                              ({Math.round(waConversion.reminderReviewed / waConversion.reminderSent * 100)}%)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    {waConversion.primarySent + waConversion.reminderSent > 0 && (
+                      <div className="text-xs text-muted-foreground text-center pt-1" data-testid="text-wa-total-conversion">
+                        Общая конверсия: {Math.round((waConversion.primaryReviewed + waConversion.reminderReviewed) / (waConversion.primarySent + waConversion.reminderSent) * 100)}% за {waConversion.days} дн.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-4">Загрузка...</p>
                 )}
               </CardContent>
             </Card>

@@ -127,6 +127,12 @@ export interface IStorage {
   countWaMessagesSentToday(): Promise<number>;
   getWaMessages(limit: number, offset: number): Promise<{ messages: WaMessage[]; total: number }>;
   getLastSentTemplateIndex(messageType: string): Promise<number | null>;
+  getWaConversionStats(from: Date, to: Date): Promise<{
+    primarySent: number;
+    reminderSent: number;
+    primaryReviewed: number;
+    reminderReviewed: number;
+  }>;
 
   // WhatsApp Opt-outs
   addWaOptOut(phone: string): Promise<void>;
@@ -1126,6 +1132,66 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(waMessages.sentAt))
       .limit(1);
     return last?.templateIndex ?? null;
+  }
+
+  async getWaConversionStats(from: Date, to: Date): Promise<{
+    primarySent: number;
+    reminderSent: number;
+    primaryReviewed: number;
+    reminderReviewed: number;
+  }> {
+    const sentMessages = await db.select({
+      messageType: waMessages.messageType,
+      bookingId: waMessages.bookingId,
+      status: waMessages.status,
+      skipReason: waMessages.skipReason,
+    }).from(waMessages).where(and(
+      sql`${waMessages.createdAt} >= ${from}`,
+      sql`${waMessages.createdAt} < ${to}`
+    ));
+
+    let primarySent = 0;
+    let reminderSent = 0;
+    let primaryReviewed = 0;
+    let reminderReviewed = 0;
+
+    for (const msg of sentMessages) {
+      const isSent = msg.status === "sent";
+      const isReviewed = msg.status === "skipped" && msg.skipReason === "review_already_submitted";
+      if (msg.messageType === "primary") {
+        if (isSent) primarySent++;
+        if (isReviewed) primaryReviewed++;
+      } else if (msg.messageType === "reminder") {
+        if (isSent) reminderSent++;
+        if (isReviewed) reminderReviewed++;
+      }
+    }
+
+    const sentBookingIds = sentMessages
+      .filter(m => m.status === "sent" && m.messageType === "primary")
+      .map(m => m.bookingId);
+
+    if (sentBookingIds.length > 0) {
+      const reviewedBookings = await db.select({ bookingId: reviews.bookingId })
+        .from(reviews)
+        .where(sql`${reviews.bookingId} IN (${sql.join(sentBookingIds.map(id => sql`${id}`), sql`, `)})`);
+      const reviewedSet = new Set(reviewedBookings.map(r => r.bookingId));
+
+      primaryReviewed = sentMessages
+        .filter(m => m.messageType === "primary" && m.status === "sent" && reviewedSet.has(m.bookingId))
+        .length;
+
+      const reminderSentBookingIds = sentMessages
+        .filter(m => m.status === "sent" && m.messageType === "reminder")
+        .map(m => m.bookingId);
+      const reminderOnlyReviewed = reminderSentBookingIds.filter(id => reviewedSet.has(id) && !sentMessages.some(m => m.messageType === "primary" && m.status === "sent" && m.bookingId === id && !reviewedSet.has(id)));
+      
+      reminderReviewed = sentMessages
+        .filter(m => m.messageType === "reminder" && m.status === "sent" && reviewedSet.has(m.bookingId))
+        .length;
+    }
+
+    return { primarySent, reminderSent, primaryReviewed, reminderReviewed };
   }
 
   async addWaOptOut(phone: string): Promise<void> {

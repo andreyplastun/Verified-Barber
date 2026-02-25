@@ -3385,6 +3385,23 @@ ${magicLink}`;
     }
   });
 
+  app.get("/api/admin/whatsapp/conversion", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const days = Math.min(parseInt(req.query.days as string) || 7, 90);
+      const from = new Date();
+      from.setDate(from.getDate() - days);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date();
+      to.setHours(23, 59, 59, 999);
+      const stats = await storage.getWaConversionStats(from, to);
+      res.json({ ...stats, days });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/admin/whatsapp/opt-out", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
