@@ -410,6 +410,18 @@ export async function enqueueReviewMessage(params: {
   console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()}`);
 }
 
+const MIN_SEND_GAP_MS = 30 * 60 * 1000;
+
+function calculateDynamicGap(sentToday: number, effectiveLimit: number): number {
+  const now = new Date();
+  const { end: windowEnd } = getActiveWindowForDate(now);
+  const remainingWindowMs = Math.max(0, windowEnd.getTime() - now.getTime());
+  const remainingMessages = effectiveLimit - sentToday;
+  if (remainingMessages <= 1) return MIN_SEND_GAP_MS;
+  const dynamicGap = Math.floor(remainingWindowMs / remainingMessages);
+  return Math.max(MIN_SEND_GAP_MS, dynamicGap);
+}
+
 export async function processWaQueue(): Promise<void> {
   const settings = await getWaSettings();
 
@@ -435,75 +447,78 @@ export async function processWaQueue(): Promise<void> {
     return;
   }
 
-  const batch = await storage.getWaMessagesDue(Math.min(remaining, 1));
+  const lastSentTime = await storage.getLastWaSentTime();
+  if (lastSentTime) {
+    const dynamicGap = calculateDynamicGap(sentToday, effectiveLimit);
+    const elapsed = now.getTime() - lastSentTime.getTime();
+    if (elapsed < dynamicGap) {
+      const waitMin = Math.round((dynamicGap - elapsed) / 60000);
+      console.log(`[WA_PROCESSOR] Too soon since last send (${Math.round(elapsed / 60000)}min ago, gap=${Math.round(dynamicGap / 60000)}min). Wait ~${waitMin}min`);
+      return;
+    }
+  }
+
+  const batch = await storage.getWaMessagesDue(1);
   if (batch.length === 0) return;
 
-  console.log(`[WA_PROCESSOR] Processing ${batch.length} message(s) (sent today: ${sentToday}/${effectiveLimit})`);
+  console.log(`[WA_PROCESSOR] Processing 1 message (sent today: ${sentToday}/${effectiveLimit}, gap=${Math.round(calculateDynamicGap(sentToday, effectiveLimit) / 60000)}min)`);
 
-  for (let i = 0; i < batch.length; i++) {
-    const msg = batch[i];
+  const msg = batch[0];
 
-    const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
-    if (isOptedOut) {
-      await storage.markWaMessageSkipped(msg.id, "opt_out");
-      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=opt_out`);
-      continue;
+  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
+  if (isOptedOut) {
+    await storage.markWaMessageSkipped(msg.id, "opt_out");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=opt_out`);
+    return;
+  }
+
+  const booking = await storage.getBooking(msg.bookingId);
+  if (!booking) {
+    await storage.markWaMessageSkipped(msg.id, "booking_not_found");
+    return;
+  }
+  if (booking.hasReview) {
+    await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=review_already_submitted`);
+    return;
+  }
+  if (booking.status === "cancelled") {
+    await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=booking_cancelled`);
+    return;
+  }
+
+  if (msg.assistbotMessageId) {
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=already_has_assistbot_id (${msg.assistbotMessageId})`);
+    await storage.markWaMessageSkipped(msg.id, "duplicate_assistbot_id");
+    return;
+  }
+
+  await storage.markWaMessageSending(msg.id);
+
+  try {
+    const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
+    await storage.markWaMessageSent(msg.id, assistbotMessageId);
+    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
+
+    if (msg.messageType === "primary") {
+      const reminderDelay = 24 * 60 * 60 * 1000 + randomInterval(0, 60);
+      await enqueueReviewMessage({
+        bookingId: msg.bookingId,
+        specialistId: msg.specialistId,
+        customerPhone: msg.customerPhone,
+        customerName: msg.customerName,
+        specialistName: msg.specialistName,
+        reviewLink: msg.reviewLink,
+        messageType: "reminder",
+        delayMs: reminderDelay,
+      });
+      console.log(`[WA_PROCESSOR] Scheduled reminder for booking=${msg.bookingId} in ~24h`);
     }
-
-    const booking = await storage.getBooking(msg.bookingId);
-    if (!booking) {
-      await storage.markWaMessageSkipped(msg.id, "booking_not_found");
-      continue;
-    }
-    if (booking.hasReview) {
-      await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
-      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=review_already_submitted`);
-      continue;
-    }
-    if (booking.status === "cancelled") {
-      await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
-      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=booking_cancelled`);
-      continue;
-    }
-
-    if (msg.assistbotMessageId) {
-      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=already_has_assistbot_id (${msg.assistbotMessageId})`);
-      await storage.markWaMessageSkipped(msg.id, "duplicate_assistbot_id");
-      continue;
-    }
-
-    await storage.markWaMessageSending(msg.id);
-
-    try {
-      const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
-      await storage.markWaMessageSent(msg.id, assistbotMessageId);
-      console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
-
-      if (msg.messageType === "primary") {
-        const reminderDelay = 24 * 60 * 60 * 1000 + randomInterval(0, 60);
-        await enqueueReviewMessage({
-          bookingId: msg.bookingId,
-          specialistId: msg.specialistId,
-          customerPhone: msg.customerPhone,
-          customerName: msg.customerName,
-          specialistName: msg.specialistName,
-          reviewLink: msg.reviewLink,
-          messageType: "reminder",
-          delayMs: reminderDelay,
-        });
-        console.log(`[WA_PROCESSOR] Scheduled reminder for booking=${msg.bookingId} in ~24h`);
-      }
-    } catch (err: any) {
-      const retryDelayMs = randomInterval(10, 30);
-      const nextScheduledAt = new Date(Date.now() + retryDelayMs);
-      await storage.markWaMessageFailed(msg.id, err.message, nextScheduledAt);
-      console.error(`[WA_PROCESSOR] Failed msg=${msg.id} error=${err.message} attempt=${msg.attempts + 1}/${msg.maxAttempts}`);
-    }
-
-    if (i < batch.length - 1) {
-      const jitterMs = randomInterval(3, 15);
-      console.log(`[WA_PROCESSOR] Waiting ${Math.round(jitterMs / 60000)}min before next message`);
-      await new Promise(resolve => setTimeout(resolve, jitterMs));
-    }
+  } catch (err: any) {
+    const retryDelayMs = randomInterval(10, 30);
+    const nextScheduledAt = new Date(Date.now() + retryDelayMs);
+    await storage.markWaMessageFailed(msg.id, err.message, nextScheduledAt);
+    console.error(`[WA_PROCESSOR] Failed msg=${msg.id} error=${err.message} attempt=${msg.attempts + 1}/${msg.maxAttempts}`);
   }
 }

@@ -125,6 +125,8 @@ export interface IStorage {
   markWaMessageFailed(id: number, error: string, nextScheduledAt?: Date): Promise<void>;
   markWaMessageSkipped(id: number, reason: string): Promise<void>;
   countWaMessagesSentToday(): Promise<number>;
+  getLastWaSentTime(): Promise<Date | null>;
+  countWaQueuedForWindow(windowStart: Date, windowEnd: Date): Promise<number>;
   getWaMessages(limit: number, offset: number): Promise<{ messages: WaMessage[]; total: number }>;
   getLastSentTemplateIndex(messageType: string): Promise<number | null>;
   getWaConversionStats(from: Date, to: Date): Promise<{
@@ -1109,6 +1111,26 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(waMessages.status, "sent"),
         sql`${waMessages.sentAt} >= ${todayStart}`
+      ));
+    return Number(result[0]?.count || 0);
+  }
+
+  async getLastWaSentTime(): Promise<Date | null> {
+    const result = await db.select({ sentAt: waMessages.sentAt })
+      .from(waMessages)
+      .where(eq(waMessages.status, "sent"))
+      .orderBy(desc(waMessages.sentAt))
+      .limit(1);
+    return result[0]?.sentAt ?? null;
+  }
+
+  async countWaQueuedForWindow(windowStart: Date, windowEnd: Date): Promise<number> {
+    const result = await db.select({ count: sql<number>`count(*)` })
+      .from(waMessages)
+      .where(and(
+        sql`${waMessages.status} IN ('queued', 'sending')`,
+        sql`${waMessages.scheduledAt} >= ${windowStart}`,
+        sql`${waMessages.scheduledAt} < ${windowEnd}`
       ));
     return Number(result[0]?.count || 0);
   }
