@@ -1140,58 +1140,39 @@ export class DatabaseStorage implements IStorage {
     primaryReviewed: number;
     reminderReviewed: number;
   }> {
-    const sentMessages = await db.select({
+    const allMessages = await db.select({
       messageType: waMessages.messageType,
       bookingId: waMessages.bookingId,
       status: waMessages.status,
-      skipReason: waMessages.skipReason,
-    }).from(waMessages).where(and(
-      sql`${waMessages.createdAt} >= ${from}`,
-      sql`${waMessages.createdAt} < ${to}`
-    ));
+      sentAt: waMessages.sentAt,
+      createdAt: waMessages.createdAt,
+    }).from(waMessages).where(
+      sql`(${waMessages.status} = 'sent' AND ${waMessages.sentAt} >= ${from} AND ${waMessages.sentAt} < ${to})
+       OR (${waMessages.status} IN ('queued', 'sending', 'skipped', 'failed') AND ${waMessages.createdAt} >= ${from} AND ${waMessages.createdAt} < ${to})`
+    );
 
-    let primarySent = 0;
-    let reminderSent = 0;
-    let primaryReviewed = 0;
-    let reminderReviewed = 0;
+    const sentPrimary = allMessages.filter(m => m.status === "sent" && m.messageType === "primary");
+    const sentReminder = allMessages.filter(m => m.status === "sent" && m.messageType === "reminder");
 
-    for (const msg of sentMessages) {
-      const isSent = msg.status === "sent";
-      const isReviewed = msg.status === "skipped" && msg.skipReason === "review_already_submitted";
-      if (msg.messageType === "primary") {
-        if (isSent) primarySent++;
-        if (isReviewed) primaryReviewed++;
-      } else if (msg.messageType === "reminder") {
-        if (isSent) reminderSent++;
-        if (isReviewed) reminderReviewed++;
-      }
-    }
+    const allBookingIds = [...new Set([
+      ...sentPrimary.map(m => m.bookingId),
+      ...sentReminder.map(m => m.bookingId),
+    ])];
 
-    const sentBookingIds = sentMessages
-      .filter(m => m.status === "sent" && m.messageType === "primary")
-      .map(m => m.bookingId);
-
-    if (sentBookingIds.length > 0) {
+    let reviewedSet = new Set<number>();
+    if (allBookingIds.length > 0) {
       const reviewedBookings = await db.select({ bookingId: reviews.bookingId })
         .from(reviews)
-        .where(sql`${reviews.bookingId} IN (${sql.join(sentBookingIds.map(id => sql`${id}`), sql`, `)})`);
-      const reviewedSet = new Set(reviewedBookings.map(r => r.bookingId));
-
-      primaryReviewed = sentMessages
-        .filter(m => m.messageType === "primary" && m.status === "sent" && reviewedSet.has(m.bookingId))
-        .length;
-
-      const reminderSentBookingIds = sentMessages
-        .filter(m => m.status === "sent" && m.messageType === "reminder")
-        .map(m => m.bookingId);
-      const reminderOnlyReviewed = reminderSentBookingIds.filter(id => reviewedSet.has(id) && !sentMessages.some(m => m.messageType === "primary" && m.status === "sent" && m.bookingId === id && !reviewedSet.has(id)));
-      
-      reminderReviewed = sentMessages
-        .filter(m => m.messageType === "reminder" && m.status === "sent" && reviewedSet.has(m.bookingId))
-        .length;
+        .where(sql`${reviews.bookingId} IN (${sql.join(allBookingIds.map(id => sql`${id}`), sql`, `)})`);
+      reviewedSet = new Set(reviewedBookings.map(r => r.bookingId));
     }
 
-    return { primarySent, reminderSent, primaryReviewed, reminderReviewed };
+    return {
+      primarySent: sentPrimary.length,
+      reminderSent: sentReminder.length,
+      primaryReviewed: sentPrimary.filter(m => reviewedSet.has(m.bookingId)).length,
+      reminderReviewed: sentReminder.filter(m => reviewedSet.has(m.bookingId)).length,
+    };
   }
 
   async addWaOptOut(phone: string): Promise<void> {
