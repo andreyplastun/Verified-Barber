@@ -1166,23 +1166,29 @@ export class DatabaseStorage implements IStorage {
     primaryQueued: number;
     reminderQueued: number;
   }> {
-    const allMessages = await db.select({
+    const periodMessages = await db.select({
       messageType: waMessages.messageType,
       bookingId: waMessages.bookingId,
       status: waMessages.status,
       sentAt: waMessages.sentAt,
       createdAt: waMessages.createdAt,
-      scheduledAt: waMessages.scheduledAt,
     }).from(waMessages).where(
       sql`(${waMessages.status} = 'sent' AND ${waMessages.sentAt} >= ${from} AND ${waMessages.sentAt} < ${to})
-       OR (${waMessages.status} IN ('queued', 'sending') AND ${waMessages.scheduledAt} >= ${from} AND ${waMessages.scheduledAt} < ${to})
        OR (${waMessages.status} IN ('skipped', 'failed') AND ${waMessages.createdAt} >= ${from} AND ${waMessages.createdAt} < ${to})`
     );
 
-    const sentPrimary = allMessages.filter(m => m.status === "sent" && m.messageType === "primary");
-    const sentReminder = allMessages.filter(m => m.status === "sent" && m.messageType === "reminder");
-    const queuedPrimary = allMessages.filter(m => (m.status === "queued" || m.status === "sending") && m.messageType === "primary");
-    const queuedReminder = allMessages.filter(m => (m.status === "queued" || m.status === "sending") && m.messageType === "reminder");
+    const queuedMessages = await db.select({
+      messageType: waMessages.messageType,
+      bookingId: waMessages.bookingId,
+      status: waMessages.status,
+    }).from(waMessages).where(
+      sql`${waMessages.status} IN ('queued', 'sending')`
+    );
+
+    const sentPrimary = periodMessages.filter(m => m.status === "sent" && m.messageType === "primary");
+    const sentReminder = periodMessages.filter(m => m.status === "sent" && m.messageType === "reminder");
+    const queuedPrimary = queuedMessages.filter(m => m.messageType === "primary");
+    const queuedReminder = queuedMessages.filter(m => m.messageType === "reminder");
 
     const allSentBookingIds = [...new Set([
       ...sentPrimary.map(m => m.bookingId),
