@@ -13,7 +13,8 @@ export interface IStorage {
   completeOnboarding(id: string): Promise<User | undefined>;
   markOnboardingSeen(id: string, type: "client" | "pro"): Promise<User | undefined>;
   getClients(): Promise<User[]>;
-  getBookingsWithDetails(): Promise<any[]>;
+  getBookingsWithDetails(limit?: number): Promise<any[]>;
+  getBookingStats(): Promise<{ total: number; pending: number; completed: number; scheduled: number; readyToComplete: number; paymentPending: number }>;
   
   // Specialist mapping
   findSpecialistByEmail(email: string): Promise<Specialist | undefined>;
@@ -319,10 +320,37 @@ export class DatabaseStorage implements IStorage {
     return await db.select().from(users).where(eq(users.role, "client"));
   }
 
-  async getBookingsWithDetails(): Promise<any[]> {
-    const allBookings = await db.select().from(bookings).orderBy(desc(bookings.createdAt));
-    const allSpecialists = await db.select().from(specialists);
-    const allMagicLinks = await db.select().from(magicLinks);
+  async getBookingStats(): Promise<{ total: number; pending: number; completed: number; scheduled: number; readyToComplete: number; paymentPending: number }> {
+    const result = await db.select({
+      total: sql<number>`count(*)`,
+      pending: sql<number>`count(*) filter (where ${bookings.status} = 'pending')`,
+      completed: sql<number>`count(*) filter (where ${bookings.status} = 'completed')`,
+      scheduled: sql<number>`count(*) filter (where ${bookings.status} = 'scheduled')`,
+      readyToComplete: sql<number>`count(*) filter (where ${bookings.status} = 'ready_to_complete')`,
+      paymentPending: sql<number>`count(*) filter (where ${bookings.status} = 'payment_pending')`,
+    }).from(bookings);
+    const r = result[0];
+    return {
+      total: Number(r?.total || 0),
+      pending: Number(r?.pending || 0),
+      completed: Number(r?.completed || 0),
+      scheduled: Number(r?.scheduled || 0),
+      readyToComplete: Number(r?.readyToComplete || 0),
+      paymentPending: Number(r?.paymentPending || 0),
+    };
+  }
+
+  async getBookingsWithDetails(limit?: number): Promise<any[]> {
+    const query = db.select().from(bookings).orderBy(desc(bookings.createdAt));
+    const allBookings = limit ? await query.limit(limit) : await query;
+    const specialistIds = [...new Set(allBookings.map(b => b.specialistId))];
+    const allSpecialists = specialistIds.length > 0
+      ? await db.select().from(specialists).where(sql`${specialists.id} IN (${sql.join(specialistIds.map(id => sql`${id}`), sql`, `)})`)
+      : [];
+    const bookingIds = allBookings.map(b => b.id);
+    const allMagicLinks = bookingIds.length > 0
+      ? await db.select().from(magicLinks).where(sql`${magicLinks.bookingId} IN (${sql.join(bookingIds.map(id => sql`${id}`), sql`, `)})`)
+      : [];
     
     // Test mode: 1 minute instead of 20 hours, 2 minutes instead of 48 hours
     const FOLLOWUP_WAIT_MS = process.env.ANTI_FRAUD_TEST_MODE === 'true' 

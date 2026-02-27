@@ -108,10 +108,30 @@ export default function AdminDashboard() {
     refetchInterval: 60000,
   });
 
+  const { data: bookingStats } = useQuery<{
+    total: number;
+    pending: number;
+    completed: number;
+    scheduled: number;
+    readyToComplete: number;
+    paymentPending: number;
+  }>({
+    queryKey: ["/api/admin/bookings/stats"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/bookings/stats", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) return { total: 0, pending: 0, completed: 0, scheduled: 0, readyToComplete: 0, paymentPending: 0 };
+      return res.json();
+    },
+    enabled: !!currentUser,
+    refetchInterval: 60000,
+  });
+
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/admin/bookings"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/bookings", {
+      const res = await fetch("/api/admin/bookings?limit=200", {
         headers: { "x-user-id": currentUser?.id || "" },
       });
       if (!res.ok) throw new Error("Failed to fetch bookings");
@@ -139,6 +159,7 @@ export default function AdminDashboard() {
     onSuccess: () => {
       toast({ title: "Запись создана" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings/stats"] });
       setFormData({
         specialistId: "",
         customerName: "",
@@ -167,6 +188,7 @@ export default function AdminDashboard() {
     onSuccess: () => {
       toast({ title: "Визит завершён" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/bookings/stats"] });
     },
     onError: (err: Error) => {
       toast({ title: "Ошибка", description: err.message, variant: "destructive" });
@@ -471,8 +493,8 @@ export default function AdminDashboard() {
     return booking.status === statusFilter;
   });
 
-  const pendingCount = bookings.filter((b) => b.status === "pending").length;
-  const completedCount = bookings.filter((b) => b.status === "completed").length;
+  const pendingCount = bookingStats?.pending || 0;
+  const completedCount = bookingStats?.completed || 0;
 
   return (
     <div className="min-h-screen bg-background p-4 pb-24">
@@ -527,7 +549,7 @@ export default function AdminDashboard() {
             <CardContent className="p-3 flex items-center gap-2">
               <Calendar className="h-6 w-6 text-muted-foreground flex-shrink-0" />
               <div>
-                <p className="text-xl font-bold" data-testid="text-total-bookings">{bookings.length}</p>
+                <p className="text-xl font-bold" data-testid="text-total-bookings">{bookingStats?.total || 0}</p>
                 <p className="text-[10px] text-muted-foreground">Записей</p>
               </div>
             </CardContent>

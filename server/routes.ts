@@ -901,12 +901,24 @@ export async function registerRoutes(
   });
 
   // Get all bookings with details
+  app.get("/api/admin/bookings/stats", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const stats = await storage.getBookingStats();
+      res.json(stats);
+    } catch (err: any) {
+      console.error("Error fetching booking stats:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/admin/bookings", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
-      
-      const bookingsWithDetails = await storage.getBookingsWithDetails();
+      const limit = Math.min(parseInt(req.query.limit as string) || 200, 500);
+      const bookingsWithDetails = await storage.getBookingsWithDetails(limit);
       res.json(bookingsWithDetails);
     } catch (err: any) {
       console.error("Error fetching bookings:", err);
