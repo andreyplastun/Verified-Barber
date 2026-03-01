@@ -410,6 +410,47 @@ export async function enqueueReviewMessage(params: {
   console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()}`);
 }
 
+export async function sendWaMessageNow(messageId: number): Promise<{ success: boolean; error?: string }> {
+  const messages = await db.select().from(waMessages).where(eq(waMessages.id, messageId));
+  const msg = messages[0];
+  if (!msg) return { success: false, error: "Сообщение не найдено" };
+  if (msg.status !== "queued" && msg.status !== "sending") return { success: false, error: `Статус "${msg.status}" — можно отправить только из очереди` };
+
+  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
+  if (isOptedOut) {
+    await storage.markWaMessageSkipped(msg.id, "opt_out");
+    return { success: false, error: "Номер в opt-out списке" };
+  }
+
+  await storage.markWaMessageSending(msg.id);
+
+  try {
+    const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
+    await storage.markWaMessageSent(msg.id, assistbotMessageId);
+    console.log(`[WA_FORCE_SEND] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} assistbot_id=${assistbotMessageId}`);
+
+    if (msg.messageType === "primary") {
+      const reminderDelay = 24 * 60 * 60 * 1000 + randomInterval(0, 60);
+      await enqueueReviewMessage({
+        bookingId: msg.bookingId,
+        specialistId: msg.specialistId,
+        customerPhone: msg.customerPhone,
+        customerName: msg.customerName,
+        specialistName: msg.specialistName,
+        reviewLink: msg.reviewLink,
+        messageType: "reminder",
+        delayMs: reminderDelay,
+      });
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    await storage.markWaMessageFailed(msg.id, err.message);
+    console.error(`[WA_FORCE_SEND] Failed msg=${msg.id} error=${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 const MIN_SEND_GAP_MS = 30 * 60 * 1000;
 
 function calculateDynamicGap(sentToday: number, effectiveLimit: number): number {

@@ -485,6 +485,27 @@ export default function AdminDashboard() {
     },
   });
 
+  const forceSendWaMutation = useMutation({
+    mutationFn: async (messageId: number) => {
+      const res = await fetch(`/api/admin/whatsapp/messages/${messageId}/send-now`, {
+        method: "POST",
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message);
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Сообщение отправлено" });
+      refetchWaMessages();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Ошибка отправки", description: err.message, variant: "destructive" });
+    },
+  });
+
   const pendingClaimsCount = claimRequests.filter(c => c.status === "pending").length;
   const pendingSpecialistsCount = specialists.filter(s => s.status === "pending").length;
 
@@ -1275,11 +1296,26 @@ export default function AdminDashboard() {
                         {msg.skipReason && msg.skipReason !== "review_already_submitted" && (
                           <p className="text-xs text-muted-foreground">Причина: {msg.skipReason}</p>
                         )}
-                        <p className="text-xs text-muted-foreground">
-                          {msg.sentAt
-                            ? `Отправлено: ${new Date(msg.sentAt).toLocaleString("ru-RU")}`
-                            : `Запланировано: ${new Date(msg.scheduledAt).toLocaleString("ru-RU")}`}
-                        </p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs text-muted-foreground">
+                            {msg.sentAt
+                              ? `Отправлено: ${new Date(msg.sentAt).toLocaleString("ru-RU")}`
+                              : `Запланировано: ${new Date(msg.scheduledAt).toLocaleString("ru-RU")}`}
+                          </p>
+                          {msg.status === "queued" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-7 text-xs gap-1"
+                              onClick={() => forceSendWaMutation.mutate(msg.id)}
+                              disabled={forceSendWaMutation.isPending}
+                              data-testid={`button-wa-force-send-${msg.id}`}
+                            >
+                              <Send className="h-3 w-3" />
+                              Отправить сейчас
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     ))}
                     {waMessagesData.total > waMessagesData.messages.length && (

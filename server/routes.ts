@@ -11,7 +11,7 @@ import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioS
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
 import { appConfig } from "@shared/schema";
-import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection } from "./whatsapp";
+import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow } from "./whatsapp";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -3444,6 +3444,21 @@ ${magicLink}`;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
       const optOuts = await storage.getWaOptOuts();
       res.json(optOuts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/whatsapp/messages/:id/send-now", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const messageId = parseInt(req.params.id);
+      if (isNaN(messageId)) return res.status(400).json({ message: "Невалидный ID" });
+      const result = await sendWaMessageNow(messageId);
+      console.log(`[WA_FORCE_SEND] Admin ${userId} force-sent msg=${messageId}: ${JSON.stringify(result)}`);
+      if (!result.success) return res.status(400).json({ message: result.error });
+      res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
