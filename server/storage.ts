@@ -341,7 +341,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getBookingsWithDetails(limit?: number): Promise<any[]> {
-    const query = db.select().from(bookings).orderBy(desc(bookings.createdAt));
+    const query = db.select().from(bookings).orderBy(desc(bookings.appointmentTime));
     const allBookings = limit ? await query.limit(limit) : await query;
     const specialistIds = [...new Set(allBookings.map(b => b.specialistId))];
     const allSpecialists = specialistIds.length > 0
