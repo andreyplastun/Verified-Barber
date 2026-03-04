@@ -1156,13 +1156,34 @@ export default function AdminDashboard() {
                 </div>
 
                 {waMessagesData && (
-                  <div className="flex gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="secondary" data-testid="badge-wa-sent-today">
                       Сегодня: {waMessagesData.sentToday}
                     </Badge>
                     <Badge variant="outline" data-testid="badge-wa-total">
                       Всего: {waMessagesData.total}
                     </Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch("/api/admin/whatsapp/backfill-reminders", {
+                            method: "POST",
+                            headers: { "x-user-id": currentUser?.id || "" },
+                          });
+                          const data = await res.json();
+                          toast({ title: `Follow-up: +${data.created} создано, ${data.skipped} пропущено` });
+                          refetchWaMessages();
+                        } catch {
+                          toast({ title: "Ошибка", variant: "destructive" });
+                        }
+                      }}
+                      data-testid="button-wa-backfill"
+                    >
+                      Создать follow-up
+                    </Button>
                   </div>
                 )}
               </CardContent>

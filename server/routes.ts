@@ -11,7 +11,7 @@ import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioS
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
 import { appConfig } from "@shared/schema";
-import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow } from "./whatsapp";
+import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders } from "./whatsapp";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -3445,6 +3445,18 @@ ${magicLink}`;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
       const optOuts = await storage.getWaOptOuts();
       res.json(optOuts);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/whatsapp/backfill-reminders", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const result = await backfillMissingReminders();
+      console.log(`[WA_BACKFILL] Admin ${userId} triggered backfill: ${JSON.stringify(result)}`);
+      res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

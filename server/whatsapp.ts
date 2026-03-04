@@ -428,8 +428,14 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
     const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
     console.log(`[WA_FORCE_SEND] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} assistbot_id=${assistbotMessageId}`);
+  } catch (err: any) {
+    await storage.markWaMessageFailed(msg.id, err.message);
+    console.error(`[WA_FORCE_SEND] Failed msg=${msg.id} error=${err.message}`);
+    return { success: false, error: err.message };
+  }
 
-    if (msg.messageType === "primary") {
+  if (msg.messageType === "primary") {
+    try {
       const reminderDelay = 24 * 60 * 60 * 1000 + randomInterval(0, 60);
       await enqueueReviewMessage({
         bookingId: msg.bookingId,
@@ -441,14 +447,59 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
         messageType: "reminder",
         delayMs: reminderDelay,
       });
+      console.log(`[WA_FORCE_SEND] Scheduled reminder for booking=${msg.bookingId} in ~24h`);
+    } catch (reminderErr: any) {
+      console.error(`[WA_FORCE_SEND] Failed to enqueue reminder for booking=${msg.bookingId}: ${reminderErr.message}`);
+    }
+  }
+
+  return { success: true };
+}
+
+export async function backfillMissingReminders(): Promise<{ created: number; skipped: number; errors: number }> {
+  const sentPrimaries = await db.select().from(waMessages)
+    .where(and(
+      sql`${waMessages.messageType} = 'primary'`,
+      sql`${waMessages.status} = 'sent'`
+    ));
+
+  let created = 0, skipped = 0, errors = 0;
+
+  for (const msg of sentPrimaries) {
+    const existingReminder = await storage.getWaMessageByBookingAndType(msg.bookingId, "reminder");
+    if (existingReminder) {
+      skipped++;
+      continue;
     }
 
-    return { success: true };
-  } catch (err: any) {
-    await storage.markWaMessageFailed(msg.id, err.message);
-    console.error(`[WA_FORCE_SEND] Failed msg=${msg.id} error=${err.message}`);
-    return { success: false, error: err.message };
+    const booking = await storage.getBooking(msg.bookingId);
+    if (!booking || booking.hasReview) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      const reminderDelay = randomInterval(0, 120);
+      await enqueueReviewMessage({
+        bookingId: msg.bookingId,
+        specialistId: msg.specialistId,
+        customerPhone: msg.customerPhone,
+        customerName: msg.customerName,
+        specialistName: msg.specialistName,
+        reviewLink: msg.reviewLink,
+        messageType: "reminder",
+        delayMs: reminderDelay,
+      });
+      created++;
+      console.log(`[WA_BACKFILL] Created reminder for booking=${msg.bookingId} (primary sent at ${msg.sentAt})`);
+    } catch (err: any) {
+      errors++;
+      console.error(`[WA_BACKFILL] Failed to create reminder for booking=${msg.bookingId}: ${err.message}`);
+    }
   }
+
+  console.log(`[WA_BACKFILL] Complete: ${created} created, ${skipped} skipped, ${errors} errors`);
+  return { created, skipped, errors };
 }
 
 const MIN_SEND_GAP_MS = 30 * 60 * 1000;
@@ -537,12 +588,21 @@ export async function processWaQueue(): Promise<void> {
 
   await storage.markWaMessageSending(msg.id);
 
+  let sendSuccess = false;
   try {
     const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
     console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
+    sendSuccess = true;
+  } catch (err: any) {
+    const retryDelayMs = randomInterval(10, 30);
+    const nextScheduledAt = new Date(Date.now() + retryDelayMs);
+    await storage.markWaMessageFailed(msg.id, err.message, nextScheduledAt);
+    console.error(`[WA_PROCESSOR] Failed msg=${msg.id} error=${err.message} attempt=${msg.attempts + 1}/${msg.maxAttempts}`);
+  }
 
-    if (msg.messageType === "primary") {
+  if (sendSuccess && msg.messageType === "primary") {
+    try {
       const reminderDelay = 24 * 60 * 60 * 1000 + randomInterval(0, 60);
       await enqueueReviewMessage({
         bookingId: msg.bookingId,
@@ -555,11 +615,8 @@ export async function processWaQueue(): Promise<void> {
         delayMs: reminderDelay,
       });
       console.log(`[WA_PROCESSOR] Scheduled reminder for booking=${msg.bookingId} in ~24h`);
+    } catch (reminderErr: any) {
+      console.error(`[WA_PROCESSOR] Failed to enqueue reminder for booking=${msg.bookingId}: ${reminderErr.message}`);
     }
-  } catch (err: any) {
-    const retryDelayMs = randomInterval(10, 30);
-    const nextScheduledAt = new Date(Date.now() + retryDelayMs);
-    await storage.markWaMessageFailed(msg.id, err.message, nextScheduledAt);
-    console.error(`[WA_PROCESSOR] Failed msg=${msg.id} error=${err.message} attempt=${msg.attempts + 1}/${msg.maxAttempts}`);
   }
 }
