@@ -2980,7 +2980,8 @@ ${magicLink}`;
             console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}, newClient=${identity.isNewClient}`);
 
             if (isNewVisitCompleted) {
-              console.log(`[ALTEGIO] New booking ${newBooking.id} already completed (status-only, no magic link per spec)`);
+              console.log(`[ALTEGIO] New booking ${newBooking.id} already completed, attempting magic link creation`);
+              await tryCreateMagicLinkForCompletedVisit(newBooking.id, 'altegio_webhook_new_completed');
             }
             break;
           }

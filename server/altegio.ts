@@ -1133,6 +1133,8 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           if (opts?.onCompleted) {
             await opts.onCompleted(existing.id);
           }
+        } else if (existing.status === "completed" && appt.attendance === 1 && opts?.onCompleted) {
+          await opts.onCompleted(existing.id);
         }
 
         if (didUpdate) {
@@ -1196,6 +1198,9 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           updatedFrom: "altegio",
           bookingSource: "altegio",
         });
+        if (status === "completed" && opts?.onCompleted) {
+          await opts.onCompleted(newBooking.id);
+        }
         imported++;
       } catch (err: any) {
         errors.push(`appt ${appt.id}: ${err.message}`);
