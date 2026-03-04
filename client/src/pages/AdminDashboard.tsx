@@ -1263,11 +1263,34 @@ export default function AdminDashboard() {
 
             <Card>
               <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-lg">Лог сообщений</CardTitle>
-                  <Button variant="ghost" size="sm" onClick={() => refetchWaMessages()} data-testid="button-wa-refresh">
-                    Обновить
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-xs"
+                      onClick={async () => {
+                        try {
+                          const res = await fetch("/api/admin/whatsapp/backfill-reminders", {
+                            method: "POST",
+                            headers: { "x-user-id": currentUser?.id || "" },
+                          });
+                          const data = await res.json();
+                          toast({ title: `Follow-up: +${data.created} создано, ${data.skipped} пропущено` });
+                          refetchWaMessages();
+                        } catch {
+                          toast({ title: "Ошибка", variant: "destructive" });
+                        }
+                      }}
+                      data-testid="button-wa-backfill"
+                    >
+                      + Follow-up
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => refetchWaMessages()} data-testid="button-wa-refresh">
+                      Обновить
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
