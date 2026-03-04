@@ -129,9 +129,9 @@ export default function AdminDashboard() {
   });
 
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
-    queryKey: ["/api/admin/bookings"],
+    queryKey: ["/api/admin/bookings", statusFilter],
     queryFn: async () => {
-      const res = await fetch("/api/admin/bookings?limit=200", {
+      const res = await fetch(`/api/admin/bookings?limit=200&status=${statusFilter}`, {
         headers: { "x-user-id": currentUser?.id || "" },
       });
       if (!res.ok) throw new Error("Failed to fetch bookings");
@@ -509,10 +509,7 @@ export default function AdminDashboard() {
   const pendingClaimsCount = claimRequests.filter(c => c.status === "pending").length;
   const pendingSpecialistsCount = specialists.filter(s => s.status === "pending").length;
 
-  const filteredBookings = bookings.filter((booking) => {
-    if (statusFilter === "all") return true;
-    return booking.status === statusFilter;
-  });
+  const filteredBookings = bookings;
 
   const pendingCount = bookingStats?.pending || 0;
   const completedCount = bookingStats?.completed || 0;

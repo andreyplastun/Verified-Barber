@@ -918,7 +918,8 @@ export async function registerRoutes(
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
       const limit = Math.min(parseInt(req.query.limit as string) || 200, 500);
-      const bookingsWithDetails = await storage.getBookingsWithDetails(limit);
+      const statusFilter = req.query.status as string || "all";
+      const bookingsWithDetails = await storage.getBookingsWithDetails(limit, statusFilter);
       res.json(bookingsWithDetails);
     } catch (err: any) {
       console.error("Error fetching bookings:", err);

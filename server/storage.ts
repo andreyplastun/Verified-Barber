@@ -13,7 +13,7 @@ export interface IStorage {
   completeOnboarding(id: string): Promise<User | undefined>;
   markOnboardingSeen(id: string, type: "client" | "pro"): Promise<User | undefined>;
   getClients(): Promise<User[]>;
-  getBookingsWithDetails(limit?: number): Promise<any[]>;
+  getBookingsWithDetails(limit?: number, statusFilter?: string): Promise<any[]>;
   getBookingStats(): Promise<{ total: number; pending: number; completed: number; scheduled: number; readyToComplete: number; paymentPending: number }>;
   
   // Specialist mapping
@@ -340,8 +340,15 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getBookingsWithDetails(limit?: number): Promise<any[]> {
-    const query = db.select().from(bookings).orderBy(desc(bookings.appointmentTime));
+  async getBookingsWithDetails(limit?: number, statusFilter?: string): Promise<any[]> {
+    let query = db.select().from(bookings).orderBy(desc(bookings.appointmentTime));
+    if (statusFilter && statusFilter !== "all") {
+      if (statusFilter === "pending") {
+        query = query.where(sql`${bookings.status} IN ('scheduled', 'ready_to_complete', 'payment_pending')`) as any;
+      } else {
+        query = query.where(eq(bookings.status, statusFilter)) as any;
+      }
+    }
     const allBookings = limit ? await query.limit(limit) : await query;
     const specialistIds = [...new Set(allBookings.map(b => b.specialistId))];
     const allSpecialists = specialistIds.length > 0
