@@ -560,27 +560,15 @@ export async function processWaQueue(): Promise<void> {
   }
 
   const sentTodayByType = await storage.countWaMessagesSentTodayByType();
-  const halfLimit = Math.ceil(effectiveLimit / 2);
 
-  const remindersDue = await storage.getWaMessagesDue(1, "reminder");
-  const remindersAvailable = remindersDue.length > 0;
-
-  let preferredType: string | undefined;
-  if (remindersAvailable && sentTodayByType.reminder < sentTodayByType.primary) {
-    preferredType = "reminder";
-  } else if (!remindersAvailable || sentTodayByType.reminder >= halfLimit) {
-    preferredType = "primary";
-  } else if (sentTodayByType.primary >= sentTodayByType.reminder) {
-    preferredType = "reminder";
-  }
-
-  let batch = preferredType ? await storage.getWaMessagesDue(1, preferredType) : [];
+  let batch = await storage.getWaMessagesDue(1, "reminder");
   if (batch.length === 0) {
-    batch = await storage.getWaMessagesDue(1);
+    batch = await storage.getWaMessagesDue(1, "primary");
   }
   if (batch.length === 0) return;
 
-  console.log(`[WA_PROCESSOR] Processing 1 message (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, preferred=${preferredType || 'any'}, gap=${Math.round(calculateDynamicGap(sentToday, effectiveLimit) / 60000)}min)`);
+  const picked = batch[0].messageType;
+  console.log(`[WA_PROCESSOR] Processing 1 ${picked} (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, gap=${Math.round(calculateDynamicGap(sentToday, effectiveLimit) / 60000)}min)`);
 
   const msg = batch[0];
 
