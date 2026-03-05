@@ -467,7 +467,7 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
 
   for (const msg of sentPrimaries) {
     const existingReminder = await storage.getWaMessageByBookingAndType(msg.bookingId, "reminder");
-    if (existingReminder) {
+    if (existingReminder && existingReminder.status !== "failed" && existingReminder.status !== "skipped") {
       skipped++;
       continue;
     }
@@ -479,6 +479,10 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
     }
 
     try {
+      if (existingReminder && (existingReminder.status === "failed" || existingReminder.status === "skipped")) {
+        await db.delete(waMessages).where(eq(waMessages.id, existingReminder.id));
+        console.log(`[WA_BACKFILL] Deleted old ${existingReminder.status} reminder id=${existingReminder.id} for booking=${msg.bookingId}`);
+      }
       const reminderDelay = randomInterval(0, 120);
       await enqueueReviewMessage({
         bookingId: msg.bookingId,
