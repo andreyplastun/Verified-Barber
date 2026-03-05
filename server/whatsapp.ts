@@ -370,8 +370,13 @@ export async function enqueueReviewMessage(params: {
 }): Promise<void> {
   const existing = await storage.getWaMessageByBookingAndType(params.bookingId, params.messageType);
   if (existing) {
-    console.log(`[WA_QUEUE] Skipping duplicate ${params.messageType} for booking=${params.bookingId}`);
-    return;
+    if (existing.status === "failed" || existing.status === "skipped") {
+      await db.delete(waMessages).where(eq(waMessages.id, existing.id));
+      console.log(`[WA_QUEUE] Deleted old ${existing.status} ${params.messageType} id=${existing.id} for booking=${params.bookingId}, will re-create`);
+    } else {
+      console.log(`[WA_QUEUE] Skipping duplicate ${params.messageType} for booking=${params.bookingId} (status=${existing.status})`);
+      return;
+    }
   }
 
   const isOptedOut = await storage.isWaOptedOut(params.customerPhone.replace(/\D/g, ""));
@@ -554,10 +559,22 @@ export async function processWaQueue(): Promise<void> {
     }
   }
 
-  const batch = await storage.getWaMessagesDue(1);
+  const sentTodayByType = await storage.countWaMessagesSentTodayByType();
+  const halfLimit = Math.ceil(effectiveLimit / 2);
+  let preferredType: string | undefined;
+  if (sentTodayByType.reminder < halfLimit && sentTodayByType.primary >= sentTodayByType.reminder) {
+    preferredType = "reminder";
+  } else if (sentTodayByType.primary < halfLimit) {
+    preferredType = "primary";
+  }
+
+  let batch = preferredType ? await storage.getWaMessagesDue(1, preferredType) : [];
+  if (batch.length === 0) {
+    batch = await storage.getWaMessagesDue(1);
+  }
   if (batch.length === 0) return;
 
-  console.log(`[WA_PROCESSOR] Processing 1 message (sent today: ${sentToday}/${effectiveLimit}, gap=${Math.round(calculateDynamicGap(sentToday, effectiveLimit) / 60000)}min)`);
+  console.log(`[WA_PROCESSOR] Processing 1 message (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, preferred=${preferredType || 'any'}, gap=${Math.round(calculateDynamicGap(sentToday, effectiveLimit) / 60000)}min)`);
 
   const msg = batch[0];
 
