@@ -3381,7 +3381,8 @@ ${magicLink}`;
       const offset = parseInt(req.query.offset as string) || 0;
       const result = await storage.getWaMessages(limit, offset);
       const sentToday = await storage.countWaMessagesSentToday();
-      res.json({ ...result, sentToday });
+      const sentTodayByType = await storage.countWaMessagesSentTodayByType();
+      res.json({ ...result, sentToday, sentTodayByType });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

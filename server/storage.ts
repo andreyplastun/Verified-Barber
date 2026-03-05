@@ -126,6 +126,7 @@ export interface IStorage {
   markWaMessageFailed(id: number, error: string, nextScheduledAt?: Date): Promise<void>;
   markWaMessageSkipped(id: number, reason: string): Promise<void>;
   countWaMessagesSentToday(): Promise<number>;
+  countWaMessagesSentTodayByType(): Promise<{ primary: number; reminder: number }>;
   getLastWaSentTime(): Promise<Date | null>;
   countWaQueuedForWindow(windowStart: Date, windowEnd: Date): Promise<number>;
   getWaMessages(limit: number, offset: number): Promise<{ messages: WaMessage[]; total: number }>;
@@ -1150,6 +1151,24 @@ export class DatabaseStorage implements IStorage {
         sql`${waMessages.sentAt} >= ${todayStart}`
       ));
     return Number(result[0]?.count || 0);
+  }
+
+  async countWaMessagesSentTodayByType(): Promise<{ primary: number; reminder: number }> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const result = await db.select({ 
+      messageType: waMessages.messageType,
+      count: sql<number>`count(*)` 
+    })
+      .from(waMessages)
+      .where(and(
+        eq(waMessages.status, "sent"),
+        sql`${waMessages.sentAt} >= ${todayStart}`
+      ))
+      .groupBy(waMessages.messageType);
+    const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);
+    const reminder = Number(result.find(r => r.messageType === "reminder")?.count || 0);
+    return { primary, reminder };
   }
 
   async getLastWaSentTime(): Promise<Date | null> {

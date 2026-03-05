@@ -434,7 +434,7 @@ export default function AdminDashboard() {
     enabled: !!currentUser && activeTab === "whatsapp",
   });
 
-  const { data: waMessagesData, refetch: refetchWaMessages } = useQuery<{ messages: WaMessageType[]; total: number; sentToday: number }>({
+  const { data: waMessagesData, refetch: refetchWaMessages } = useQuery<{ messages: WaMessageType[]; total: number; sentToday: number; sentTodayByType?: { primary: number; reminder: number } }>({
     queryKey: ["/api/admin/whatsapp/messages", waMessageLimit],
     queryFn: async () => {
       const res = await fetch(`/api/admin/whatsapp/messages?limit=${waMessageLimit}`, {
@@ -1155,7 +1155,9 @@ export default function AdminDashboard() {
                 {waMessagesData && (
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="secondary" data-testid="badge-wa-sent-today">
-                      Сегодня: {waMessagesData.sentToday}
+                      Сегодня: {waMessagesData.sentTodayByType 
+                        ? `${waMessagesData.sentTodayByType.primary} осн. + ${waMessagesData.sentTodayByType.reminder} follow-up`
+                        : waMessagesData.sentToday}
                     </Badge>
                     <Badge variant="outline" data-testid="badge-wa-total">
                       Всего: {waMessagesData.total}
