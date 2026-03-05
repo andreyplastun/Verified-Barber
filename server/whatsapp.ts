@@ -561,11 +561,17 @@ export async function processWaQueue(): Promise<void> {
 
   const sentTodayByType = await storage.countWaMessagesSentTodayByType();
   const halfLimit = Math.ceil(effectiveLimit / 2);
+
+  const remindersDue = await storage.getWaMessagesDue(1, "reminder");
+  const remindersAvailable = remindersDue.length > 0;
+
   let preferredType: string | undefined;
-  if (sentTodayByType.reminder < halfLimit && sentTodayByType.primary >= sentTodayByType.reminder) {
+  if (remindersAvailable && sentTodayByType.reminder < sentTodayByType.primary) {
     preferredType = "reminder";
-  } else if (sentTodayByType.primary < halfLimit) {
+  } else if (!remindersAvailable || sentTodayByType.reminder >= halfLimit) {
     preferredType = "primary";
+  } else if (sentTodayByType.primary >= sentTodayByType.reminder) {
+    preferredType = "reminder";
   }
 
   let batch = preferredType ? await storage.getWaMessagesDue(1, preferredType) : [];
