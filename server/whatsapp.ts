@@ -573,11 +573,19 @@ export async function processWaQueue(): Promise<void> {
   const msg = batch[0];
 
   const MAX_REMINDER_AGE_MS = 30 * 60 * 60 * 1000;
-  if (msg.messageType === "reminder" && msg.createdAt) {
+  const isWarmup = effectiveLimit < settings.dailyLimit;
+  const MAX_PRIMARY_AGE_WARMUP_MS = 30 * 60 * 60 * 1000;
+
+  if (msg.createdAt) {
     const age = Date.now() - new Date(msg.createdAt).getTime();
-    if (age > MAX_REMINDER_AGE_MS) {
+    if (msg.messageType === "reminder" && age > MAX_REMINDER_AGE_MS) {
       await storage.markWaMessageSkipped(msg.id, "reminder_too_old");
       console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=reminder_too_old (${Math.round(age / 3600000)}h old)`);
+      return;
+    }
+    if (msg.messageType === "primary" && isWarmup && age > MAX_PRIMARY_AGE_WARMUP_MS) {
+      await storage.markWaMessageSkipped(msg.id, "primary_too_old_warmup");
+      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=primary_too_old_warmup (${Math.round(age / 3600000)}h old, warmup limit=${effectiveLimit})`);
       return;
     }
   }
