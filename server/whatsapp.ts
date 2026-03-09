@@ -572,7 +572,7 @@ export async function processWaQueue(): Promise<void> {
 
   const msg = batch[0];
 
-  const MAX_REMINDER_AGE_MS = 48 * 60 * 60 * 1000;
+  const MAX_REMINDER_AGE_MS = 30 * 60 * 60 * 1000;
   if (msg.messageType === "reminder" && msg.createdAt) {
     const age = Date.now() - new Date(msg.createdAt).getTime();
     if (age > MAX_REMINDER_AGE_MS) {
