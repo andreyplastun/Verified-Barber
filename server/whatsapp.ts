@@ -4,19 +4,19 @@ import { appConfig, waMessages } from "@shared/schema";
 import { eq, and, asc, sql } from "drizzle-orm";
 
 const PRIMARY_TEMPLATES = [
-  "{clientName}, спасибо за визит к {specialistNameDative}.\nОставьте отзыв:\n{reviewLink}",
-  "{clientName}, благодарим за визит к {specialistNameDative} ✨\nБудем признательны за отзыв:\n{reviewLink}",
-  "{clientName}, как прошёл визит к {specialistNameDative}?\nОставить отзыв:\n{reviewLink}",
-  "{clientName}, спасибо, что выбрали {specialistNameGenitive}.\nПоделитесь впечатлением:\n{reviewLink}",
-  "{clientName}, визит к {specialistNameDative} завершён.\nОцените специалиста:\n{reviewLink}",
+  "{clientName}, спасибо за визит к {specialistNameDative}. Оставьте, пожалуйста, отзыв: {reviewLink}",
+  "{clientName}, благодарим за визит к {specialistNameDative}. Будем признательны за оставленный отзыв: {reviewLink}",
+  "{clientName}, как прошёл визит к {specialistNameDative}? Оставьте, пожалуйста, отзыв: {reviewLink}",
+  "{clientName}, спасибо, что выбрали {specialistNameGenitive}. Поделитесь, пожалуйста, впечатлением: {reviewLink}",
+  "{clientName}, визит к {specialistNameDative} завершён. Оцените, пожалуйста, специалиста: {reviewLink}",
 ];
 
 const REMINDER_TEMPLATES = [
-  "{clientName}, отзыв о визите к {specialistNameDative} ещё можно оставить:\n{reviewLink}",
-  "{clientName}, напоминание об отзыве для {specialistNameGenitive}.\nЭто займёт несколько секунд:\n{reviewLink}",
-  "{clientName}, если удобно — оставьте отзыв о визите к {specialistNameDative}:\n{reviewLink}",
-  "{clientName}, оценка визита к {specialistNameDative} всё ещё доступна:\n{reviewLink}",
-  "{clientName}, последняя возможность оценить визит к {specialistNameDative}:\n{reviewLink}",
+  "{clientName}, отзыв о визите к {specialistNameDative} ещё не оставлен: {reviewLink}",
+  "{clientName}, напоминаем об отзыве для {specialistNameGenitive}. Это займёт всего несколько секунд: {reviewLink}",
+  "{clientName}, если удобно — оставьте отзыв о визите к {specialistNameDative}: {reviewLink}",
+  "{clientName}, оценка визита к {specialistNameDative} ещё не завершена. Завершить или пропустить: {reviewLink}",
+  "{clientName}, последняя возможность оценить визит к {specialistNameDative}: {reviewLink}",
 ];
 
 function getTemplates(type: "primary" | "reminder"): string[] {
