@@ -461,7 +461,7 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
   return { success: true };
 }
 
-export async function backfillMissingReminders(): Promise<{ created: number; skipped: number; errors: number }> {
+export async function backfillMissingReminders(): Promise<{ created: number; skipped: number; errors: number; details: string[] }> {
   const sentPrimaries = await db.select().from(waMessages)
     .where(and(
       sql`${waMessages.messageType} = 'primary'`,
@@ -469,16 +469,32 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
     ));
 
   let created = 0, skipped = 0, errors = 0;
+  const details: string[] = [];
+
+  console.log(`[WA_BACKFILL] Found ${sentPrimaries.length} sent primaries to check`);
 
   for (const msg of sentPrimaries) {
     const existingReminder = await storage.getWaMessageByBookingAndType(msg.bookingId, "reminder");
     if (existingReminder && existingReminder.status !== "failed" && existingReminder.status !== "skipped") {
+      const reason = `booking=${msg.bookingId}: reminder exists with status=${existingReminder.status}`;
+      details.push(reason);
+      console.log(`[WA_BACKFILL] Skip: ${reason}`);
       skipped++;
       continue;
     }
 
     const booking = await storage.getBooking(msg.bookingId);
-    if (!booking || booking.hasReview) {
+    if (!booking) {
+      const reason = `booking=${msg.bookingId}: booking not found`;
+      details.push(reason);
+      console.log(`[WA_BACKFILL] Skip: ${reason}`);
+      skipped++;
+      continue;
+    }
+    if (booking.hasReview) {
+      const reason = `booking=${msg.bookingId}: already has review`;
+      details.push(reason);
+      console.log(`[WA_BACKFILL] Skip: ${reason}`);
       skipped++;
       continue;
     }
@@ -508,7 +524,7 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
   }
 
   console.log(`[WA_BACKFILL] Complete: ${created} created, ${skipped} skipped, ${errors} errors`);
-  return { created, skipped, errors };
+  return { created, skipped, errors, details };
 }
 
 const MIN_SEND_GAP_MS = 30 * 60 * 1000;

@@ -1173,7 +1173,8 @@ export default function AdminDashboard() {
                             headers: { "x-user-id": currentUser?.id || "" },
                           });
                           const data = await res.json();
-                          toast({ title: `Follow-up: +${data.created} создано, ${data.skipped} пропущено` });
+                          const detailStr = data.details?.length ? `\n${data.details.join('\n')}` : '';
+                          toast({ title: `Follow-up: +${data.created} создано, ${data.skipped} пропущено`, description: detailStr || undefined });
                           refetchWaMessages();
                         } catch {
                           toast({ title: "Ошибка", variant: "destructive" });
@@ -1276,7 +1277,8 @@ export default function AdminDashboard() {
                             headers: { "x-user-id": currentUser?.id || "" },
                           });
                           const data = await res.json();
-                          toast({ title: `Follow-up: +${data.created} создано, ${data.skipped} пропущено` });
+                          const detailStr = data.details?.length ? `\n${data.details.join('\n')}` : '';
+                          toast({ title: `Follow-up: +${data.created} создано, ${data.skipped} пропущено`, description: detailStr || undefined });
                           refetchWaMessages();
                         } catch {
                           toast({ title: "Ошибка", variant: "destructive" });
