@@ -509,7 +509,8 @@ export default function SpecialistDashboard() {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
-      toast({ title: 'Запись создана' });
+      queryClient.refetchQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      toast({ title: 'Запись создана', description: `${data.customerName || 'Клиент'} — ${data.id ? '#' + data.id : ''}` });
       setShowNewBookingForm(false);
       setNewBookingName('');
       setNewBookingPhone('');
