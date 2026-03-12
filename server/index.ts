@@ -355,9 +355,19 @@ app.use((req, res, next) => {
     const skippedReminder = await pool.query(
       `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND message_type = 'reminder' AND scheduled_at < NOW() - INTERVAL '6 hours' RETURNING id`
     );
-    const totalSkipped = skippedPrimary.rows.length + skippedReminder.rows.length;
+    const skippedOrphanReminders = await pool.query(
+      `UPDATE wa_messages SET status = 'skipped', skip_reason = 'orphan_no_primary'
+       WHERE status = 'queued' AND message_type = 'reminder'
+       AND NOT EXISTS (
+         SELECT 1 FROM wa_messages p 
+         WHERE p.booking_id = wa_messages.booking_id 
+         AND p.message_type = 'primary' 
+         AND p.status = 'sent'
+       ) RETURNING id`
+    );
+    const totalSkipped = skippedPrimary.rows.length + skippedReminder.rows.length + skippedOrphanReminders.rows.length;
     if (totalSkipped > 0) {
-      console.log(`[WA_CLEANUP] Skipped ${totalSkipped} stale queued messages on startup (${skippedPrimary.rows.length} primary, ${skippedReminder.rows.length} reminder)`);
+      console.log(`[WA_CLEANUP] Skipped ${totalSkipped} stale queued messages on startup (${skippedPrimary.rows.length} primary, ${skippedReminder.rows.length} reminder, ${skippedOrphanReminders.rows.length} orphan)`);
     }
   } catch (err) {
     console.error("[WA_CLEANUP] Error cleaning stale messages:", err);

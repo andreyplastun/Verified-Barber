@@ -597,12 +597,21 @@ export async function processWaQueue(): Promise<void> {
   const isWarmup = effectiveLimit < settings.dailyLimit;
   const MAX_PRIMARY_AGE_WARMUP_MS = 30 * 60 * 60 * 1000;
 
-  if (msg.messageType === "reminder" && msg.scheduledAt) {
-    const overdue = Date.now() - new Date(msg.scheduledAt).getTime();
-    if (overdue > MAX_REMINDER_OVERDUE_MS) {
-      await storage.markWaMessageSkipped(msg.id, "reminder_too_old");
-      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=reminder_too_old (${Math.round(overdue / 3600000)}h overdue from scheduledAt)`);
+  if (msg.messageType === "reminder") {
+    const correspondingPrimary = await storage.getWaMessageByBookingAndType(msg.bookingId, "primary");
+    if (!correspondingPrimary || correspondingPrimary.status !== "sent") {
+      await storage.markWaMessageSkipped(msg.id, "primary_not_sent");
+      console.log(`[WA_PROCESSOR] Skipped reminder msg=${msg.id} reason=primary_not_sent (booking=${msg.bookingId}, primary status=${correspondingPrimary?.status || 'missing'})`);
       return;
+    }
+
+    if (msg.scheduledAt) {
+      const overdue = Date.now() - new Date(msg.scheduledAt).getTime();
+      if (overdue > MAX_REMINDER_OVERDUE_MS) {
+        await storage.markWaMessageSkipped(msg.id, "reminder_too_old");
+        console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=reminder_too_old (${Math.round(overdue / 3600000)}h overdue from scheduledAt)`);
+        return;
+      }
     }
   }
   if (msg.messageType === "primary" && isWarmup && msg.createdAt) {
