@@ -1578,14 +1578,11 @@ ${magicLink}`;
 
       console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=payment_pending source=specialist_request_payment userId=${userId} manualBooking=${isManualBooking}`);
 
-      let magicLinkCreated = false;
-      let finalBooking = updated;
-      if (isManualBooking) {
-        finalBooking = await storage.updateBooking(bookingId, { status: "completed", visitTrustWeight: 0.6 } as any);
-        await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
-        magicLinkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, 'specialist_request_payment_manual');
-        console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} manual booking auto-completed for WA, magicLink=${magicLinkCreated}`);
-      }
+      const trustWeight = isManualBooking ? 0.6 : 0.65;
+      const finalBooking = await storage.updateBooking(bookingId, { status: "completed", visitTrustWeight: trustWeight } as any);
+      await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
+      const magicLinkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, 'specialist_request_payment');
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} completed via request_payment, magicLink=${magicLinkCreated} trustWeight=${trustWeight} manualBooking=${isManualBooking}`);
 
       res.json({ booking: finalBooking, magicLinkCreated });
     } catch (err: any) {
