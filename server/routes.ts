@@ -1465,16 +1465,20 @@ ${magicLink}`;
   app.post("/api/specialist/bookings", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
+      console.log(`[SPECIALIST_BOOKING] POST request received, userId=${userId}, body=`, JSON.stringify(req.body));
       if (!userId) {
+        console.log(`[SPECIALIST_BOOKING] No userId header — returning 401`);
         return res.status(401).json({ message: "Unauthorized" });
       }
 
       const user = await storage.getUser(userId);
       if (!user || (user.role !== 'specialist' && user.role !== 'admin')) {
+        console.log(`[SPECIALIST_BOOKING] User not found or wrong role: exists=${!!user}, role=${user?.role}`);
         return res.status(403).json({ message: "Forbidden" });
       }
 
       if (!user.specialistId) {
+        console.log(`[SPECIALIST_BOOKING] User ${user.email} has no specialistId`);
         return res.status(403).json({ message: "Нет привязанного профиля специалиста" });
       }
 
