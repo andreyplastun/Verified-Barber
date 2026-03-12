@@ -1578,7 +1578,16 @@ ${magicLink}`;
 
       console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=payment_pending source=specialist_request_payment userId=${userId} manualBooking=${isManualBooking}`);
 
-      res.json({ booking: updated });
+      let magicLinkCreated = false;
+      let finalBooking = updated;
+      if (isManualBooking) {
+        finalBooking = await storage.updateBooking(bookingId, { status: "completed", visitTrustWeight: 0.6 } as any);
+        await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
+        magicLinkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, 'specialist_request_payment_manual');
+        console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} manual booking auto-completed for WA, magicLink=${magicLinkCreated}`);
+      }
+
+      res.json({ booking: finalBooking, magicLinkCreated });
     } catch (err: any) {
       console.error("Error requesting payment:", err);
       res.status(500).json({ message: err.message });
