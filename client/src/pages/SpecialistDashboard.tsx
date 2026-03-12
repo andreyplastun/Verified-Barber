@@ -522,9 +522,16 @@ export default function SpecialistDashboard() {
     },
   });
 
+  const isManualBooking = (b: any) => b.bookingSource === 'specialist_manual' || (!b.altegioAppointmentId && b.bookingSource !== 'altegio');
   const activeBookings = (bookings?.filter(b => 
     b.status === 'scheduled' || b.status === 'ready_to_complete' || b.status === 'payment_pending'
-  ) || []).sort((a, b) => new Date(a.appointmentTime).getTime() - new Date(b.appointmentTime).getTime());
+  ) || []).sort((a, b) => {
+    const aManual = isManualBooking(a);
+    const bManual = isManualBooking(b);
+    if (aManual && !bManual) return -1;
+    if (!aManual && bManual) return 1;
+    return new Date(a.appointmentTime).getTime() - new Date(b.appointmentTime).getTime();
+  });
 
   const completedBookings = bookings?.filter(b => b.status === 'completed') || [];
   const cancelledBookings = bookings?.filter(b => b.status === 'cancelled') || [];
@@ -1328,17 +1335,19 @@ export default function SpecialistDashboard() {
             ) : activeBookings.length === 0 && !showNewBookingForm ? (
               <p className="text-muted-foreground text-sm">Нет предстоящих записей</p>
             ) : (
-              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+              <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
                 {activeBookings.map((booking) => {
                   const status = booking.status;
                   const isNotCompleted = (booking as any).notCompleted === true;
                   const canCancel = status === 'scheduled' || status === 'ready_to_complete';
+                  const isManual = isManualBooking(booking);
 
                   return (
                     <div 
                       key={booking.id} 
                       className={`p-3 rounded-md space-y-2 ${
                         isNotCompleted ? 'bg-muted/30 opacity-60' :
+                        isManual ? 'bg-green-50/50 dark:bg-green-950/20 border border-green-200 dark:border-green-800' :
                         status === 'ready_to_complete' ? 'bg-amber-50/50 dark:bg-amber-950/20' :
                         status === 'payment_pending' ? 'bg-blue-50/50 dark:bg-blue-950/20' :
                         'bg-muted/50'
@@ -1349,6 +1358,11 @@ export default function SpecialistDashboard() {
                         <div className="flex items-center gap-2">
                           <User className="w-4 h-4 text-muted-foreground" />
                           <span data-testid={`text-customer-${booking.id}`}>{booking.customerName}</span>
+                          {isManual && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 bg-green-50 text-green-700 border-green-300 dark:bg-green-950 dark:text-green-400 dark:border-green-700" data-testid={`badge-manual-${booking.id}`}>
+                              ваша
+                            </Badge>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5">
                           {(booking as any).bookingSource !== 'specialist_manual' && (booking as any).altegioSyncStatus === 'synced' && (
