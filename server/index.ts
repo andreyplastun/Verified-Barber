@@ -353,7 +353,7 @@ app.use((req, res, next) => {
       `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND message_type = 'primary' AND scheduled_at < NOW() - INTERVAL '30 hours' RETURNING id`
     );
     const skippedReminder = await pool.query(
-      `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND message_type = 'reminder' AND scheduled_at < NOW() - INTERVAL '6 hours' RETURNING id`
+      `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND message_type = 'reminder' AND scheduled_at < NOW() - INTERVAL '15 hours' RETURNING id`
     );
     const skippedOrphanReminders = await pool.query(
       `UPDATE wa_messages SET status = 'skipped', skip_reason = 'orphan_no_primary'

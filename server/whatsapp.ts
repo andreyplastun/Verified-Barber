@@ -593,7 +593,7 @@ export async function processWaQueue(): Promise<void> {
 
   const msg = batch[0];
 
-  const MAX_REMINDER_OVERDUE_MS = 6 * 60 * 60 * 1000;
+  const MAX_REMINDER_OVERDUE_MS = 15 * 60 * 60 * 1000;
   const isWarmup = effectiveLimit < settings.dailyLimit;
   const MAX_PRIMARY_AGE_WARMUP_MS = 30 * 60 * 60 * 1000;
 
