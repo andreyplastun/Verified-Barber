@@ -459,7 +459,10 @@ export default function SpecialistDashboard() {
   const createBookingMutation = useMutation({
     mutationFn: async (opts?: { force?: boolean }) => {
       if (!currentUser?.id) throw new Error('Not authorized');
+      if (!newBookingDate || !newBookingTime) throw new Error('Укажите дату и время');
       const appointmentTime = new Date(`${newBookingDate}T${newBookingTime}`);
+      if (isNaN(appointmentTime.getTime())) throw new Error('Неверный формат даты/времени');
+      console.log('[BOOKING_CREATE] Sending:', { customerName: newBookingName, customerPhone: newBookingPhone, appointmentTime: appointmentTime.toISOString(), force: opts?.force || false });
       const res = await fetch('/api/specialist/bookings', {
         method: 'POST',
         headers: {
@@ -473,11 +476,12 @@ export default function SpecialistDashboard() {
           force: opts?.force || false,
         }),
       });
+      const data = await res.json();
+      console.log('[BOOKING_CREATE] Response:', res.status, data);
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || 'Ошибка');
+        throw new Error(data.message || 'Ошибка');
       }
-      return res.json();
+      return data;
     },
     onSuccess: (data) => {
       if (data.warning) {
@@ -493,7 +497,8 @@ export default function SpecialistDashboard() {
       setNewBookingTime('');
     },
     onError: (err: Error) => {
-      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+      console.error('[BOOKING_CREATE] Error:', err);
+      toast({ title: 'Ошибка создания записи', description: err.message, variant: 'destructive' });
     },
   });
 
