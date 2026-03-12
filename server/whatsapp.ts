@@ -174,11 +174,29 @@ async function spreadAcrossActiveWindow(baseDate: Date, messageType: "primary" |
   let targetDate = new Date(baseDate);
 
   if (isInQuietHours(targetDate)) {
-    const almatyHour = (targetDate.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
-    if (almatyHour >= QUIET_START_HOUR) {
-      targetDate.setUTCDate(targetDate.getUTCDate() + 1);
+    if (messageType === "reminder") {
+      const almatyHour = (targetDate.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
+      const todayWindowEnd = new Date(targetDate);
+      todayWindowEnd.setUTCHours(QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0);
+      if (almatyHour >= QUIET_START_HOUR) {
+        const earlySlot = new Date(todayWindowEnd.getTime() - Math.floor(Math.random() * 90 + 30) * 60 * 1000);
+        if (earlySlot > now) {
+          targetDate = earlySlot;
+          console.log(`[WA_SPREAD] Reminder shifted back to same evening: ${targetDate.toISOString()} (Almaty: ~${(targetDate.getUTCHours() + ALMATY_UTC_OFFSET) % 24}:${String(targetDate.getUTCMinutes()).padStart(2, '0')})`);
+        } else {
+          targetDate.setUTCDate(targetDate.getUTCDate() + 1);
+          targetDate.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
+        }
+      } else {
+        targetDate.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
+      }
+    } else {
+      const almatyHour = (targetDate.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
+      if (almatyHour >= QUIET_START_HOUR) {
+        targetDate.setUTCDate(targetDate.getUTCDate() + 1);
+      }
+      targetDate.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
     }
-    targetDate.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
   }
 
   const { start: windowStart, end: windowEnd } = getActiveWindowForDate(targetDate);
@@ -441,7 +459,7 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
 
   if (msg.messageType === "primary") {
     try {
-      const reminderDelay = 24 * 60 * 60 * 1000 + randomInterval(0, 60);
+      const reminderDelay = 21 * 60 * 60 * 1000 + randomInterval(0, 180);
       await enqueueReviewMessage({
         bookingId: msg.bookingId,
         specialistId: msg.specialistId,
@@ -669,7 +687,7 @@ export async function processWaQueue(): Promise<void> {
 
   if (sendSuccess && msg.messageType === "primary") {
     try {
-      const reminderDelay = 24 * 60 * 60 * 1000 + randomInterval(0, 60);
+      const reminderDelay = 21 * 60 * 60 * 1000 + randomInterval(0, 180);
       await enqueueReviewMessage({
         bookingId: msg.bookingId,
         specialistId: msg.specialistId,
