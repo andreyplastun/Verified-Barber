@@ -459,8 +459,12 @@ export default function SpecialistDashboard() {
   const createBookingMutation = useMutation({
     mutationFn: async (opts?: { force?: boolean }) => {
       if (!currentUser?.id) throw new Error('Не авторизован');
-      if (!newBookingDate || !newBookingTime) throw new Error('Укажите дату и время');
-      const appointmentTime = new Date(`${newBookingDate}T${newBookingTime}`);
+      const dateEl = document.getElementById('new-booking-date') as HTMLInputElement;
+      const timeEl = document.getElementById('new-booking-time') as HTMLInputElement;
+      const actualDate = dateEl?.value || newBookingDate;
+      const actualTime = timeEl?.value || newBookingTime;
+      if (!actualDate || !actualTime) throw new Error('Укажите дату и время');
+      const appointmentTime = new Date(`${actualDate}T${actualTime}`);
       if (isNaN(appointmentTime.getTime())) throw new Error('Неверный формат даты/времени');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
@@ -472,8 +476,8 @@ export default function SpecialistDashboard() {
             'x-user-id': currentUser.id,
           },
           body: JSON.stringify({
-            customerName: newBookingName,
-            customerPhone: newBookingPhone,
+            customerName: newBookingName || (document.getElementById('new-booking-name') as HTMLInputElement)?.value || '',
+            customerPhone: newBookingPhone || (document.getElementById('new-booking-phone') as HTMLInputElement)?.value || '',
             appointmentTime: appointmentTime.toISOString(),
             force: opts?.force || false,
           }),
@@ -1256,21 +1260,27 @@ export default function SpecialistDashboard() {
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-2">
                     <Label htmlFor="new-booking-date">Дата *</Label>
-                    <Input
+                    <input
                       id="new-booking-date"
                       type="date"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                       value={newBookingDate}
                       onChange={(e) => setNewBookingDate(e.target.value)}
+                      onInput={(e) => setNewBookingDate((e.target as HTMLInputElement).value)}
+                      onBlur={(e) => setNewBookingDate(e.target.value)}
                       data-testid="input-new-booking-date"
                     />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="new-booking-time">Время *</Label>
-                    <Input
+                    <input
                       id="new-booking-time"
                       type="time"
+                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                       value={newBookingTime}
                       onChange={(e) => setNewBookingTime(e.target.value)}
+                      onInput={(e) => setNewBookingTime((e.target as HTMLInputElement).value)}
+                      onBlur={(e) => setNewBookingTime(e.target.value)}
                       data-testid="input-new-booking-time"
                     />
                   </div>
@@ -1279,8 +1289,20 @@ export default function SpecialistDashboard() {
                   <Button
                     size="sm"
                     className="flex-1"
-                    onClick={() => createBookingMutation.mutate({})}
-                    disabled={!newBookingName || !newBookingDate || !newBookingTime || createBookingMutation.isPending}
+                    onClick={() => {
+                      const dateEl = document.getElementById('new-booking-date') as HTMLInputElement;
+                      const timeEl = document.getElementById('new-booking-time') as HTMLInputElement;
+                      if (dateEl?.value && dateEl.value !== newBookingDate) setNewBookingDate(dateEl.value);
+                      if (timeEl?.value && timeEl.value !== newBookingTime) setNewBookingTime(timeEl.value);
+                      const date = dateEl?.value || newBookingDate;
+                      const time = timeEl?.value || newBookingTime;
+                      if (!newBookingName || !date || !time) {
+                        toast({ title: 'Заполните все поля', description: `Имя: ${newBookingName ? '✓' : '✗'}, Дата: ${date ? '✓' : '✗'}, Время: ${time ? '✓' : '✗'}`, variant: 'destructive' });
+                        return;
+                      }
+                      createBookingMutation.mutate({});
+                    }}
+                    disabled={createBookingMutation.isPending}
                     data-testid="button-create-booking"
                   >
                     {createBookingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
