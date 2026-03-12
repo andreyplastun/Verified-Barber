@@ -579,6 +579,11 @@ export async function processWaQueue(): Promise<void> {
 
   let batch = await storage.getWaMessagesDue(1, "reminder");
   if (batch.length === 0) {
+    const pendingReminders = await storage.countWaPendingReminders();
+    if (pendingReminders > 0 && remaining <= pendingReminders) {
+      console.log(`[WA_PROCESSOR] Reserving ${remaining} remaining slot(s) for ${pendingReminders} pending reminder(s), skipping primary`);
+      return;
+    }
     batch = await storage.getWaMessagesDue(1, "primary");
   }
   if (batch.length === 0) return;

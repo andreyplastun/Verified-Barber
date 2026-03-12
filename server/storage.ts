@@ -120,6 +120,7 @@ export interface IStorage {
     scheduledAt: Date;
   }): Promise<WaMessage>;
   getWaMessagesDue(limit: number, preferredType?: string): Promise<WaMessage[]>;
+  countWaPendingReminders(): Promise<number>;
   getWaMessageByBookingAndType(bookingId: number, messageType: string): Promise<WaMessage | undefined>;
   markWaMessageSending(id: number): Promise<void>;
   markWaMessageSent(id: number, assistbotMessageId?: string | null): Promise<void>;
@@ -1095,6 +1096,15 @@ export class DatabaseStorage implements IStorage {
       .orderBy(asc(waMessages.scheduledAt))
       .limit(limit);
     return await query;
+  }
+
+  async countWaPendingReminders(): Promise<number> {
+    const [result] = await db.select({ count: sql<number>`count(*)` }).from(waMessages)
+      .where(and(
+        eq(waMessages.status, "queued"),
+        sql`${waMessages.messageType} = 'reminder'`
+      ));
+    return Number(result?.count || 0);
   }
 
   async getWaMessageByBookingAndType(bookingId: number, messageType: string): Promise<WaMessage | undefined> {
