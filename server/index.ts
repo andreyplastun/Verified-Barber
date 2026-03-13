@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
 import { processWaQueue } from "./whatsapp";
+import { syncUpcomingAppointments, isAltegioConfigured } from "./altegio";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
@@ -376,6 +377,8 @@ app.use((req, res, next) => {
   await transitionScheduledToReady();
   await flagNotCompletedBookings();
   await transitionPaymentPendingToCompleted();
+  let altegioSyncCounter = 0;
+  const ALTEGIO_SYNC_EVERY_N = 3; // every 3rd cycle = every 15 min (3 * 5min)
   setInterval(async () => {
     await transitionScheduledToReady();
     await flagNotCompletedBookings();
@@ -385,8 +388,22 @@ app.use((req, res, next) => {
     } catch (err) {
       console.error("[WA_PROCESSOR] Error processing WhatsApp queue:", err);
     }
+    altegioSyncCounter++;
+    if (altegioSyncCounter >= ALTEGIO_SYNC_EVERY_N) {
+      altegioSyncCounter = 0;
+      try {
+        if (await isAltegioConfigured()) {
+          const result = await syncUpcomingAppointments();
+          if (result.updated > 0 || result.imported > 0) {
+            console.log(`[PERIODIC_SYNC] Altegio sync: ${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped`);
+          }
+        }
+      } catch (err) {
+        console.error("[PERIODIC_SYNC] Altegio sync error:", err);
+      }
+    }
   }, TRANSITION_INTERVAL_MS);
-  console.log(`[STARTUP] Background jobs started (every ${TRANSITION_INTERVAL_MS / 60000} min, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, wa_queue=enabled)`);
+  console.log(`[STARTUP] Background jobs started (every ${TRANSITION_INTERVAL_MS / 60000} min, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, wa_queue=enabled, altegio_sync=every ${ALTEGIO_SYNC_EVERY_N * TRANSITION_INTERVAL_MS / 60000} min)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
