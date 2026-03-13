@@ -1830,7 +1830,14 @@ ${magicLink}`;
         return false;
       }
 
-      const customerPhone = booking.normalizedPhone || booking.customerPhone || null;
+      let customerPhone = booking.normalizedPhone || booking.customerPhone || null;
+      if (!customerPhone && hasClientId) {
+        const clientUser = await storage.getUser(booking.clientId!);
+        if (clientUser?.phone) {
+          customerPhone = clientUser.phone;
+          console.log(`[MAGIC_LINK] booking=${bookingId}: phone from user profile: ${customerPhone}`);
+        }
+      }
       const magicLink = await storage.createMagicLink(
         booking.clientId || null,
         bookingId,
@@ -1857,6 +1864,8 @@ ${magicLink}`;
         } catch (waErr: any) {
           console.error(`[WA_QUEUE_ERROR] booking=${bookingId} error=${waErr.message}`);
         }
+      } else {
+        console.log(`[WA_SKIP] booking=${bookingId}: no phone number available for WhatsApp (clientId=${booking.clientId}, normalizedPhone=${booking.normalizedPhone}, customerPhone=${booking.customerPhone}) source=${source}`);
       }
 
       return true;
