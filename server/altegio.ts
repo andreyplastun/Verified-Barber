@@ -1024,8 +1024,9 @@ export async function fetchUpcomingAppointments(companyId: number, options?: { s
 
     if (response.ok && result?.success && Array.isArray(result.data)) {
       const appointments = result.data as AltegioAppointmentRecord[];
-      console.log(`[ALTEGIO-FETCH] Got ${appointments.length} appointments for company ${companyId}`);
-      return { success: true, appointments, total: result.meta?.total_count || appointments.length };
+      const totalCount = result.meta?.total_count;
+      console.log(`[ALTEGIO-FETCH] Got ${appointments.length} appointments for company ${companyId} (total_count=${totalCount ?? 'unknown'})`);
+      return { success: true, appointments, total: totalCount ?? undefined };
     }
 
     const errorMsg = result?.meta?.message || `HTTP ${response.status}`;
@@ -1058,7 +1059,8 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
   }
 
   const today = new Date();
-  const startDate = today.toISOString().slice(0, 10);
+  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
+  const startDate = yesterday.toISOString().slice(0, 10);
   const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   let imported = 0;
@@ -1078,8 +1080,10 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
         break;
       }
       allAppointments = allAppointments.concat(result.appointments);
-      const total = result.total || 0;
-      if (allAppointments.length >= total || result.appointments.length < pageSize) {
+      if (result.appointments.length < pageSize) {
+        break;
+      }
+      if (result.total != null && allAppointments.length >= result.total) {
         break;
       }
       page++;
@@ -1162,6 +1166,9 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
       }
 
       if (!specialistId) {
+        if (appt.company_id === 28196 || appt.staff_id === 2879303) {
+          console.log(`[ALTEGIO-SYNC-SKIP] No matched specialist for appt=${appt.id} staff_id=${appt.staff_id} company_id=${appt.company_id} client=${appt.client?.name} date=${appt.datetime}`);
+        }
         skipped++;
         continue;
       }
