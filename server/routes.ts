@@ -1644,9 +1644,10 @@ ${magicLink}`;
         );
       }
 
-      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=completed source=specialist_send_review userId=${userId} score+1 trustWeight=${trustWeight} manualBooking=${isManualBooking}`);
+      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=completed source=specialist_send_review userId=${userId} score+1 trustWeight=${trustWeight} manualBooking=${isManualBooking} customerPhone=${booking.customerPhone} normalizedPhone=${booking.normalizedPhone} clientId=${booking.clientId}`);
 
       const magicLinkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, 'specialist_send_review');
+      console.log(`[COMPLETE_SEND_REVIEW] booking=${bookingId} magicLinkCreated=${magicLinkCreated}`);
 
       res.json({
         booking: updated,
@@ -1774,8 +1775,15 @@ ${magicLink}`;
   async function tryCreateMagicLinkForCompletedVisit(bookingId: number, source: string): Promise<boolean> {
     try {
       const booking = await storage.getBooking(bookingId);
-      if (!booking || booking.status !== 'completed') return false;
-      if ((booking as any).paymentStatus === 'refunded') return false;
+      console.log(`[MAGIC_LINK_TRACE] booking=${bookingId} source=${source} status=${booking?.status} clientId=${booking?.clientId} normalizedPhone=${booking?.normalizedPhone} customerPhone=${booking?.customerPhone} bookingSource=${(booking as any)?.bookingSource} invalidPhone=${(booking as any)?.invalidPhone} paymentStatus=${(booking as any)?.paymentStatus}`);
+      if (!booking || booking.status !== 'completed') {
+        console.log(`[MAGIC_LINK_TRACE] booking=${bookingId} BLOCKED: status=${booking?.status} (need completed)`);
+        return false;
+      }
+      if ((booking as any).paymentStatus === 'refunded') {
+        console.log(`[MAGIC_LINK_TRACE] booking=${bookingId} BLOCKED: refunded`);
+        return false;
+      }
 
       if ((booking as any).invalidPhone) {
         const isManual = (booking as any).bookingSource === "specialist_manual";
