@@ -1862,6 +1862,7 @@ ${magicLink}`;
       console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
 
       if (customerPhone) {
+        const isSpecialistAction = source.startsWith('specialist_');
         const specialist = await storage.getSpecialist(booking.specialistId);
         try {
           await enqueueReviewMessage({
@@ -1872,6 +1873,7 @@ ${magicLink}`;
             specialistName: specialist?.name || "специалисту",
             reviewLink: fullLink,
             messageType: "primary",
+            immediate: isSpecialistAction,
           });
         } catch (waErr: any) {
           console.error(`[WA_QUEUE_ERROR] booking=${bookingId} error=${waErr.message}`);

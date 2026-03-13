@@ -385,6 +385,7 @@ export async function enqueueReviewMessage(params: {
   reviewLink: string;
   messageType: "primary" | "reminder";
   delayMs?: number;
+  immediate?: boolean;
 }): Promise<void> {
   const existing = await storage.getWaMessageByBookingAndType(params.bookingId, params.messageType);
   if (existing) {
@@ -411,6 +412,35 @@ export async function enqueueReviewMessage(params: {
     specialistName: params.specialistName,
     reviewLink: params.reviewLink,
   });
+
+  if (params.immediate) {
+    const scheduledAt = new Date();
+    const enqueued = await storage.enqueueWaMessage({
+      bookingId: params.bookingId,
+      specialistId: params.specialistId,
+      customerPhone: params.customerPhone.replace(/\D/g, ""),
+      customerName: params.customerName,
+      specialistName: params.specialistName,
+      reviewLink: params.reviewLink,
+      messageType: params.messageType,
+      templateIndex,
+      messageText,
+      scheduledAt,
+    });
+    console.log(`[WA_IMMEDIATE] Enqueued IMMEDIATE ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} — sending now (bypass warmup/spreading)`);
+    try {
+      const msgId = (enqueued as any)?.id;
+      if (msgId) {
+        const sendResult = await sendWaMessageNow(msgId);
+        console.log(`[WA_IMMEDIATE] Send result for booking=${params.bookingId}: success=${sendResult.success} error=${sendResult.error || 'none'}`);
+      } else {
+        console.log(`[WA_IMMEDIATE] Could not get message ID for immediate send, will process in next queue cycle`);
+      }
+    } catch (sendErr: any) {
+      console.error(`[WA_IMMEDIATE] Send error for booking=${params.bookingId}: ${sendErr.message}`);
+    }
+    return;
+  }
 
   const baseTime = params.delayMs
     ? new Date(Date.now() + params.delayMs)
