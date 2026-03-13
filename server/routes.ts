@@ -1778,12 +1778,16 @@ ${magicLink}`;
       if ((booking as any).paymentStatus === 'refunded') return false;
 
       if ((booking as any).invalidPhone) {
-        console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: invalid phone number (source=${source})`);
-        await storage.updateBooking(bookingId, {
-          reviewEligibility: false,
-          reviewEligibilityReason: 'invalid_phone',
-        } as any);
-        return false;
+        const isManual = (booking as any).bookingSource === "specialist_manual";
+        if (!isManual) {
+          console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: invalid phone number (source=${source})`);
+          await storage.updateBooking(bookingId, {
+            reviewEligibility: false,
+            reviewEligibilityReason: 'invalid_phone',
+          } as any);
+          return false;
+        }
+        console.log(`[MAGIC_LINK] booking=${bookingId}: invalid phone but manual booking — proceeding (source=${source})`);
       }
 
       const hasClientId = !!booking.clientId;
