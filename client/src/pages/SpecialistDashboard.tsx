@@ -509,7 +509,8 @@ export default function SpecialistDashboard() {
         return;
       }
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
-      queryClient.refetchQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      queryClient.refetchQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'], type: 'all' });
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
       toast({ title: 'Запись создана', description: `${data.customerName || 'Клиент'} — ${data.id ? '#' + data.id : ''}` });
       setShowNewBookingForm(false);
       setNewBookingName('');
