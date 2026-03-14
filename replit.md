@@ -50,14 +50,17 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **Reduced Motion**: All animation components respect `prefers-reduced-motion` via Framer Motion's `useReducedMotion()`, returning static fallbacks
 - **Excluded Flows**: No animations on payment, error, or critical alert screens
 
-### WhatsApp Auto-Messaging System
+### WhatsApp Auto-Messaging System (v89 scheduler rewrite)
 - **Location**: `server/whatsapp.ts`
 - **Tables**: `wa_messages` (queue + log), `wa_opt_outs` (opt-out phones), settings in `app_config` (WA_SENDING_ENABLED, WA_WARMUP_START_DATE, WA_DAILY_LIMIT)
-- **Message Types**: PRIMARY (on visit completion) + REMINDER (24h after primary if no review)
-- **Templates**: 5 variations per type with {clientName}, {specialistName}, {reviewLink} placeholders. Random selection, no repeats.
-- **Throttling/Warmup**: Day 1-3: 2/day, Day 4-7: 5/day, Day 8-14: 10/day, Day 15+: min(20, WA_DAILY_LIMIT). Anti-spam: 3-15 min random intervals.
-- **Sending**: AssistBot WhatsApp provider via ASSISTBOT_TOKEN env var, endpoint: POST https://lk.assistbot.ru/api/send
+- **Message Types**: PRIMARY (on visit completion) + FOLLOWUP/REMINDER (21-24h after primary if no review)
+- **Templates**: 5 variations per type with {clientName}, {specialistNameDative}, {specialistNameGenitive}, {reviewLink} placeholders. Russian declension (dative/genitive) with non-declinable name list for Kazakh names. Random selection, no repeats.
+- **Scheduling**: PRIMARY delay: random 45-75min after visit completion. FOLLOWUP created simultaneously with primary: random 21-24h delay. Quiet hours: 20:00-10:30 Almaty time — messages landing in quiet hours shift to 10:30 next day.
+- **Warmup**: Day1=2, Day2=3, Day3=5, Day4=8, Day5=12, Day6+=min(15, WA_DAILY_LIMIT).
+- **Processor**: Priority: followup > primary. Min gap between sends: random 10-15min. No dynamic gap spreading. Processes 1 message per cycle (every 5min background job).
+- **Sending**: AssistBot WhatsApp provider via ASSISTBOT_TOKEN env var, endpoint: POST https://lk.assistbot.ru/api/web/index.php/sms/
 - **Retry**: 2 attempts max, 10-30 min random delay between retries
+- **Expiry**: Queued messages older than 7 days auto-expire (status=skipped, reason=expired_7d)
 - **Emergency Stop**: WA_SENDING_ENABLED=false stops all processing
 - **Auto-queue**: Messages enqueued automatically when magic links are created in `tryCreateMagicLinkForCompletedVisit`
 - **Background Job**: Queue processed every 5 min alongside other background jobs
