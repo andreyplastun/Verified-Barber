@@ -577,6 +577,8 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
 
 const MIN_SEND_GAP_MS = 10 * 60 * 1000;
 
+const MAX_SEND_GAP_MS = 15 * 60 * 1000;
+
 function calculateDynamicGap(sentToday: number, effectiveLimit: number): number {
   const now = new Date();
   const { end: windowEnd } = getActiveWindowForDate(now);
@@ -584,7 +586,7 @@ function calculateDynamicGap(sentToday: number, effectiveLimit: number): number 
   const remainingMessages = effectiveLimit - sentToday;
   if (remainingMessages <= 1) return MIN_SEND_GAP_MS;
   const dynamicGap = Math.floor(remainingWindowMs / remainingMessages);
-  return Math.max(MIN_SEND_GAP_MS, dynamicGap);
+  return Math.min(MAX_SEND_GAP_MS, Math.max(MIN_SEND_GAP_MS, dynamicGap));
 }
 
 export async function processWaQueue(): Promise<void> {
