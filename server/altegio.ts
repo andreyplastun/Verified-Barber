@@ -1093,8 +1093,18 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
     console.log(`[ALTEGIO-SYNC-APPTS] Company ${companyId}: fetched ${allAppointments.length} appointments (${page} pages)`);
 
     for (const appt of allAppointments) {
-      if (appt.deleted) { skipped++; continue; }
-      if (appt.attendance === -1) { skipped++; continue; }
+      if (appt.deleted) {
+        if (appt.company_id === 28196) {
+          console.log(`[ALTEGIO-SYNC-DELETED] appt=${appt.id} staff_id=${appt.staff_id} company=${appt.company_id} client=${appt.client?.name} date=${appt.datetime}`);
+        }
+        skipped++; continue;
+      }
+      if (appt.attendance === -1) {
+        if (appt.company_id === 28196) {
+          console.log(`[ALTEGIO-SYNC-CANCELLED] appt=${appt.id} staff_id=${appt.staff_id} company=${appt.company_id} client=${appt.client?.name} date=${appt.datetime}`);
+        }
+        skipped++; continue;
+      }
 
       const existing = await storage.getBookingByAltegioId(appt.id);
       if (existing) {
@@ -1103,6 +1113,10 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
         const clientPhone = appt.client?.phone || "";
         const altClientId = appt.client?.id ? Number(appt.client.id) : null;
         let didUpdate = false;
+
+        if (appt.staff_id === 2879303 || appt.company_id === 28196) {
+          console.log(`[ALTEGIO-SYNC-EXISTING] appt=${appt.id} staff_id=${appt.staff_id} company=${appt.company_id} client=${clientName} booking=${existing.id} status=${existing.status} attendance=${appt.attendance}`);
+        }
 
         const needsNameUpdate = existing.customerName === "Клиент Altegio" && clientName !== "Клиент Altegio";
         if (needsNameUpdate) {

@@ -625,6 +625,46 @@ export async function processWaQueue(): Promise<void> {
 
   const sentTodayByType = await storage.countWaMessagesSentTodayByType();
 
+  const MAX_REMINDER_OVERDUE_MS = 15 * 60 * 60 * 1000;
+  const isWarmup = effectiveLimit < settings.dailyLimit;
+  const MAX_PRIMARY_AGE_WARMUP_MS = 30 * 60 * 60 * 1000;
+
+  const bulkBatch = await storage.getWaMessagesDue(100, undefined);
+  let bulkSkipped = 0;
+  for (const m of bulkBatch) {
+    let shouldSkip = false;
+    let skipReason = "";
+    if (m.messageType === "primary" && isWarmup && m.createdAt) {
+      const age = Date.now() - new Date(m.createdAt).getTime();
+      if (age > MAX_PRIMARY_AGE_WARMUP_MS) {
+        shouldSkip = true;
+        skipReason = `primary_too_old_warmup (${Math.round(age / 3600000)}h)`;
+        await storage.markWaMessageSkipped(m.id, "primary_too_old_warmup");
+      }
+    }
+    if (m.messageType === "reminder") {
+      const correspondingPrimary = await storage.getWaMessageByBookingAndType(m.bookingId, "primary");
+      if (!correspondingPrimary || correspondingPrimary.status !== "sent") {
+        shouldSkip = true;
+        skipReason = `primary_not_sent`;
+        await storage.markWaMessageSkipped(m.id, "primary_not_sent");
+      } else if (m.scheduledAt) {
+        const overdue = Date.now() - new Date(m.scheduledAt).getTime();
+        if (overdue > MAX_REMINDER_OVERDUE_MS) {
+          shouldSkip = true;
+          skipReason = `reminder_too_old (${Math.round(overdue / 3600000)}h)`;
+          await storage.markWaMessageSkipped(m.id, "reminder_too_old");
+        }
+      }
+    }
+    if (shouldSkip) {
+      bulkSkipped++;
+    }
+  }
+  if (bulkSkipped > 0) {
+    console.log(`[WA_PROCESSOR] Bulk-skipped ${bulkSkipped} stale messages from queue`);
+  }
+
   let batch = await storage.getWaMessagesDue(1, "reminder");
   if (batch.length === 0) {
     const pendingReminders = await storage.countWaPendingReminders();
@@ -636,40 +676,9 @@ export async function processWaQueue(): Promise<void> {
   }
   if (batch.length === 0) return;
 
-  const picked = batch[0].messageType;
-  console.log(`[WA_PROCESSOR] Processing 1 ${picked} (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, gap=${Math.round(calculateDynamicGap(sentToday, effectiveLimit) / 60000)}min)`);
-
   const msg = batch[0];
-
-  const MAX_REMINDER_OVERDUE_MS = 15 * 60 * 60 * 1000;
-  const isWarmup = effectiveLimit < settings.dailyLimit;
-  const MAX_PRIMARY_AGE_WARMUP_MS = 30 * 60 * 60 * 1000;
-
-  if (msg.messageType === "reminder") {
-    const correspondingPrimary = await storage.getWaMessageByBookingAndType(msg.bookingId, "primary");
-    if (!correspondingPrimary || correspondingPrimary.status !== "sent") {
-      await storage.markWaMessageSkipped(msg.id, "primary_not_sent");
-      console.log(`[WA_PROCESSOR] Skipped reminder msg=${msg.id} reason=primary_not_sent (booking=${msg.bookingId}, primary status=${correspondingPrimary?.status || 'missing'})`);
-      return;
-    }
-
-    if (msg.scheduledAt) {
-      const overdue = Date.now() - new Date(msg.scheduledAt).getTime();
-      if (overdue > MAX_REMINDER_OVERDUE_MS) {
-        await storage.markWaMessageSkipped(msg.id, "reminder_too_old");
-        console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=reminder_too_old (${Math.round(overdue / 3600000)}h overdue from scheduledAt)`);
-        return;
-      }
-    }
-  }
-  if (msg.messageType === "primary" && isWarmup && msg.createdAt) {
-    const age = Date.now() - new Date(msg.createdAt).getTime();
-    if (age > MAX_PRIMARY_AGE_WARMUP_MS) {
-      await storage.markWaMessageSkipped(msg.id, "primary_too_old_warmup");
-      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=primary_too_old_warmup (${Math.round(age / 3600000)}h old, warmup limit=${effectiveLimit})`);
-      return;
-    }
-  }
+  const picked = msg.messageType;
+  console.log(`[WA_PROCESSOR] Processing 1 ${picked} (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, gap=${Math.round(calculateDynamicGap(sentToday, effectiveLimit) / 60000)}min)`);
 
   const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
   if (isOptedOut) {
