@@ -1155,20 +1155,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   async countWaMessagesSentToday(): Promise<number> {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
     const result = await db.select({ count: sql<number>`count(*)` })
       .from(waMessages)
       .where(and(
         eq(waMessages.status, "sent"),
-        sql`${waMessages.sentAt} >= ${todayStart}`
+        sql`${waMessages.sentAt} >= (CURRENT_DATE AT TIME ZONE 'Asia/Almaty')`
       ));
     return Number(result[0]?.count || 0);
   }
 
   async countWaMessagesSentTodayByType(): Promise<{ primary: number; reminder: number }> {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
     const result = await db.select({ 
       messageType: waMessages.messageType,
       count: sql<number>`count(*)` 
@@ -1176,7 +1172,7 @@ export class DatabaseStorage implements IStorage {
       .from(waMessages)
       .where(and(
         eq(waMessages.status, "sent"),
-        sql`${waMessages.sentAt} >= ${todayStart}`
+        sql`${waMessages.sentAt} >= (CURRENT_DATE AT TIME ZONE 'Asia/Almaty')`
       ))
       .groupBy(waMessages.messageType);
     const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);

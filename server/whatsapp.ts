@@ -575,7 +575,7 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
   return { created, skipped, errors, details };
 }
 
-const MIN_SEND_GAP_MS = 30 * 60 * 1000;
+const MIN_SEND_GAP_MS = 10 * 60 * 1000;
 
 function calculateDynamicGap(sentToday: number, effectiveLimit: number): number {
   const now = new Date();
