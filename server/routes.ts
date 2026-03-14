@@ -11,7 +11,7 @@ import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioS
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
 import { appConfig } from "@shared/schema";
-import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders } from "./whatsapp";
+import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage } from "./whatsapp";
 
 // Auto-activate specialist after receiving first review (configurable threshold)
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
@@ -1572,8 +1572,8 @@ ${magicLink}`;
   });
 
   // =====================
-  // SPECIALIST: COMPLETE + REQUEST PAYMENT ENDPOINT
-  // ReadyToComplete → PaymentPending
+  // SPECIALIST: REQUEST PAYMENT (Kaspi link)
+  // ReadyToComplete → PaymentRequested
   // =====================
 
   app.post("/api/specialist/bookings/:id/complete-request-payment", async (req, res) => {
@@ -1598,40 +1598,117 @@ ${magicLink}`;
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      if (booking.status !== 'ready_to_complete') {
+      if (booking.status !== 'ready_to_complete' && booking.status !== 'payment_requested') {
         return res.status(409).json({ message: "Визит должен быть в статусе 'Готов к завершению'" });
       }
 
+      const specialist = await storage.getSpecialist(booking.specialistId);
+      if (!specialist) {
+        return res.status(404).json({ message: "Специалист не найден" });
+      }
+
+      const kaspiPhone = (specialist as any).kaspiPhone;
+      const price = req.body.price ? Number(req.body.price) : (booking as any).price;
+
+      if (!kaspiPhone) {
+        return res.status(400).json({ message: "Не указан номер Kaspi для приёма оплаты. Укажите его в настройках профиля." });
+      }
+      if (!price || !Number.isInteger(price) || price <= 0 || price > 10000000) {
+        return res.status(400).json({ message: "Укажите корректную сумму оплаты (целое число от 1 до 10 000 000 ₸)" });
+      }
+
+      const cleanKaspiPhone = kaspiPhone.replace(/\D/g, "");
+      const kaspiLink = `https://kaspi.kz/pay/P2P?phone=${cleanKaspiPhone}&amount=${price}`;
+
       const updated = await storage.updateBooking(bookingId, {
-        status: "payment_pending",
+        status: "payment_requested",
         paymentRequestedAt: new Date(),
         completionType: "with_payment",
-        visitTrustWeight: 0.65,
+        price: price,
       } as any);
 
-      const specialist = await storage.getSpecialist(booking.specialistId);
+      let waSent = false;
+      const customerPhone = booking.customerPhone;
+      if (customerPhone) {
+        const waText = `Спасибо за визит!\n\nОплатить услугу можно через Kaspi:\n\n${kaspiLink}\n\nПосле оплаты мастер завершит визит и отправит ссылку для отзыва.`;
+        const waResult = await sendDirectWaMessage(customerPhone, waText, bookingId);
+        waSent = waResult.success;
+        if (!waSent) {
+          console.error(`[KASPI_PAYMENT] WA send failed for booking=${bookingId}: ${waResult.error}`);
+        }
+      }
 
+      console.log(`[KASPI_PAYMENT] booking=${bookingId} status=payment_requested price=${price} kaspiPhone=${cleanKaspiPhone} waSent=${waSent} userId=${userId}`);
+
+      res.json({ booking: updated, kaspiLink, waSent });
+    } catch (err: any) {
+      console.error("Error requesting payment:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // =====================
+  // SPECIALIST: MARK PAID
+  // PaymentRequested → Completed + magic link + WA review
+  // =====================
+
+  app.post("/api/specialist/bookings/:id/mark-paid", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || (user.role !== 'specialist' && user.role !== 'admin')) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      const bookingId = Number(req.params.id);
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Визит не найден" });
+      }
+
+      if (user.role === 'specialist' && user.specialistId !== booking.specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+
+      if (booking.status !== 'payment_requested') {
+        return res.status(409).json({ message: "Визит должен быть в статусе 'Ожидание оплаты'" });
+      }
+
+      const specialist = await storage.getSpecialist(booking.specialistId);
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";
+      const trustWeight = isManualBooking ? 0.6 : 1.05;
+
+      const finalBooking = await storage.updateBooking(bookingId, {
+        status: "completed",
+        paymentStatus: "paid",
+        paymentReceivedAt: new Date(),
+        visitTrustWeight: trustWeight,
+      } as any);
+
+      await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
+
       if (isAltegioConfigured() && booking.updatedFrom !== "altegio" && !isManualBooking) {
         await storage.updateBooking(bookingId, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
         syncWithRetry(
-          { ...booking, status: "payment_pending", updatedFrom: "rateus" },
+          { ...booking, status: "completed", updatedFrom: "rateus" },
           specialist ? { altegioStaffId: (specialist as any).altegioStaffId, altegioCompanyId: (specialist as any).altegioCompanyId } : null,
           "complete",
         );
       }
 
-      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} status=payment_pending source=specialist_request_payment userId=${userId} manualBooking=${isManualBooking}`);
+      const magicLinkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, 'specialist_mark_paid');
+      
+      await checkAndAutoActivateSpecialist(booking.specialistId);
 
-      const trustWeight = isManualBooking ? 0.6 : 0.65;
-      const finalBooking = await storage.updateBooking(bookingId, { status: "completed", visitTrustWeight: trustWeight } as any);
-      await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
-      const magicLinkCreated = await tryCreateMagicLinkForCompletedVisit(bookingId, 'specialist_request_payment');
-      console.log(`[VISIT_STATUS_AUTO] booking=${bookingId} completed via request_payment, magicLink=${magicLinkCreated} trustWeight=${trustWeight} manualBooking=${isManualBooking}`);
+      console.log(`[KASPI_PAYMENT] booking=${bookingId} marked_paid status=completed trustWeight=${trustWeight} magicLink=${magicLinkCreated} userId=${userId}`);
 
       res.json({ booking: finalBooking, magicLinkCreated });
     } catch (err: any) {
-      console.error("Error requesting payment:", err);
+      console.error("Error marking paid:", err);
       res.status(500).json({ message: err.message });
     }
   });
@@ -1739,12 +1816,8 @@ ${magicLink}`;
         return res.status(409).json({ message: "Визит уже отменён" });
       }
 
-      if (booking.status === 'payment_pending') {
-        return res.status(409).json({ message: "Нельзя отменить визит — ожидается оплата" });
-      }
-
-      if (booking.status !== 'scheduled' && booking.status !== 'ready_to_complete') {
-        return res.status(409).json({ message: "Отмена доступна только для запланированных визитов" });
+      if (booking.status !== 'scheduled' && booking.status !== 'ready_to_complete' && booking.status !== 'payment_requested') {
+        return res.status(409).json({ message: "Отмена доступна только для запланированных визитов или ожидающих оплату" });
       }
 
       if (booking.hasReview) {
@@ -1978,7 +2051,7 @@ ${magicLink}`;
     if (opts?.externalPaymentId) updateData.externalPaymentId = opts.externalPaymentId;
     if (opts?.altegioOperationId) updateData.altegioOperationId = opts.altegioOperationId;
 
-    if (booking.status === 'payment_pending') {
+    if (booking.status === 'payment_pending' || booking.status === 'payment_requested') {
       updateData.status = 'completed';
     }
 
@@ -1992,7 +2065,7 @@ ${magicLink}`;
       return { success: true, magicLinkCreated: false, reason: 'PAID_AFTER_CANCELLED' };
     }
 
-    if (booking.status !== 'completed' && booking.status !== 'payment_pending') {
+    if (booking.status !== 'completed' && booking.status !== 'payment_pending' && booking.status !== 'payment_requested') {
       console.warn(`[PAYMENT_DETECTED] booking=${bookingId} source=${source} result=NOT_COMPLETED — status=${booking.status}, payment recorded, no magic link`);
       return { success: true, magicLinkCreated: false, reason: 'NOT_COMPLETED' };
     }

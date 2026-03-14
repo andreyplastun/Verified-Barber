@@ -354,11 +354,46 @@ export default function SpecialistDashboard() {
 
   const [cancellingBookingId, setCancellingBookingId] = useState<number | null>(null);
 
+  const [priceDialogBookingId, setPriceDialogBookingId] = useState<number | null>(null);
+  const [priceInputValue, setPriceInputValue] = useState<string>('');
+
   const completeRequestPaymentMutation = useMutation({
-    mutationFn: async (bookingId: number) => {
+    mutationFn: async ({ bookingId, price }: { bookingId: number; price: number }) => {
       if (!currentUser?.id) throw new Error('Not authorized');
       setCompletingBookingId(bookingId);
       const res = await fetch(`/api/specialist/bookings/${bookingId}/complete-request-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({ price }),
+      });
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Ошибка');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      setCompletingBookingId(null);
+      setPriceDialogBookingId(null);
+      setPriceInputValue('');
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      toast({ title: 'Запрос оплаты отправлен клиенту' });
+    },
+    onError: (err: Error) => {
+      setCompletingBookingId(null);
+      toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
+    },
+  });
+
+  const markPaidMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      if (!currentUser?.id) throw new Error('Not authorized');
+      setCompletingBookingId(bookingId);
+      const res = await fetch(`/api/specialist/bookings/${bookingId}/mark-paid`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -375,7 +410,7 @@ export default function SpecialistDashboard() {
       setCompletingBookingId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-      toast({ title: 'Запрос оплаты отправлен' });
+      toast({ title: 'Оплата подтверждена, визит завершён' });
     },
     onError: (err: Error) => {
       setCompletingBookingId(null);
@@ -525,7 +560,7 @@ export default function SpecialistDashboard() {
 
   const isManualBooking = (b: any) => b.bookingSource === 'specialist_manual' || (!b.altegioAppointmentId && b.bookingSource !== 'altegio');
   const activeBookings = (bookings?.filter(b => 
-    b.status === 'scheduled' || b.status === 'ready_to_complete' || b.status === 'payment_pending'
+    b.status === 'scheduled' || b.status === 'ready_to_complete' || b.status === 'payment_pending' || b.status === 'payment_requested'
   ) || []).sort((a, b) => {
     const aManual = isManualBooking(a);
     const bManual = isManualBooking(b);
@@ -1193,7 +1228,7 @@ export default function SpecialistDashboard() {
         </CardContent>
       </Card>
 
-      {activeBookings.some(b => b.status === 'ready_to_complete' || b.status === 'payment_pending') && (
+      {activeBookings.some(b => b.status === 'ready_to_complete' || b.status === 'payment_pending' || b.status === 'payment_requested') && (
         <Card className="border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-950/30">
           <CardContent className="py-4">
             <div className="flex items-start gap-3">
@@ -1350,7 +1385,7 @@ export default function SpecialistDashboard() {
                         isNotCompleted ? 'bg-muted/30 opacity-60' :
                         isManual ? 'bg-green-50/50 dark:bg-green-950/20 border border-green-200 dark:border-green-800' :
                         status === 'ready_to_complete' ? 'bg-amber-50/50 dark:bg-amber-950/20' :
-                        status === 'payment_pending' ? 'bg-blue-50/50 dark:bg-blue-950/20' :
+                        (status === 'payment_pending' || status === 'payment_requested') ? 'bg-blue-50/50 dark:bg-blue-950/20' :
                         'bg-muted/50'
                       }`}
                       data-testid={`booking-item-${booking.id}`}
@@ -1422,12 +1457,15 @@ export default function SpecialistDashboard() {
                             <Button
                               size="sm"
                               className="flex-1"
-                              onClick={() => completeRequestPaymentMutation.mutate(booking.id)}
+                              onClick={() => {
+                                setPriceDialogBookingId(booking.id);
+                                setPriceInputValue((booking as any).price ? String((booking as any).price) : '');
+                              }}
                               disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
                               data-testid={`button-request-payment-${booking.id}`}
                             >
                               <CheckCircle2 className="w-4 h-4 mr-2" />
-                              {completingBookingId === booking.id ? 'Загрузка...' : 'Запросить оплату'}
+                              Запросить оплату
                             </Button>
                             <Button
                               size="sm"
@@ -1449,6 +1487,47 @@ export default function SpecialistDashboard() {
                               data-testid={`button-cancel-visit-${booking.id}`}
                             >
                               {cancellingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Не состоялся'}
+                            </Button>
+                          </div>
+                        </>
+                      ) : status === 'payment_requested' ? (
+                        <>
+                          <div className="flex items-center gap-1.5 text-xs text-blue-600 dark:text-blue-400" data-testid={`text-payment-requested-${booking.id}`}>
+                            <Clock className="w-3 h-3" />
+                            <span>Ожидание оплаты{(booking as any).price ? ` — ${(booking as any).price} ₸` : ''}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => markPaidMutation.mutate(booking.id)}
+                              disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
+                              data-testid={`button-mark-paid-${booking.id}`}
+                            >
+                              <CheckCircle2 className="w-4 h-4 mr-2" />
+                              {completingBookingId === booking.id ? 'Загрузка...' : 'Отметить оплату'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setPriceInputValue((booking as any).price?.toString() || '');
+                                setPriceDialogBookingId(booking.id);
+                              }}
+                              disabled={completeRequestPaymentMutation.isPending}
+                              data-testid={`button-resend-payment-${booking.id}`}
+                            >
+                              Повторить
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-xs text-muted-foreground"
+                              onClick={() => cancelBookingMutation.mutate(booking.id)}
+                              disabled={cancellingBookingId === booking.id}
+                              data-testid={`button-cancel-payment-${booking.id}`}
+                            >
+                              {cancellingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Отменить'}
                             </Button>
                           </div>
                         </>
@@ -1669,6 +1748,44 @@ export default function SpecialistDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={priceDialogBookingId !== null} onOpenChange={(open) => { if (!open) { setPriceDialogBookingId(null); setPriceInputValue(''); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Запросить оплату через Kaspi</DialogTitle>
+            <DialogDescription>
+              Клиент получит ссылку для оплаты через Kaspi
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Сумма (₸)</label>
+              <input
+                type="number"
+                min="1"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                placeholder="Введите сумму"
+                value={priceInputValue}
+                onChange={(e) => setPriceInputValue(e.target.value)}
+                data-testid="input-payment-price"
+              />
+            </div>
+            <Button
+              className="w-full"
+              disabled={!priceInputValue || Number(priceInputValue) <= 0 || completeRequestPaymentMutation.isPending}
+              onClick={() => {
+                if (priceDialogBookingId && priceInputValue) {
+                  completeRequestPaymentMutation.mutate({ bookingId: priceDialogBookingId, price: Number(priceInputValue) });
+                }
+              }}
+              data-testid="button-confirm-request-payment"
+            >
+              {completeRequestPaymentMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              Отправить запрос оплаты
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

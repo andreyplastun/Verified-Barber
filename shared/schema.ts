@@ -106,7 +106,7 @@ export const bookings = pgTable("bookings", {
   customerPhone: text("customer_phone"),
   customerEmail: text("customer_email"),
   appointmentTime: timestamp("appointment_time").notNull(),
-  status: text("status", { enum: ["scheduled", "ready_to_complete", "payment_pending", "completed", "cancelled"] }).default("scheduled").notNull(),
+  status: text("status", { enum: ["scheduled", "ready_to_complete", "payment_pending", "payment_requested", "completed", "cancelled"] }).default("scheduled").notNull(),
   hasReview: boolean("has_review").default(false).notNull(),
   altegioAppointmentId: integer("altegio_appointment_id"),
   altegioStaffId: integer("altegio_staff_id"),
@@ -132,6 +132,7 @@ export const bookings = pgTable("bookings", {
   normalizedPhone: text("normalized_phone"),
   bookingSource: text("booking_source", { enum: ["specialist_manual", "altegio", "client_app"] }),
   invalidPhone: boolean("invalid_phone").default(false),
+  price: integer("price"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

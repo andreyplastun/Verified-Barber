@@ -214,6 +214,7 @@ app.use((req, res, next) => {
 
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invalid_phone boolean DEFAULT false;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS price integer;
 
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
@@ -332,7 +333,7 @@ app.use((req, res, next) => {
       const result = await pool.query(
         `UPDATE bookings
          SET status = 'completed', visit_trust_weight = COALESCE(visit_trust_weight, 0.65)
-         WHERE status = 'payment_pending'
+         WHERE status IN ('payment_pending', 'payment_requested')
            AND payment_requested_at IS NOT NULL
            AND payment_requested_at <= $1
          RETURNING id, payment_requested_at, payment_status`,
@@ -341,6 +342,15 @@ app.use((req, res, next) => {
       if (result.rows.length > 0) {
         for (const row of result.rows) {
           console.log(`[VISIT_STATUS_AUTO] booking=${row.id} status=completed reason=payment_pending_timeout paymentStatus=${row.payment_status} paymentRequestedAt=${row.payment_requested_at}`);
+          try {
+            const booking = await storage.getBooking(row.id);
+            if (booking) {
+              const { tryCreateMagicLinkForCompletedVisit } = await import("./whatsapp.js");
+              await tryCreateMagicLinkForCompletedVisit(booking, storage, "payment_timeout");
+            }
+          } catch (mlErr) {
+            console.error(`[VISIT_STATUS_AUTO] magic link creation failed for booking ${row.id}:`, mlErr);
+          }
         }
         console.log(`[VISIT_STATUS_AUTO] transitioned ${result.rows.length} payment_pending bookings to completed (24h timeout)`);
       }

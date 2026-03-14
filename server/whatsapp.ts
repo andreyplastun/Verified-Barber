@@ -224,6 +224,16 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
   return assistbotMessageId;
 }
 
+export async function sendDirectWaMessage(phone: string, text: string, bookingId: number): Promise<{ success: boolean; assistbotMessageId?: string | null; error?: string }> {
+  try {
+    const assistbotMessageId = await sendViaAssistBot(phone, text, bookingId);
+    return { success: true, assistbotMessageId };
+  } catch (err: any) {
+    console.error(`[WA_DIRECT] Failed to send to phone=${phone} booking=${bookingId}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function testAssistBotConnection(): Promise<{ success: boolean; status?: number; body?: string; error?: string; tokenLength?: number }> {
   const token = await getAssistBotToken();
   if (!token) {
