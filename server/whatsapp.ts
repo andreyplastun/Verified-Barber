@@ -224,7 +224,7 @@ async function spreadAcrossActiveWindow(baseDate: Date, messageType: "primary" |
       .orderBy(asc(waMessages.scheduledAt));
 
     const occupiedSlots = queuedForWindow.map(m => m.scheduledAt!.getTime());
-    const MIN_GAP_MS = 30 * 60 * 1000;
+    const MIN_GAP_MS = 3 * 60 * 1000;
 
     let candidateTime: Date;
     if (occupiedSlots.length === 0) {
@@ -264,7 +264,7 @@ async function spreadAcrossActiveWindow(baseDate: Date, messageType: "primary" |
       }
     }
 
-    console.log(`[WA_SPREAD] Scheduled ${messageType}: ${candidateTime.toISOString()} (${occupiedSlots.length} already in window, gap=30min)`);
+    console.log(`[WA_SPREAD] Scheduled ${messageType}: ${candidateTime.toISOString()} (${occupiedSlots.length} already in window, gap=${Math.round(MIN_GAP_MS / 60000)}min)`);
     return candidateTime;
   } catch (err) {
     const randomOffsetMs = Math.floor(Math.random() * windowMs);
