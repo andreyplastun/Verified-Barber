@@ -591,6 +591,7 @@ export async function processWaQueue(): Promise<void> {
   const settings = await getWaSettings();
 
   if (!settings.enabled) {
+    console.log("[WA_PROCESSOR] WA sending disabled, skipping");
     return;
   }
 
