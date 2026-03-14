@@ -4,7 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
-import { processWaQueue } from "./whatsapp";
+import { processWaQueue, getWaSettings } from "./whatsapp";
 import { syncUpcomingAppointments, isAltegioConfigured } from "./altegio";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
@@ -215,7 +215,7 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invalid_phone boolean DEFAULT false;
 
-      INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'false') ON CONFLICT (key) DO NOTHING;
+      INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '20') ON CONFLICT (key) DO NOTHING;
     `);
@@ -384,6 +384,15 @@ app.use((req, res, next) => {
     }
   } catch (err) {
     console.error("[FIX] Error migrating pending bookings:", err);
+  }
+
+  const waStartupSettings = await getWaSettings();
+  const waQueuedCount = await pool.query(`SELECT COUNT(*) FROM wa_messages WHERE status = 'queued'`);
+  const queuedNum = parseInt(waQueuedCount.rows[0]?.count || "0", 10);
+  if (!waStartupSettings.enabled) {
+    console.warn(`[STARTUP] ⚠️ WARNING: WhatsApp sending is DISABLED! ${queuedNum} messages stuck in queue. Enable via admin panel or set WA_SENDING_ENABLED=true in app_config.`);
+  } else {
+    console.log(`[STARTUP] WhatsApp sending: ON, queued: ${queuedNum}, warmup: ${waStartupSettings.warmupStartDate}, limit: ${waStartupSettings.dailyLimit}`);
   }
 
   await transitionScheduledToReady();

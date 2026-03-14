@@ -591,7 +591,10 @@ export async function processWaQueue(): Promise<void> {
   const settings = await getWaSettings();
 
   if (!settings.enabled) {
-    console.log("[WA_PROCESSOR] WA sending disabled, skipping");
+    const queuedCount = await storage.countWaQueued();
+    if (queuedCount > 0) {
+      console.warn(`[WA_PROCESSOR] ⚠️ WA sending DISABLED but ${queuedCount} messages in queue! Enable in admin panel.`);
+    }
     return;
   }
 
@@ -603,6 +606,7 @@ export async function processWaQueue(): Promise<void> {
 
   const now = new Date();
   if (isInQuietHours(now)) {
+    console.log("[WA_PROCESSOR] Quiet hours (night in Almaty), skipping");
     return;
   }
 
