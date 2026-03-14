@@ -43,7 +43,7 @@ try {
 }
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-03-12-v86-manual-bookings-display";
+const BUILD_VERSION = "2026-03-14-v87-fix-pending-status-wa-bypass";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 const envKeys = Object.keys(process.env).sort();
 console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);
