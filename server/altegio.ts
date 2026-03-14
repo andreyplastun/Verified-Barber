@@ -1204,7 +1204,8 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           customerName: clientName,
           customerPhone: clientPhone || null,
           appointmentTime,
-        });
+          status: "scheduled",
+        } as any);
 
         let status: "scheduled" | "completed" = "scheduled";
         if (appt.attendance === 1) status = "completed";

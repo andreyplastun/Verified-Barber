@@ -568,6 +568,7 @@ export class DatabaseStorage implements IStorage {
       customerPhone: booking.customerPhone,
       customerEmail: booking.customerEmail,
       appointmentTime: booking.appointmentTime,
+      status: "scheduled",
     }).returning();
     return newBooking;
   }

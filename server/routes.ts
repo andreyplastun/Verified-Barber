@@ -608,9 +608,10 @@ export async function registerRoutes(
       const normalized = normalizePhone(input.customerPhone);
       const booking = await storage.createBooking({
         ...input,
+        status: "scheduled",
         normalizedPhone: normalized,
         isNewClient: !normalized && !input.customerPhone,
-      });
+      } as any);
 
       if (isAltegioConfigured()) {
         const specialist = await storage.getSpecialist(booking.specialistId);
@@ -1511,6 +1512,7 @@ ${magicLink}`;
         customerName,
         customerPhone: customerPhone || '',
         appointmentTime: new Date(appointmentTime),
+        status: "scheduled",
         normalizedPhone: normalized,
         isNewClient: !normalized,
         bookingSource: "specialist_manual",
@@ -2953,7 +2955,8 @@ ${magicLink}`;
             customerName: clientName,
             customerPhone: clientPhone || null,
             appointmentTime,
-          });
+            status: "scheduled",
+          } as any);
           await storage.updateBooking(newBooking.id, {
             altegioAppointmentId: altegioId,
             altegioStaffId: staffId || null,
@@ -3000,7 +3003,8 @@ ${magicLink}`;
               customerName: clientName,
               customerPhone: clientPhone || null,
               appointmentTime,
-            });
+              status: "scheduled",
+            } as any);
             await storage.updateBooking(newBooking.id, {
               altegioAppointmentId: altegioId,
               altegioStaffId: staffId || null,

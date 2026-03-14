@@ -374,6 +374,18 @@ app.use((req, res, next) => {
     console.error("[WA_CLEANUP] Error cleaning stale messages:", err);
   }
 
+  // One-time fix: migrate any bookings stuck with 'pending' status to 'scheduled'
+  try {
+    const pendingFix = await pool.query(
+      `UPDATE bookings SET status = 'scheduled' WHERE status = 'pending' RETURNING id`
+    );
+    if (pendingFix.rows.length > 0) {
+      console.log(`[FIX] Migrated ${pendingFix.rows.length} bookings from 'pending' to 'scheduled': ${pendingFix.rows.map((r: any) => r.id).join(', ')}`);
+    }
+  } catch (err) {
+    console.error("[FIX] Error migrating pending bookings:", err);
+  }
+
   await transitionScheduledToReady();
   await flagNotCompletedBookings();
   await transitionPaymentPendingToCompleted();
