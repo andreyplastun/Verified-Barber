@@ -19,6 +19,8 @@ import SpecialistOnboarding from "@/pages/SpecialistOnboarding";
 import SpecialistSignup from "@/pages/SpecialistSignup";
 import LoginPage from "@/pages/LoginPage";
 import PrivacyPage from "@/pages/PrivacyPage";
+import TermsPage from "@/pages/TermsPage";
+import OfferPage from "@/pages/OfferPage";
 import HowTrustWorksPage from "@/pages/HowTrustWorksPage";
 import JoinPage from "@/pages/JoinPage";
 import ClaimProfilePage from "@/pages/ClaimProfilePage";
@@ -172,6 +174,8 @@ function Router() {
       <Route path="/specialist-signup" component={SpecialistSignup} />
       <Route path="/join" component={JoinPage} />
       <Route path="/privacy" component={PrivacyPage} />
+      <Route path="/terms" component={TermsPage} />
+      <Route path="/offer" component={OfferPage} />
       <Route path="/how-trust-works" component={HowTrustWorksPage} />
       <Route path="/claim/:token" component={ClaimProfilePage} />
       <Route component={NotFound} />

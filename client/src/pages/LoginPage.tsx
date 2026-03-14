@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { SignUpForm } from "@/components/auth/SignUpForm";
+import { LegalFooter } from "@/components/LegalFooter";
 import { getCurrentUserWithRole } from "@/lib/auth";
 import { UserPlus } from "lucide-react";
 import logoImage from "@assets/410C2451-35F6-4A38-98C8-FF4645466949_1771319885407.png";
@@ -61,17 +62,9 @@ export default function LoginPage() {
             </Link>
           </div>
 
-          <div className="pt-4 text-center">
-            <Link 
-              href="/privacy" 
-              className="text-xs text-muted-foreground hover:text-foreground underline"
-              data-testid="link-privacy"
-            >
-              Политика конфиденциальности
-            </Link>
-          </div>
         </div>
       </div>
+      <LegalFooter />
     </div>
   );
 }

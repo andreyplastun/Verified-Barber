@@ -63,6 +63,13 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **Background Job**: Queue processed every 5 min alongside other background jobs
 - **Admin UI**: WhatsApp tab in AdminDashboard with toggle, warmup date, daily limit, sent today counter, and message log
 
+### Legal Pages & Consent System
+- **Pages**: `/terms` (TermsPage.tsx - 11 sections, KZ law), `/offer` (OfferPage.tsx - 10 sections, specialist offer), `/privacy` (PrivacyPage.tsx)
+- **LegalFooter**: Reusable component with links to all three legal pages, used on login, signup, and index pages
+- **Consent Logging**: `legal_consents` table records document type, version, IP address, and timestamp. Specialist signup logs consent for all 3 docs; client signup logs terms + privacy.
+- **API**: `POST /api/legal-consent` (log consent), `GET /api/legal-versions` (current document versions)
+- **Versions**: Defined in `LEGAL_DOCUMENT_VERSIONS` constant in `shared/schema.ts` (all currently v1.0)
+
 ### Development Tools
 - **Vite**: Frontend development server.
 - **esbuild**: Production bundling.

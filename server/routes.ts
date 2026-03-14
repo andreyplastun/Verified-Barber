@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, type Booking, type Review, specialistSignupSchema, claimRequestSchema } from "@shared/schema";
+import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
@@ -355,6 +355,35 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/legal-consent", async (req, res) => {
+    try {
+      const { userId, documents } = req.body;
+      if (!documents || !Array.isArray(documents)) {
+        return res.status(400).json({ message: "documents array required" });
+      }
+      const ipAddress = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || '';
+      const ip = typeof ipAddress === 'string' ? ipAddress.split(',')[0].trim() : '';
+      for (const docType of documents) {
+        if (["terms", "privacy", "offer"].includes(docType)) {
+          await db.insert(legalConsents).values({
+            userId: userId || null,
+            documentType: docType,
+            documentVersion: LEGAL_DOCUMENT_VERSIONS[docType as keyof typeof LEGAL_DOCUMENT_VERSIONS],
+            ipAddress: ip,
+          });
+        }
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error("[LEGAL_CONSENT] Error:", err);
+      res.status(500).json({ message: "Error saving consent" });
+    }
+  });
+
+  app.get("/api/legal-versions", (_req, res) => {
+    res.json(LEGAL_DOCUMENT_VERSIONS);
+  });
+
   // Self-signup for specialists (public, no auth required)
   app.post("/api/specialist-signup", async (req, res) => {
     try {
@@ -440,6 +469,20 @@ export async function registerRoutes(
         console.error("[SIGNUP] DB error, rolling back auth user:", dbErr);
         await supabaseAdmin.auth.admin.deleteUser(authUserId);
         throw dbErr;
+      }
+
+      const ipAddress = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress || '';
+      try {
+        for (const docType of ["terms", "privacy", "offer"] as const) {
+          await db.insert(legalConsents).values({
+            userId: authUserId,
+            documentType: docType,
+            documentVersion: LEGAL_DOCUMENT_VERSIONS[docType],
+            ipAddress: typeof ipAddress === 'string' ? ipAddress.split(',')[0].trim() : '',
+          });
+        }
+      } catch (consentErr) {
+        console.error("[SIGNUP] Legal consent logging error:", consentErr);
       }
 
       console.log(`[SIGNUP] New specialist signup: ${name}, email: ${email}, category: ${category}, phone: ${phone}, userId: ${authUserId}, specialistId: ${specialist.id}${validReferrerId ? `, referred by: ${validReferrerId}` : ''}`);

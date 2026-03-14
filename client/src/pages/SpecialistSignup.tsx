@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { categoryLabels } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import { LegalFooter } from "@/components/LegalFooter";
 import { ArrowLeft, CheckCircle } from "lucide-react";
 
 const signupSchema = z.object({
@@ -300,8 +301,13 @@ export default function SpecialistSignup() {
                     />
                   </FormControl>
                   <div className="space-y-1 leading-none">
-                    <FormLabel>
-                      Я понимаю, что клиенты смогут оставлять отзывы
+                    <FormLabel className="text-sm font-normal leading-relaxed">
+                      Я принимаю{" "}
+                      <Link href="/terms" className="text-primary underline" target="_blank">Пользовательское соглашение</Link>
+                      ,{" "}
+                      <Link href="/privacy" className="text-primary underline" target="_blank">Политику конфиденциальности</Link>
+                      {" "}и{" "}
+                      <Link href="/offer" className="text-primary underline" target="_blank">Оферту для специалистов</Link>
                     </FormLabel>
                   </div>
                 </FormItem>
@@ -322,16 +328,10 @@ export default function SpecialistSignup() {
             >
               {signupMutation.isPending ? "Отправка..." : "Отправить заявку"}
             </Button>
-
-            <p className="text-xs text-center text-muted-foreground">
-              Отправляя заявку, вы соглашаетесь с{" "}
-              <Link href="/privacy" className="underline hover:text-foreground">
-                Политикой конфиденциальности
-              </Link>
-            </p>
           </form>
         </Form>
       </div>
+      <LegalFooter />
     </div>
   );
 }

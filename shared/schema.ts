@@ -425,6 +425,23 @@ export const waOptOuts = pgTable("wa_opt_outs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const legalConsents = pgTable("legal_consents", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id"),
+  documentType: text("document_type", { enum: ["terms", "privacy", "offer"] }).notNull(),
+  documentVersion: text("document_version").notNull(),
+  ipAddress: text("ip_address"),
+  consentedAt: timestamp("consented_at").defaultNow().notNull(),
+});
+
+export const LEGAL_DOCUMENT_VERSIONS = {
+  terms: "1.0",
+  privacy: "1.0",
+  offer: "1.0",
+} as const;
+
+export type LegalConsent = typeof legalConsents.$inferSelect;
+
 export type Review = typeof reviews.$inferSelect;
 export type SpecialistPhoto = typeof specialistPhotos.$inferSelect;
 export type MagicLink = typeof magicLinks.$inferSelect;

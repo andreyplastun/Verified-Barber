@@ -1,4 +1,5 @@
 import { useSpecialists } from "@/hooks/use-specialists";
+import { LegalFooter } from "@/components/LegalFooter";
 import { Link, useLocation, useRoute } from "wouter";
 import { MapPin, ArrowRight, Filter, ChevronDown, Star, Info } from "lucide-react";
 import { motion } from "framer-motion";
@@ -403,11 +404,7 @@ export default function SpecialistList() {
           </div>
         )}
 
-        <footer className="text-center py-8 text-xs text-muted-foreground/60">
-          <Link href="/privacy" className="hover:text-muted-foreground underline">
-            Политика конфиденциальности
-          </Link>
-        </footer>
+        <LegalFooter />
       </main>
     </div>
   );
