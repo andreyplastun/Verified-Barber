@@ -1809,14 +1809,20 @@ ${magicLink}`;
       }
 
       if (booking.normalizedPhone) {
-        const recentLinkExists = await storage.getRecentMagicLinkByPhone(booking.specialistId, booking.normalizedPhone, 28);
-        if (recentLinkExists) {
-          console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: same phone ${booking.normalizedPhone} already had magic link for specialist ${booking.specialistId} within 28 days (source=${source})`);
-          await storage.updateBooking(bookingId, {
-            reviewEligibility: false,
-            reviewEligibilityReason: 'repeat_phone_28d',
-          } as any);
-          return false;
+        const isManualAction = (booking as any).bookingSource === "specialist_manual" && 
+          (source === 'specialist_send_review' || source === 'specialist_request_payment');
+        if (!isManualAction) {
+          const recentLinkExists = await storage.getRecentMagicLinkByPhone(booking.specialistId, booking.normalizedPhone, 28);
+          if (recentLinkExists) {
+            console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: same phone ${booking.normalizedPhone} already had magic link for specialist ${booking.specialistId} within 28 days (source=${source})`);
+            await storage.updateBooking(bookingId, {
+              reviewEligibility: false,
+              reviewEligibilityReason: 'repeat_phone_28d',
+            } as any);
+            return false;
+          }
+        } else {
+          console.log(`[MAGIC_LINK] booking=${bookingId}: bypassing repeat_phone_28d for manual booking action (source=${source})`);
         }
       }
 
