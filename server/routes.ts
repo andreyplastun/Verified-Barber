@@ -1981,7 +1981,7 @@ ${magicLink}`;
         false,
         hasClientId ? null : customerPhone
       );
-      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : '';
+      const baseUrl = 'https://www.rateus.kz';
       const fullLink = `${baseUrl}/r/${magicLink.token}`;
       console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
 
