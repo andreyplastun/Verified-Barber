@@ -3541,7 +3541,8 @@ ${magicLink}`;
       const result = await storage.getWaMessages(limit, offset);
       const sentToday = await storage.countWaMessagesSentToday();
       const sentTodayByType = await storage.countWaMessagesSentTodayByType();
-      res.json({ ...result, sentToday, sentTodayByType });
+      const sentYesterdayByType = await storage.countWaMessagesSentYesterdayByType();
+      res.json({ ...result, sentToday, sentTodayByType, sentYesterdayByType });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -3563,12 +3564,24 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
-      const days = Math.min(parseInt(req.query.days as string) || 7, 90);
-      const from = new Date();
-      from.setDate(from.getDate() - days);
-      from.setHours(0, 0, 0, 0);
-      const to = new Date();
-      to.setHours(23, 59, 59, 999);
+      const daysParam = parseInt(req.query.days as string) || 7;
+      let from: Date, to: Date, days: number;
+      if (daysParam === -1) {
+        from = new Date();
+        from.setDate(from.getDate() - 1);
+        from.setHours(0, 0, 0, 0);
+        to = new Date();
+        to.setDate(to.getDate() - 1);
+        to.setHours(23, 59, 59, 999);
+        days = -1;
+      } else {
+        days = Math.min(daysParam, 90);
+        from = new Date();
+        from.setDate(from.getDate() - days);
+        from.setHours(0, 0, 0, 0);
+        to = new Date();
+        to.setHours(23, 59, 59, 999);
+      }
       const stats = await storage.getWaConversionStats(from, to);
       res.json({ ...stats, days });
     } catch (err: any) {

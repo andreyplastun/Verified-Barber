@@ -434,7 +434,7 @@ export default function AdminDashboard() {
     enabled: !!currentUser && activeTab === "whatsapp",
   });
 
-  const { data: waMessagesData, refetch: refetchWaMessages } = useQuery<{ messages: WaMessageType[]; total: number; sentToday: number; sentTodayByType?: { primary: number; reminder: number } }>({
+  const { data: waMessagesData, refetch: refetchWaMessages } = useQuery<{ messages: WaMessageType[]; total: number; sentToday: number; sentTodayByType?: { primary: number; reminder: number }; sentYesterdayByType?: { primary: number; reminder: number } }>({
     queryKey: ["/api/admin/whatsapp/messages", waMessageLimit],
     queryFn: async () => {
       const res = await fetch(`/api/admin/whatsapp/messages?limit=${waMessageLimit}`, {
@@ -1159,6 +1159,11 @@ export default function AdminDashboard() {
                         ? `${waMessagesData.sentTodayByType.primary} осн. + ${waMessagesData.sentTodayByType.reminder} follow-up`
                         : waMessagesData.sentToday}
                     </Badge>
+                    {waMessagesData.sentYesterdayByType && (waMessagesData.sentYesterdayByType.primary > 0 || waMessagesData.sentYesterdayByType.reminder > 0) && (
+                      <Badge variant="outline" data-testid="badge-wa-sent-yesterday">
+                        Вчера: {waMessagesData.sentYesterdayByType.primary} осн. + {waMessagesData.sentYesterdayByType.reminder} follow-up
+                      </Badge>
+                    )}
                     <Badge variant="outline" data-testid="badge-wa-total">
                       Всего: {waMessagesData.total}
                     </Badge>
@@ -1199,6 +1204,7 @@ export default function AdminDashboard() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="1">Сегодня</SelectItem>
+                      <SelectItem value="-1">Вчера</SelectItem>
                       <SelectItem value="7">7 дней</SelectItem>
                       <SelectItem value="14">14 дней</SelectItem>
                       <SelectItem value="30">30 дней</SelectItem>
@@ -1251,7 +1257,8 @@ export default function AdminDashboard() {
                     </div>
                     {waConversion.primarySent + waConversion.reminderSent > 0 && (
                       <div className="text-xs text-muted-foreground text-center pt-1" data-testid="text-wa-total-conversion">
-                        Общая конверсия: {Math.round((waConversion.primaryReviewed + waConversion.reminderReviewed) / (waConversion.primarySent + waConversion.reminderSent) * 100)}% за {waConversion.days} дн.
+                        Общая конверсия: {Math.round((waConversion.primaryReviewed + waConversion.reminderReviewed) / (waConversion.primarySent + waConversion.reminderSent) * 100)}%{' '}
+                        {waConversion.days === -1 ? 'за вчера' : waConversion.days === 1 ? 'за сегодня' : `за ${waConversion.days} дн.`}
                       </div>
                     )}
                   </div>

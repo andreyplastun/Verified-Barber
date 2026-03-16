@@ -129,6 +129,7 @@ export interface IStorage {
   markWaMessageSkipped(id: number, reason: string): Promise<void>;
   countWaMessagesSentToday(): Promise<number>;
   countWaMessagesSentTodayByType(): Promise<{ primary: number; reminder: number }>;
+  countWaMessagesSentYesterdayByType(): Promise<{ primary: number; reminder: number }>;
   getLastWaSentTime(): Promise<Date | null>;
   countWaQueuedForWindow(windowStart: Date, windowEnd: Date): Promise<number>;
   getWaMessages(limit: number, offset: number): Promise<{ messages: WaMessage[]; total: number }>;
@@ -1180,6 +1181,23 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(waMessages.status, "sent"),
         sql`${waMessages.sentAt} >= (CURRENT_DATE AT TIME ZONE 'Asia/Almaty')`
+      ))
+      .groupBy(waMessages.messageType);
+    const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);
+    const reminder = Number(result.find(r => r.messageType === "reminder")?.count || 0);
+    return { primary, reminder };
+  }
+
+  async countWaMessagesSentYesterdayByType(): Promise<{ primary: number; reminder: number }> {
+    const result = await db.select({ 
+      messageType: waMessages.messageType,
+      count: sql<number>`count(*)` 
+    })
+      .from(waMessages)
+      .where(and(
+        eq(waMessages.status, "sent"),
+        sql`${waMessages.sentAt} >= ((CURRENT_DATE - INTERVAL '1 day') AT TIME ZONE 'Asia/Almaty')`,
+        sql`${waMessages.sentAt} < (CURRENT_DATE AT TIME ZONE 'Asia/Almaty')`
       ))
       .groupBy(waMessages.messageType);
     const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);
