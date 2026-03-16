@@ -373,7 +373,7 @@ app.use((req, res, next) => {
          SELECT 1 FROM wa_messages p 
          WHERE p.booking_id = wa_messages.booking_id 
          AND p.message_type = 'primary' 
-         AND p.status = 'sent'
+         AND p.status IN ('sent', 'queued', 'sending')
        ) RETURNING id`
     );
     const totalSkipped = skippedPrimary.rows.length + skippedReminder.rows.length + skippedOrphanReminders.rows.length;
