@@ -366,19 +366,24 @@ app.use((req, res, next) => {
     const skippedReminder = await pool.query(
       `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND message_type = 'reminder' AND scheduled_at < NOW() - INTERVAL '15 hours' RETURNING id`
     );
-    const skippedOrphanReminders = await pool.query(
-      `UPDATE wa_messages SET status = 'skipped', skip_reason = 'orphan_no_primary'
-       WHERE status = 'queued' AND message_type = 'reminder'
-       AND NOT EXISTS (
-         SELECT 1 FROM wa_messages p 
-         WHERE p.booking_id = wa_messages.booking_id 
-         AND p.message_type = 'primary' 
-         AND p.status IN ('sent', 'queued', 'sending')
+    const totalSkipped = skippedPrimary.rows.length + skippedReminder.rows.length;
+    if (totalSkipped > 0) {
+      console.log(`[WA_CLEANUP] Skipped ${totalSkipped} stale queued messages on startup (${skippedPrimary.rows.length} primary, ${skippedReminder.rows.length} reminder)`);
+    }
+    // Restore follow-ups that were wrongly skipped as orphan — only if their primary was sent within last 24h
+    const restoredFollowups = await pool.query(
+      `UPDATE wa_messages SET status = 'queued', skip_reason = NULL
+       WHERE status = 'skipped' AND skip_reason = 'orphan_no_primary' AND message_type = 'reminder'
+       AND EXISTS (
+         SELECT 1 FROM wa_messages p
+         WHERE p.booking_id = wa_messages.booking_id
+         AND p.message_type = 'primary'
+         AND p.status = 'sent'
+         AND p.sent_at > NOW() - INTERVAL '24 hours'
        ) RETURNING id`
     );
-    const totalSkipped = skippedPrimary.rows.length + skippedReminder.rows.length + skippedOrphanReminders.rows.length;
-    if (totalSkipped > 0) {
-      console.log(`[WA_CLEANUP] Skipped ${totalSkipped} stale queued messages on startup (${skippedPrimary.rows.length} primary, ${skippedReminder.rows.length} reminder, ${skippedOrphanReminders.rows.length} orphan)`);
+    if (restoredFollowups.rows.length > 0) {
+      console.log(`[WA_CLEANUP] Restored ${restoredFollowups.rows.length} follow-ups (primary sent within 24h): ${restoredFollowups.rows.map((r: any) => r.id).join(', ')}`);
     }
   } catch (err) {
     console.error("[WA_CLEANUP] Error cleaning stale messages:", err);

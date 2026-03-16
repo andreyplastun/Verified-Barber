@@ -1,0 +1,92 @@
+Fix the WhatsApp follow-up orphan bug and startup cleanup logic.
+
+Problem:
+Follow-up messages are incorrectly marked as orphan when the server restarts because the current cleanup logic assumes a follow-up is orphan if the primary message is not yet sent. But in our architecture primary and follow-up are created at the same time and both start with status = 'queued'.
+
+This causes all follow-ups to be incorrectly marked orphan and skipped.
+
+Current broken logic (server/index.ts startup cleanup):
+
+WHERE status = 'queued'
+AND message_type = 'reminder'
+AND NOT EXISTS (
+  SELECT 1 FROM messages primary
+  WHERE primary.booking_id = messages.booking_id
+  AND primary.message_type = 'primary'
+  AND primary.status = 'sent'
+)
+
+This is wrong because primary may still be 'queued'.
+
+Required fixes:
+
+1. CHANGE ORPHAN LOGIC
+
+A reminder should be considered orphan ONLY if:
+
+- the primary message does not exist at all
+OR
+- the primary message status is 'failed' or 'skipped'
+
+Primary statuses 'queued' and 'sent' must be considered valid.
+
+Correct logic:
+
+WHERE status = 'queued'
+AND message_type = 'reminder'
+AND NOT EXISTS (
+  SELECT 1 FROM messages primary
+  WHERE primary.booking_id = messages.booking_id
+  AND primary.message_type = 'primary'
+)
+
+OR
+
+primary.status IN ('failed','skipped')
+
+
+2. REMOVE STARTUP CLEANUP
+
+Do NOT mark reminders orphan on server startup.
+
+Delete the orphan cleanup that runs in server/index.ts during server boot.
+
+Orphan detection must happen only at the moment of sending the reminder, not during startup.
+
+
+3. PREVENT MASS RESTORE
+
+Do NOT restore all skipped reminders.
+
+Only restore reminders if:
+
+now - visit_time < 24 hours
+
+Older reminders must remain skipped.
+
+
+4. PROTECT WHATSAPP WARMUP LIMIT
+
+Reminder sending must still respect daily limits and follow-up priority logic.
+
+Reminder messages must be processed before primary messages when both are available in the queue.
+
+
+5. LOGGING
+
+Add clear logs for debugging:
+
+[WA_PROCESSOR]
+primary_found
+primary_status
+reminder_sent
+reminder_skipped_orphan
+
+
+Expected result after fix:
+
+- server restart does not kill reminders
+- reminders remain queued if primary is still queued
+- only truly orphan reminders are skipped
+- no mass recovery of old reminders
+- WhatsApp warmup limits remain intact

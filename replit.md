@@ -57,7 +57,7 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **Templates**: 5 variations per type with {clientName}, {specialistNameDative}, {specialistNameGenitive}, {reviewLink} placeholders. Russian declension (dative/genitive) with non-declinable name list for Kazakh names. Random selection, no repeats.
 - **Scheduling**: PRIMARY delay: random 45-75min after visit completion. FOLLOWUP created simultaneously with primary: random 21-24h delay. Quiet hours: 20:00-10:30 Almaty time — messages landing in quiet hours shift to 10:30 next day.
 - **Warmup**: Day1=2, Day2=3, Day3=5, Day4=8, Day5=12, Day6+=min(15, WA_DAILY_LIMIT).
-- **Processor**: Priority: followup > primary. Min gap between sends: random 10-15min. No dynamic gap spreading. Processes 1 message per cycle (every 5min background job).
+- **Processor**: Priority: followup > primary. Min gap between sends: random 10-15min. No dynamic gap spreading. Processes 1 message per cycle (every 5min background job). Orphan detection happens ONLY at send time (not startup) — reminder skipped only if primary doesn't exist or is failed/skipped; deferred if primary is still queued/sending.
 - **Sending**: AssistBot WhatsApp provider via ASSISTBOT_TOKEN env var, endpoint: POST https://lk.assistbot.ru/api/web/index.php/sms/
 - **Retry**: 2 attempts max, 10-30 min random delay between retries
 - **Expiry**: Queued messages older than 7 days auto-expire (status=skipped, reason=expired_7d)

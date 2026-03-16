@@ -613,11 +613,21 @@ export async function processWaQueue(): Promise<void> {
 
   if (msg.messageType === "reminder") {
     const correspondingPrimary = await storage.getWaMessageByBookingAndType(msg.bookingId, "primary");
-    if (!correspondingPrimary || correspondingPrimary.status !== "sent") {
-      await storage.markWaMessageSkipped(msg.id, "primary_not_sent");
-      console.log(`[WA_PROCESSOR] Skipped reminder msg=${msg.id} reason=primary_not_sent`);
+    if (!correspondingPrimary) {
+      await storage.markWaMessageSkipped(msg.id, "orphan_no_primary");
+      console.log(`[WA_PROCESSOR] Skipped reminder msg=${msg.id} booking=${msg.bookingId} reason=orphan_no_primary primary_found=false`);
       return;
     }
+    if (correspondingPrimary.status === "failed" || correspondingPrimary.status === "skipped") {
+      await storage.markWaMessageSkipped(msg.id, "primary_terminal");
+      console.log(`[WA_PROCESSOR] Skipped reminder msg=${msg.id} booking=${msg.bookingId} reason=primary_terminal primary_status=${correspondingPrimary.status}`);
+      return;
+    }
+    if (correspondingPrimary.status === "queued" || correspondingPrimary.status === "sending") {
+      console.log(`[WA_PROCESSOR] Deferring reminder msg=${msg.id} booking=${msg.bookingId} reason=primary_pending primary_status=${correspondingPrimary.status}`);
+      return;
+    }
+    console.log(`[WA_PROCESSOR] Reminder msg=${msg.id} booking=${msg.bookingId} primary_found=true primary_status=${correspondingPrimary.status}`);
   }
 
   await storage.markWaMessageSending(msg.id);
