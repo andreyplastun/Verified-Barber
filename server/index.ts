@@ -211,6 +211,7 @@ app.use((req, res, next) => {
       );
 
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS assistbot_message_id TEXT;
+      ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
 
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invalid_phone boolean DEFAULT false;
@@ -219,6 +220,13 @@ app.use((req, res, next) => {
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '20') ON CONFLICT (key) DO NOTHING;
+    `);
+
+    // Backfill dedupe_key for existing wa_messages and create unique index
+    await pool.query(`
+      UPDATE wa_messages SET dedupe_key = CONCAT(message_type, '_', booking_id)
+      WHERE dedupe_key IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS wa_messages_dedupe_key_idx ON wa_messages (dedupe_key) WHERE dedupe_key IS NOT NULL;
     `);
 
     await pool.query(`
@@ -360,30 +368,17 @@ app.use((req, res, next) => {
   }
 
   try {
-    const skippedPrimary = await pool.query(
-      `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND message_type = 'primary' AND scheduled_at < NOW() - INTERVAL '30 hours' RETURNING id`
+    const staleSkipped = await pool.query(
+      `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND scheduled_at < NOW() - INTERVAL '48 hours' RETURNING id`
     );
-    const skippedReminder = await pool.query(
-      `UPDATE wa_messages SET status = 'skipped', skip_reason = 'stale_on_deploy' WHERE status = 'queued' AND message_type = 'reminder' AND scheduled_at < NOW() - INTERVAL '15 hours' RETURNING id`
-    );
-    const totalSkipped = skippedPrimary.rows.length + skippedReminder.rows.length;
-    if (totalSkipped > 0) {
-      console.log(`[WA_CLEANUP] Skipped ${totalSkipped} stale queued messages on startup (${skippedPrimary.rows.length} primary, ${skippedReminder.rows.length} reminder)`);
+    if (staleSkipped.rows.length > 0) {
+      console.log(`[WA_CLEANUP] Skipped ${staleSkipped.rows.length} stale queued messages on startup (older than 48h)`);
     }
-    // Restore follow-ups that were wrongly skipped as orphan — only if their primary was sent within last 24h
-    const restoredFollowups = await pool.query(
-      `UPDATE wa_messages SET status = 'queued', skip_reason = NULL
-       WHERE status = 'skipped' AND skip_reason = 'orphan_no_primary' AND message_type = 'reminder'
-       AND EXISTS (
-         SELECT 1 FROM wa_messages p
-         WHERE p.booking_id = wa_messages.booking_id
-         AND p.message_type = 'primary'
-         AND p.status = 'sent'
-         AND p.sent_at > NOW() - INTERVAL '24 hours'
-       ) RETURNING id`
+    const stuckReset = await pool.query(
+      `UPDATE wa_messages SET status = 'queued' WHERE status = 'sending' RETURNING id`
     );
-    if (restoredFollowups.rows.length > 0) {
-      console.log(`[WA_CLEANUP] Restored ${restoredFollowups.rows.length} follow-ups (primary sent within 24h): ${restoredFollowups.rows.map((r: any) => r.id).join(', ')}`);
+    if (stuckReset.rows.length > 0) {
+      console.log(`[WA_CLEANUP] Reset ${stuckReset.rows.length} stuck 'sending' messages to 'queued'`);
     }
   } catch (err) {
     console.error("[WA_CLEANUP] Error cleaning stale messages:", err);
@@ -419,11 +414,6 @@ app.use((req, res, next) => {
     await transitionScheduledToReady();
     await flagNotCompletedBookings();
     await transitionPaymentPendingToCompleted();
-    try {
-      await processWaQueue();
-    } catch (err) {
-      console.error("[WA_PROCESSOR] Error processing WhatsApp queue:", err);
-    }
     altegioSyncCounter++;
     if (altegioSyncCounter >= ALTEGIO_SYNC_EVERY_N) {
       altegioSyncCounter = 0;
@@ -439,7 +429,16 @@ app.use((req, res, next) => {
       }
     }
   }, TRANSITION_INTERVAL_MS);
-  console.log(`[STARTUP] Background jobs started (every ${TRANSITION_INTERVAL_MS / 60000} min, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, wa_queue=enabled, altegio_sync=every ${ALTEGIO_SYNC_EVERY_N * TRANSITION_INTERVAL_MS / 60000} min)`);
+
+  const WA_QUEUE_INTERVAL_MS = 60 * 1000;
+  setInterval(async () => {
+    try {
+      await processWaQueue();
+    } catch (err) {
+      console.error("[WA_PROCESSOR] Error processing WhatsApp queue:", err);
+    }
+  }, WA_QUEUE_INTERVAL_MS);
+  console.log(`[STARTUP] Background jobs started (transitions every ${TRANSITION_INTERVAL_MS / 60000} min, wa_queue every ${WA_QUEUE_INTERVAL_MS / 1000}s, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, altegio_sync=every ${ALTEGIO_SYNC_EVERY_N * TRANSITION_INTERVAL_MS / 60000} min)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

@@ -417,6 +417,7 @@ export const waMessages = pgTable("wa_messages", {
   lastError: text("last_error"),
   skipReason: text("skip_reason"),
   assistbotMessageId: text("assistbot_message_id"),
+  dedupeKey: text("dedupe_key").unique(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

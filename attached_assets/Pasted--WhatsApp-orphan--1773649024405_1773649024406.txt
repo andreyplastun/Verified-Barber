@@ -1,0 +1,223 @@
+ЗАДАНИЕ АГЕНТУ
+
+Тема: Исправить архитектуру очереди WhatsApp сообщений (устранить orphan-баги, рестарт-баги и дубли сообщений)
+
+Цель  
+Переписать логику очереди WhatsApp сообщений на простую event-based модель, которая:
+
+- не ломается при рестарте сервера  
+- не использует orphan-cleanup  
+- создаёт follow-up только после отправки primary  
+- предотвращает дубли сообщений  
+- сохраняет лимиты прогрева WhatsApp  
+- сохраняет quiet hours  
+
+────────────────
+
+1. СТРУКТУРА ТАБЛИЦЫ
+
+Используем одну очередь сообщений.
+
+messages
+
+id  
+booking_id  
+type            ('PRIMARY' | 'FOLLOWUP')  
+status          ('queued' | 'sent' | 'failed')  
+scheduled_at  
+created_at  
+sent_at  
+attempts  
+dedupe_key  
+
+dedupe_key должен быть UNIQUE.
+
+Примеры dedupe_key:
+
+primary_123  
+followup_123  
+
+Это защита от дублей сообщений.
+
+────────────────
+
+2. СОЗДАНИЕ СООБЩЕНИЯ ПОСЛЕ ВИЗИТА
+
+Когда визит получает статус completed:
+
+создаём только PRIMARY сообщение.
+
+SQL:
+
+INSERT INTO messages
+(type,status,scheduled_at,booking_id,created_at,dedupe_key)
+VALUES
+(
+'PRIMARY',
+'queued',
+NOW() + INTERVAL '45 minutes',
+:booking_id,
+NOW(),
+CONCAT('primary_', :booking_id)
+);
+
+FOLLOWUP на этом этапе НЕ создаётся.
+
+────────────────
+
+3. ПРОЦЕССОР ОЧЕРЕДИ
+
+Процессор запускается каждые 60 секунд.
+
+Pseudo-код:
+
+function processQueue():
+
+    if quietHours():
+        return
+
+    dailyLimit = getDailyLimit()
+    sentToday = countSentToday()
+
+    available = dailyLimit - sentToday
+
+    if available <= 0:
+        return
+
+    messages = SELECT *
+        FROM messages
+        WHERE status='queued'
+        AND scheduled_at <= NOW()
+        ORDER BY
+            CASE type
+                WHEN 'FOLLOWUP' THEN 1
+                ELSE 2
+            END,
+            scheduled_at
+        LIMIT available
+
+    for msg in messages:
+        sendMessage(msg)
+
+FOLLOWUP имеет приоритет перед PRIMARY.
+
+────────────────
+
+4. ОТПРАВКА СООБЩЕНИЯ
+
+function sendMessage(msg):
+
+    try:
+
+        sendWhatsApp(msg)
+
+        UPDATE messages
+        SET status='sent',
+            sent_at=NOW()
+        WHERE id=msg.id
+
+        if msg.type == 'PRIMARY':
+            createFollowup(msg.booking_id)
+
+    catch error:
+
+        UPDATE messages
+        SET status='failed',
+            attempts = attempts + 1
+        WHERE id=msg.id
+
+────────────────
+
+5. СОЗДАНИЕ FOLLOW-UP
+
+Follow-up создаётся только после успешной отправки primary.
+
+function createFollowup(bookingId):
+
+    INSERT INTO messages
+    (
+        type,
+        status,
+        scheduled_at,
+        booking_id,
+        created_at,
+        dedupe_key
+    )
+    VALUES
+    (
+        'FOLLOWUP',
+        'queued',
+        NOW() + INTERVAL '21 hours',
+        bookingId,
+        NOW(),
+        CONCAT('followup_', bookingId)
+    )
+    ON CONFLICT (dedupe_key) DO NOTHING
+
+────────────────
+
+6. QUIET HOURS
+
+function quietHours():
+
+    now = currentTime()
+
+    return now between 20:00 and 10:30
+
+Если сейчас тихие часы — сообщения не отправляются.
+
+────────────────
+
+7. ДНЕВНОЙ ЛИМИТ ПРОГРЕВА
+
+function countSentToday():
+
+    SELECT count(*)
+    FROM messages
+    WHERE status='sent'
+    AND DATE(sent_at) = CURRENT_DATE
+
+dailyLimit берётся из текущей warmup логики.
+
+────────────────
+
+8. ЗАЩИТА ОТ ДУБЛЕЙ (КРИТИЧНО)
+
+WhatsApp дубли могут происходить при:
+
+- рестарте сервера  
+- повторном запуске процессора  
+- retry после timeout  
+- сетевых ошибках  
+
+Поэтому dedupe_key должен быть UNIQUE.
+
+Это гарантирует, что:
+
+один визит → максимум 1 primary и 1 follow-up.
+
+────────────────
+
+9. УДАЛИТЬ СТАРУЮ ЛОГИКУ
+
+Полностью удалить:
+
+- orphan_no_primary  
+- orphan cleanup при старте сервера  
+- reminder cleanup при boot  
+- проверки primary.status='sent' перед существованием followup  
+
+Follow-up должен существовать только после успешного primary.
+
+────────────────
+
+ОЖИДАЕМЫЙ РЕЗУЛЬТАТ
+
+После рефакторинга:
+
+- рестарт сервера не ломает очередь  
+- follow-up всегда создаётся после primary  
+- orphan-баги исчезают  
+- WhatsApp дубли невозможны  
+- соблюдаются лимиты прогрева  
+- код процессора становится проще и стабильнее

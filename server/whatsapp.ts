@@ -272,16 +272,7 @@ export async function enqueueReviewMessage(params: {
   delayMs?: number;
   immediate?: boolean;
 }): Promise<void> {
-  const existing = await storage.getWaMessageByBookingAndType(params.bookingId, params.messageType);
-  if (existing) {
-    if (existing.status === "failed" || existing.status === "skipped") {
-      await db.delete(waMessages).where(eq(waMessages.id, existing.id));
-      console.log(`[WA_QUEUE] Deleted old ${existing.status} ${params.messageType} id=${existing.id} for booking=${params.bookingId}, will re-create`);
-    } else {
-      console.log(`[WA_QUEUE] Skipping duplicate ${params.messageType} for booking=${params.bookingId} (status=${existing.status})`);
-      return;
-    }
-  }
+  const dedupeKey = `${params.messageType}_${params.bookingId}`;
 
   const isOptedOut = await storage.isWaOptedOut(params.customerPhone.replace(/\D/g, ""));
   if (isOptedOut) {
@@ -298,9 +289,21 @@ export async function enqueueReviewMessage(params: {
     reviewLink: params.reviewLink,
   });
 
+  const now = new Date();
+  let scheduledAt: Date;
+
   if (params.immediate) {
-    const scheduledAt = new Date();
-    const enqueued = await storage.enqueueWaMessage({
+    scheduledAt = now;
+  } else if (params.messageType === "primary") {
+    const delayMs = params.delayMs || randomMinutes(45, 75);
+    scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
+  } else {
+    const delayMs = params.delayMs || randomMinutes(21 * 60, 24 * 60);
+    scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
+  }
+
+  try {
+    await db.insert(waMessages).values({
       bookingId: params.bookingId,
       specialistId: params.specialistId,
       customerPhone: params.customerPhone.replace(/\D/g, ""),
@@ -311,105 +314,119 @@ export async function enqueueReviewMessage(params: {
       templateIndex,
       messageText,
       scheduledAt,
-    });
-    console.log(`[WA_IMMEDIATE] Enqueued IMMEDIATE ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")}`);
-    try {
-      const msgId = (enqueued as any)?.id;
-      if (msgId) {
-        const sendResult = await sendWaMessageNow(msgId);
-        console.log(`[WA_IMMEDIATE] Send result for booking=${params.bookingId}: success=${sendResult.success} error=${sendResult.error || 'none'}`);
-      }
-    } catch (sendErr: any) {
-      console.error(`[WA_IMMEDIATE] Send error for booking=${params.bookingId}: ${sendErr.message}`);
+      dedupeKey,
+    }).onConflictDoNothing();
+  } catch (err: any) {
+    if (err.code === '23505' && err.constraint?.includes('dedupe')) {
+      console.log(`[WA_QUEUE] Dedupe: ${params.messageType} for booking=${params.bookingId} already exists`);
+      return;
     }
+    throw err;
+  }
 
-    if (params.messageType === "primary") {
-      const now = new Date();
-      const reminderDelayMs = randomMinutes(21 * 60, 24 * 60);
-      const reminderScheduledAt = adjustForQuietHours(new Date(now.getTime() + reminderDelayMs));
-      const reminderLastIndex = await storage.getLastSentTemplateIndex("reminder");
-      const reminderTemplateIndex = pickTemplateIndex("reminder", reminderLastIndex);
-      const reminderTemplates = getTemplates("reminder");
-      const reminderText = renderTemplate(reminderTemplates[reminderTemplateIndex], {
-        clientName: params.customerName,
-        specialistName: params.specialistName,
-        reviewLink: params.reviewLink,
-      });
-      const existingReminder = await storage.getWaMessageByBookingAndType(params.bookingId, "reminder");
-      if (!existingReminder) {
-        await storage.enqueueWaMessage({
-          bookingId: params.bookingId,
-          specialistId: params.specialistId,
-          customerPhone: params.customerPhone.replace(/\D/g, ""),
-          customerName: params.customerName,
-          specialistName: params.specialistName,
-          reviewLink: params.reviewLink,
-          messageType: "reminder",
-          templateIndex: reminderTemplateIndex,
-          messageText: reminderText,
-          scheduledAt: reminderScheduledAt,
-        });
-        console.log(`[WA_IMMEDIATE] Enqueued followup for booking=${params.bookingId} scheduledAt=${reminderScheduledAt.toISOString()}`);
-      }
+  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey}`);
+
+  if (params.immediate && params.messageType === "primary") {
+    const [msg] = await db.select().from(waMessages).where(eq(waMessages.dedupeKey, dedupeKey));
+    if (msg) {
+      const sendResult = await sendSingleMessage(msg);
+      console.log(`[WA_IMMEDIATE] Send result for booking=${params.bookingId}: success=${sendResult}`);
     }
+  }
+}
+
+async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void> {
+  const booking = await storage.getBooking(msg.bookingId);
+  if (booking?.hasReview) {
+    console.log(`[WA_FOLLOWUP] Skip followup for booking=${msg.bookingId}: review already submitted`);
     return;
   }
 
-  const now = new Date();
-  let primaryScheduledAt: Date;
+  const dedupeKey = `reminder_${msg.bookingId}`;
+  const delayMs = randomMinutes(21 * 60, 24 * 60);
+  const scheduledAt = adjustForQuietHours(new Date(Date.now() + delayMs));
 
-  if (params.messageType === "primary") {
-    const delayMs = params.delayMs || randomMinutes(45, 75);
-    primaryScheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
-  } else {
-    const delayMs = params.delayMs || randomMinutes(21 * 60, 24 * 60);
-    primaryScheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
-  }
-
-  await storage.enqueueWaMessage({
-    bookingId: params.bookingId,
-    specialistId: params.specialistId,
-    customerPhone: params.customerPhone.replace(/\D/g, ""),
-    customerName: params.customerName,
-    specialistName: params.specialistName,
-    reviewLink: params.reviewLink,
-    messageType: params.messageType,
-    templateIndex,
-    messageText,
-    scheduledAt: primaryScheduledAt,
+  const lastIndex = await storage.getLastSentTemplateIndex("reminder");
+  const templateIndex = pickTemplateIndex("reminder", lastIndex);
+  const templates = getTemplates("reminder");
+  const messageText = renderTemplate(templates[templateIndex], {
+    clientName: msg.customerName,
+    specialistName: msg.specialistName,
+    reviewLink: msg.reviewLink,
   });
 
-  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${primaryScheduledAt.toISOString()}`);
-
-  if (params.messageType === "primary") {
-    const reminderDelayMs = randomMinutes(21 * 60, 24 * 60);
-    const reminderScheduledAt = adjustForQuietHours(new Date(now.getTime() + reminderDelayMs));
-
-    const reminderLastIndex = await storage.getLastSentTemplateIndex("reminder");
-    const reminderTemplateIndex = pickTemplateIndex("reminder", reminderLastIndex);
-    const reminderTemplates = getTemplates("reminder");
-    const reminderText = renderTemplate(reminderTemplates[reminderTemplateIndex], {
-      clientName: params.customerName,
-      specialistName: params.specialistName,
-      reviewLink: params.reviewLink,
-    });
-
-    const existingReminder = await storage.getWaMessageByBookingAndType(params.bookingId, "reminder");
-    if (!existingReminder) {
-      await storage.enqueueWaMessage({
-        bookingId: params.bookingId,
-        specialistId: params.specialistId,
-        customerPhone: params.customerPhone.replace(/\D/g, ""),
-        customerName: params.customerName,
-        specialistName: params.specialistName,
-        reviewLink: params.reviewLink,
-        messageType: "reminder",
-        templateIndex: reminderTemplateIndex,
-        messageText: reminderText,
-        scheduledAt: reminderScheduledAt,
-      });
-      console.log(`[WA_QUEUE] Enqueued followup for booking=${params.bookingId} scheduledAt=${reminderScheduledAt.toISOString()}`);
+  try {
+    await db.insert(waMessages).values({
+      bookingId: msg.bookingId,
+      specialistId: msg.specialistId,
+      customerPhone: msg.customerPhone,
+      customerName: msg.customerName,
+      specialistName: msg.specialistName,
+      reviewLink: msg.reviewLink,
+      messageType: "reminder",
+      templateIndex,
+      messageText,
+      scheduledAt,
+      dedupeKey,
+    }).onConflictDoNothing();
+    console.log(`[WA_FOLLOWUP] Created followup for booking=${msg.bookingId} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey}`);
+  } catch (err: any) {
+    if (err.code === '23505') {
+      console.log(`[WA_FOLLOWUP] Dedupe: followup for booking=${msg.bookingId} already exists`);
+      return;
     }
+    console.error(`[WA_FOLLOWUP] Error creating followup for booking=${msg.bookingId}: ${err.message}`);
+  }
+}
+
+async function sendSingleMessage(msg: typeof waMessages.$inferSelect): Promise<boolean> {
+  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
+  if (isOptedOut) {
+    await storage.markWaMessageSkipped(msg.id, "opt_out");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} reason=opt_out`);
+    return false;
+  }
+
+  const booking = await storage.getBooking(msg.bookingId);
+  if (!booking) {
+    await storage.markWaMessageSkipped(msg.id, "booking_not_found");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} reason=booking_not_found`);
+    return false;
+  }
+  if (booking.hasReview) {
+    await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} reason=review_already_submitted`);
+    return false;
+  }
+  if (booking.status === "cancelled") {
+    await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} reason=booking_cancelled`);
+    return false;
+  }
+
+  await storage.markWaMessageSending(msg.id);
+
+  try {
+    const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
+    await storage.markWaMessageSent(msg.id, assistbotMessageId);
+    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
+
+    if (msg.messageType === "primary") {
+      await createFollowup(msg);
+    }
+    return true;
+  } catch (err: any) {
+    const newAttempts = (msg.attempts || 0) + 1;
+    if (newAttempts >= msg.maxAttempts) {
+      await storage.markWaMessageFailed(msg.id, err.message);
+      console.error(`[WA_PROCESSOR] Failed permanently msg=${msg.id} error=${err.message} attempts=${newAttempts}/${msg.maxAttempts}`);
+    } else {
+      const retryDelayMs = randomMinutes(10, 30);
+      const nextScheduledAt = new Date(Date.now() + retryDelayMs);
+      await storage.markWaMessageFailed(msg.id, err.message, nextScheduledAt);
+      console.error(`[WA_PROCESSOR] Failed msg=${msg.id} error=${err.message} attempt=${newAttempts}/${msg.maxAttempts} retry_at=${nextScheduledAt.toISOString()}`);
+    }
+    return false;
   }
 }
 
@@ -419,25 +436,8 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
   if (!msg) return { success: false, error: "Сообщение не найдено" };
   if (msg.status !== "queued" && msg.status !== "sending") return { success: false, error: `Статус "${msg.status}" — можно отправить только из очереди` };
 
-  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
-  if (isOptedOut) {
-    await storage.markWaMessageSkipped(msg.id, "opt_out");
-    return { success: false, error: "Номер в opt-out списке" };
-  }
-
-  await storage.markWaMessageSending(msg.id);
-
-  try {
-    const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
-    await storage.markWaMessageSent(msg.id, assistbotMessageId);
-    console.log(`[WA_FORCE_SEND] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} assistbot_id=${assistbotMessageId}`);
-  } catch (err: any) {
-    await storage.markWaMessageFailed(msg.id, err.message);
-    console.error(`[WA_FORCE_SEND] Failed msg=${msg.id} error=${err.message}`);
-    return { success: false, error: err.message };
-  }
-
-  return { success: true };
+  const success = await sendSingleMessage(msg);
+  return { success };
 }
 
 export async function backfillMissingReminders(): Promise<{ created: number; skipped: number; errors: number; details: string[] }> {
@@ -454,7 +454,7 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
 
   for (const msg of sentPrimaries) {
     const existingReminder = await storage.getWaMessageByBookingAndType(msg.bookingId, "reminder");
-    if (existingReminder && existingReminder.status !== "failed" && existingReminder.status !== "skipped") {
+    if (existingReminder) {
       skipped++;
       continue;
     }
@@ -464,25 +464,11 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
     if (booking.hasReview) { skipped++; continue; }
 
     try {
-      if (existingReminder && (existingReminder.status === "failed" || existingReminder.status === "skipped")) {
-        await db.delete(waMessages).where(eq(waMessages.id, existingReminder.id));
-      }
-      const reminderDelay = randomMinutes(0, 120);
-      await enqueueReviewMessage({
-        bookingId: msg.bookingId,
-        specialistId: msg.specialistId,
-        customerPhone: msg.customerPhone,
-        customerName: msg.customerName,
-        specialistName: msg.specialistName,
-        reviewLink: msg.reviewLink,
-        messageType: "reminder",
-        delayMs: reminderDelay,
-      });
+      await createFollowup(msg);
       created++;
-      console.log(`[WA_BACKFILL] Created reminder for booking=${msg.bookingId}`);
     } catch (err: any) {
       errors++;
-      console.error(`[WA_BACKFILL] Failed to create reminder for booking=${msg.bookingId}: ${err.message}`);
+      console.error(`[WA_BACKFILL] Failed to create followup for booking=${msg.bookingId}: ${err.message}`);
     }
   }
 
@@ -508,22 +494,16 @@ export async function processWaQueue(): Promise<void> {
   const settings = await getWaSettings();
 
   if (!settings.enabled) {
-    const queuedCount = await storage.countWaQueued();
-    if (queuedCount > 0) {
-      console.warn(`[WA_PROCESSOR] ⚠️ WA sending DISABLED but ${queuedCount} messages in queue! Enable in admin panel.`);
-    }
     return;
   }
 
   const effectiveLimit = getWarmupDailyLimit(settings.warmupStartDate, settings.dailyLimit);
   if (effectiveLimit <= 0) {
-    console.log("[WA_PROCESSOR] Warmup not started yet");
     return;
   }
 
   const now = new Date();
   if (isInQuietHours(now)) {
-    console.log("[WA_PROCESSOR] Quiet hours (20:00-10:30 Almaty)");
     return;
   }
 
@@ -532,34 +512,11 @@ export async function processWaQueue(): Promise<void> {
     console.log(`[WA_PROCESSOR] Expired ${expired} messages older than 7 days`);
   }
 
-  const stuckCutoff = new Date(Date.now() - 10 * 60 * 1000);
-  const stuckRecovered = await db.update(waMessages)
-    .set({ status: "queued" } as any)
-    .where(and(
-      eq(waMessages.status, "sending"),
-      sql`${waMessages.scheduledAt} < ${stuckCutoff}`
-    ))
-    .returning({ id: waMessages.id });
-  if (stuckRecovered.length > 0) {
-    console.log(`[WA_PROCESSOR] Recovered ${stuckRecovered.length} stuck "sending" messages back to queue`);
-  }
-
   const sentToday = await storage.countWaMessagesSentToday();
-  if (sentToday >= effectiveLimit) {
-    const queuedCount = await storage.countWaQueued();
-    console.log(`[WA_PROCESSOR] Daily limit reached (${sentToday}/${effectiveLimit}), ${queuedCount} in queue — waiting for tomorrow`);
-    return;
-  }
+  const available = effectiveLimit - sentToday;
 
-  const lastSentTime = await storage.getLastWaSentTime();
-  if (lastSentTime) {
-    const elapsed = now.getTime() - lastSentTime.getTime();
-    const minGapMs = randomMinutes(10, 15);
-    if (elapsed < minGapMs) {
-      const waitMin = Math.round((minGapMs - elapsed) / 60000);
-      console.log(`[WA_PROCESSOR] Waiting ${waitMin}min (last sent ${Math.round(elapsed / 60000)}min ago, gap=${Math.round(minGapMs / 60000)}min)`);
-      return;
-    }
+  if (available <= 0) {
+    return;
   }
 
   const batch = await db.select().from(waMessages)
@@ -571,75 +528,22 @@ export async function processWaQueue(): Promise<void> {
       sql`CASE WHEN ${waMessages.messageType} = 'reminder' THEN 1 ELSE 2 END`,
       asc(waMessages.scheduledAt)
     )
-    .limit(1);
+    .limit(available);
 
   if (batch.length === 0) {
     return;
   }
 
-  const msg = batch[0];
   const sentTodayByType = await storage.countWaMessagesSentTodayByType();
-  console.log(`[WA_PROCESSOR] Processing ${msg.messageType} msg=${msg.id} booking=${msg.bookingId} (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit})`);
+  console.log(`[WA_PROCESSOR] Processing batch of ${batch.length} messages (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, available=${available})`);
 
-  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
-  if (isOptedOut) {
-    await storage.markWaMessageSkipped(msg.id, "opt_out");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=opt_out`);
-    return;
+  let sentCount = 0;
+  for (const msg of batch) {
+    const success = await sendSingleMessage(msg);
+    if (success) sentCount++;
   }
 
-  const booking = await storage.getBooking(msg.bookingId);
-  if (!booking) {
-    await storage.markWaMessageSkipped(msg.id, "booking_not_found");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=booking_not_found`);
-    return;
-  }
-  if (booking.hasReview) {
-    await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=review_already_submitted`);
-    return;
-  }
-  if (booking.status === "cancelled") {
-    await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=booking_cancelled`);
-    return;
-  }
-
-  if (msg.assistbotMessageId) {
-    await storage.markWaMessageSkipped(msg.id, "duplicate_assistbot_id");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} reason=duplicate_assistbot_id`);
-    return;
-  }
-
-  if (msg.messageType === "reminder") {
-    const correspondingPrimary = await storage.getWaMessageByBookingAndType(msg.bookingId, "primary");
-    if (!correspondingPrimary) {
-      await storage.markWaMessageSkipped(msg.id, "orphan_no_primary");
-      console.log(`[WA_PROCESSOR] Skipped reminder msg=${msg.id} booking=${msg.bookingId} reason=orphan_no_primary primary_found=false`);
-      return;
-    }
-    if (correspondingPrimary.status === "failed" || correspondingPrimary.status === "skipped") {
-      await storage.markWaMessageSkipped(msg.id, "primary_terminal");
-      console.log(`[WA_PROCESSOR] Skipped reminder msg=${msg.id} booking=${msg.bookingId} reason=primary_terminal primary_status=${correspondingPrimary.status}`);
-      return;
-    }
-    if (correspondingPrimary.status === "queued" || correspondingPrimary.status === "sending") {
-      console.log(`[WA_PROCESSOR] Deferring reminder msg=${msg.id} booking=${msg.bookingId} reason=primary_pending primary_status=${correspondingPrimary.status}`);
-      return;
-    }
-    console.log(`[WA_PROCESSOR] Reminder msg=${msg.id} booking=${msg.bookingId} primary_found=true primary_status=${correspondingPrimary.status}`);
-  }
-
-  await storage.markWaMessageSending(msg.id);
-
-  try {
-    const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
-    await storage.markWaMessageSent(msg.id, assistbotMessageId);
-    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
-  } catch (err: any) {
-    const retryDelayMs = randomMinutes(10, 30);
-    const nextScheduledAt = new Date(Date.now() + retryDelayMs);
-    await storage.markWaMessageFailed(msg.id, err.message, nextScheduledAt);
-    console.error(`[WA_PROCESSOR] Failed msg=${msg.id} error=${err.message} attempt=${(msg.attempts || 0) + 1}/${msg.maxAttempts}`);
+  if (sentCount > 0) {
+    console.log(`[WA_PROCESSOR] Batch complete: ${sentCount}/${batch.length} sent`);
   }
 }

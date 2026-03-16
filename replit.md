@@ -50,20 +50,21 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **Reduced Motion**: All animation components respect `prefers-reduced-motion` via Framer Motion's `useReducedMotion()`, returning static fallbacks
 - **Excluded Flows**: No animations on payment, error, or critical alert screens
 
-### WhatsApp Auto-Messaging System (v89 scheduler rewrite)
+### WhatsApp Auto-Messaging System (event-based v90)
 - **Location**: `server/whatsapp.ts`
-- **Tables**: `wa_messages` (queue + log), `wa_opt_outs` (opt-out phones), settings in `app_config` (WA_SENDING_ENABLED, WA_WARMUP_START_DATE, WA_DAILY_LIMIT)
-- **Message Types**: PRIMARY (on visit completion) + FOLLOWUP/REMINDER (21-24h after primary if no review)
+- **Tables**: `wa_messages` (queue + log, `dedupe_key` unique column), `wa_opt_outs` (opt-out phones), settings in `app_config` (WA_SENDING_ENABLED, WA_WARMUP_START_DATE, WA_DAILY_LIMIT)
+- **Message Types**: PRIMARY (on visit completion) + FOLLOWUP/REMINDER (created ONLY after primary is successfully sent, 21-24h delay)
+- **Event-based model**: Only PRIMARY is enqueued at magic link creation. FOLLOWUP is created automatically by `createFollowup()` after primary send succeeds. Deduplication via `dedupe_key` (format: `{type}_{bookingId}`, unique index).
 - **Templates**: 5 variations per type with {clientName}, {specialistNameDative}, {specialistNameGenitive}, {reviewLink} placeholders. Russian declension (dative/genitive) with non-declinable name list for Kazakh names. Random selection, no repeats.
-- **Scheduling**: PRIMARY delay: random 45-75min after visit completion. FOLLOWUP created simultaneously with primary: random 21-24h delay. Quiet hours: 20:00-10:30 Almaty time — messages landing in quiet hours shift to 10:30 next day.
+- **Scheduling**: PRIMARY delay: random 45-75min after visit completion. FOLLOWUP delay: random 21-24h after primary sent. Quiet hours: 20:00-10:30 Almaty time — messages landing in quiet hours shift to 10:30 next day.
 - **Warmup**: Day1=2, Day2=3, Day3=5, Day4=8, Day5=12, Day6+=min(15, WA_DAILY_LIMIT).
-- **Processor**: Priority: followup > primary. Min gap between sends: random 10-15min. No dynamic gap spreading. Processes 1 message per cycle (every 5min background job). Orphan detection happens ONLY at send time (not startup) — reminder skipped only if primary doesn't exist or is failed/skipped; deferred if primary is still queued/sending.
+- **Processor**: Runs every 60s (separate from 5min main background jobs). Batch processing up to daily limit. Priority: followup > primary. No orphan detection needed (followups only exist after primary sent).
 - **Sending**: AssistBot WhatsApp provider via ASSISTBOT_TOKEN env var, endpoint: POST https://lk.assistbot.ru/api/web/index.php/sms/
 - **Retry**: 2 attempts max, 10-30 min random delay between retries
 - **Expiry**: Queued messages older than 7 days auto-expire (status=skipped, reason=expired_7d)
 - **Emergency Stop**: WA_SENDING_ENABLED=false stops all processing
 - **Auto-queue**: Messages enqueued automatically when magic links are created in `tryCreateMagicLinkForCompletedVisit`
-- **Background Job**: Queue processed every 5 min alongside other background jobs
+- **Background Job**: WA queue processed every 60s (separate interval from 5min transition jobs)
 - **Admin UI**: WhatsApp tab in AdminDashboard with toggle, warmup date, daily limit, sent today counter, and message log
 
 ### Legal Pages & Consent System
