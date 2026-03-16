@@ -7,7 +7,7 @@ const PRIMARY_TEMPLATES = [
   "{clientName}, спасибо за визит к {specialistNameDative}. Оставьте, пожалуйста, отзыв: {reviewLink}",
   "{clientName}, благодарим за визит к {specialistNameDative}. Будем признательны за оставленный отзыв: {reviewLink}",
   "{clientName}, как прошёл визит к {specialistNameDative}? Оставьте, пожалуйста, отзыв: {reviewLink}",
-  "{clientName}, спасибо, что выбрали {specialistNameGenitive}. Поделитесь, пожалуйста, впечатлением: {reviewLink}",
+  "{clientName}, спасибо за доверие к {specialistNameDative}. Поделитесь, пожалуйста, впечатлением: {reviewLink}",
   "{clientName}, визит к {specialistNameDative} завершён. Оцените, пожалуйста, специалиста: {reviewLink}",
 ];
 
