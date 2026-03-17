@@ -190,7 +190,13 @@ async function getAssistBotToken(): Promise<string | null> {
   return null;
 }
 
-async function sendViaAssistBot(phone: string, text: string, bookingId: number): Promise<string | null> {
+async function sendViaAssistBot(phone: string, text: string, bookingId: number, source: string = "unknown"): Promise<string | null> {
+  if (/\/r\//.test(text) && !/https:\/\/[^\s]*\/r\//.test(text)) {
+    const stack = new Error().stack || '';
+    console.error(`[CRITICAL_INVALID_LINK] source=${source} booking=${bookingId} text="${text.substring(0, 150)}" stack=${stack}`);
+    throw new Error(`[BLOCKED] Message contains relative /r/ link without domain. source=${source} booking=${bookingId}`);
+  }
+
   const token = await getAssistBotToken();
   if (!token) {
     throw new Error("AssistBot not configured (ASSISTBOT_TOKEN missing)");
@@ -212,7 +218,7 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
     delivery_callback_url: "https://www.rateus.kz/api/webhooks/assistbot-delivery",
   };
 
-  console.log(`[WA_SEND] Sending to phone=${phoneFormatted} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
+  console.log(`[WA_SEND] source=${source} phone=${phoneFormatted} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
   console.log(`[WA_LINK] ${text.match(/https?:\/\/[^\s]+/)?.[0] || 'NO_LINK_FOUND'}`);
 
   const response = await fetch("https://lk.assistbot.ru/api/web/index.php/sms/", {
@@ -244,7 +250,7 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
 
 export async function sendDirectWaMessage(phone: string, text: string, bookingId: number): Promise<{ success: boolean; assistbotMessageId?: string | null; error?: string }> {
   try {
-    const assistbotMessageId = await sendViaAssistBot(phone, text, bookingId);
+    const assistbotMessageId = await sendViaAssistBot(phone, text, bookingId, "direct_api");
     return { success: true, assistbotMessageId };
   } catch (err: any) {
     console.error(`[WA_DIRECT] Failed to send to phone=${phone} booking=${bookingId}: ${err.message}`);
@@ -357,7 +363,7 @@ export async function enqueueReviewMessage(params: {
       ))
       .returning();
     if (claimed.length > 0) {
-      const sendResult = await doSend(claimed[0]);
+      const sendResult = await doSend(claimed[0], "immediate");
       console.log(`[WA_IMMEDIATE] Send result for booking=${params.bookingId}: success=${sendResult}`);
     }
   }
@@ -435,12 +441,9 @@ async function checkPrimaryBeforeFollowup(msg: typeof waMessages.$inferSelect): 
   return "wait";
 }
 
-async function doSend(msg: typeof waMessages.$inferSelect): Promise<boolean> {
+async function doSend(msg: typeof waMessages.$inferSelect, source: string = "queue"): Promise<boolean> {
   try {
-    if (/:\s*\/r\//.test(msg.messageText) && !msg.messageText.includes('https://')) {
-      throw new Error(`[FAIL_FAST] doSend blocked: relative /r/ link in msg=${msg.id}`);
-    }
-    const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
+    const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId, `${source}_${msg.messageType}`);
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
     console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
 
@@ -488,13 +491,6 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
     return false;
   }
 
-  if (/:\s*\/r\//.test(msg.messageText) && !msg.messageText.includes('https://')) {
-    const stack = new Error().stack || '';
-    console.error(`[INVALID_LINK_AT_SEND] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} text="${msg.messageText.substring(0, 120)}" stack=${stack}`);
-    await storage.markWaMessageSkipped(msg.id, "invalid_relative_link");
-    return false;
-  }
-
   if (msg.messageType === "reminder") {
     const primaryCheck = await checkPrimaryBeforeFollowup(msg);
     if (primaryCheck === "wait") {
@@ -512,7 +508,7 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
     }
   }
 
-  return await doSend(msg);
+  return await doSend(msg, "queue");
 }
 
 export async function sendWaMessageNow(messageId: number): Promise<{ success: boolean; error?: string }> {
@@ -532,12 +528,6 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
 
   const msg = claimed[0];
 
-  if (/:\s*\/r\//.test(msg.messageText) && !msg.messageText.includes('https://')) {
-    console.error(`[INVALID_LINK_AT_RESEND] msg=${msg.id} booking=${msg.bookingId} text="${msg.messageText.substring(0, 120)}"`);
-    await db.update(waMessages).set({ status: "queued" } as any).where(eq(waMessages.id, msg.id));
-    return { success: false, error: "Сообщение содержит битую ссылку /r/ без домена" };
-  }
-
   if (msg.messageType === "reminder") {
     const primaryCheck = await checkPrimaryBeforeFollowup(msg);
     if (primaryCheck !== "ok") {
@@ -548,7 +538,7 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
     }
   }
 
-  const success = await doSend(msg);
+  const success = await doSend(msg, "resend");
   return { success };
 }
 
