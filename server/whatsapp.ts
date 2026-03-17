@@ -197,6 +197,7 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number):
   };
 
   console.log(`[WA_SEND] Sending to phone=${phoneFormatted} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
+  console.log(`[WA_LINK] ${text.match(/https?:\/\/[^\s]+/)?.[0] || 'NO_LINK_FOUND'}`);
 
   const response = await fetch("https://lk.assistbot.ru/api/web/index.php/sms/", {
     method: "POST",
@@ -353,13 +354,19 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
   const delayMs = randomMinutes(21 * 60, 24 * 60);
   const scheduledAt = adjustForQuietHours(new Date(Date.now() + delayMs));
 
+  let reviewLink = msg.reviewLink;
+  if (reviewLink && !reviewLink.startsWith('http')) {
+    reviewLink = `https://www.rateus.kz${reviewLink}`;
+    console.log(`[WA_FOLLOWUP_LINK_FIX] booking=${msg.bookingId} fixed reviewLink → "${reviewLink}"`);
+  }
+
   const lastIndex = await storage.getLastSentTemplateIndex("reminder");
   const templateIndex = pickTemplateIndex("reminder", lastIndex);
   const templates = getTemplates("reminder");
   const messageText = renderTemplate(templates[templateIndex], {
     clientName: msg.customerName,
     specialistName: msg.specialistName,
-    reviewLink: msg.reviewLink,
+    reviewLink: reviewLink,
   });
 
   try {
@@ -369,7 +376,7 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
       customerPhone: msg.customerPhone,
       customerName: msg.customerName,
       specialistName: msg.specialistName,
-      reviewLink: msg.reviewLink,
+      reviewLink: reviewLink,
       messageType: "reminder",
       templateIndex,
       messageText,
@@ -459,6 +466,16 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
     return false;
   }
 
+  const relativeMatch = msg.messageText.match(/(?:отзыв|ссылк[аеу]):\s*(\/r\/\S+)/i) || msg.messageText.match(/:\s*(\/r\/\S+)/);
+  if (relativeMatch) {
+    const brokenPath = relativeMatch[1];
+    const fixedLink = `https://www.rateus.kz${brokenPath}`;
+    const fixedText = msg.messageText.replace(brokenPath, fixedLink);
+    console.log(`[WA_LINK_FIX] msg=${msg.id} booking=${msg.bookingId} fixed "${brokenPath}" → "${fixedLink}"`);
+    await db.update(waMessages).set({ messageText: fixedText } as any).where(eq(waMessages.id, msg.id));
+    (msg as any).messageText = fixedText;
+  }
+
   if (msg.messageType === "reminder") {
     const primaryCheck = await checkPrimaryBeforeFollowup(msg);
     if (primaryCheck === "wait") {
@@ -495,6 +512,16 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
   }
 
   const msg = claimed[0];
+
+  const resendRelativeMatch = msg.messageText.match(/(?:отзыв|ссылк[аеу]):\s*(\/r\/\S+)/i) || msg.messageText.match(/:\s*(\/r\/\S+)/);
+  if (resendRelativeMatch) {
+    const brokenPath = resendRelativeMatch[1];
+    const fixedLink = `https://www.rateus.kz${brokenPath}`;
+    const fixedText = msg.messageText.replace(brokenPath, fixedLink);
+    console.log(`[WA_RESEND_LINK_FIX] msg=${msg.id} booking=${msg.bookingId} fixed "${brokenPath}" → "${fixedLink}"`);
+    await db.update(waMessages).set({ messageText: fixedText } as any).where(eq(waMessages.id, msg.id));
+    (msg as any).messageText = fixedText;
+  }
 
   if (msg.messageType === "reminder") {
     const primaryCheck = await checkPrimaryBeforeFollowup(msg);

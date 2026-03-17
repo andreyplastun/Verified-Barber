@@ -13,8 +13,17 @@ import { db } from "./db";
 import { appConfig } from "@shared/schema";
 import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage } from "./whatsapp";
 
-// Auto-activate specialist after receiving first review (configurable threshold)
-const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1; // Activate after 1 review
+const REVIEW_BASE_URL = 'https://www.rateus.kz';
+
+function buildReviewLink(token: string): string {
+  const link = `${REVIEW_BASE_URL}/r/${token}`;
+  if (!link.startsWith('http')) {
+    throw new Error(`Invalid review link: must be absolute URL, got: ${link}`);
+  }
+  return link;
+}
+
+const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1;
 
 async function checkAndAutoActivateSpecialist(specialistId: number): Promise<void> {
   try {
@@ -1147,19 +1156,17 @@ export async function registerRoutes(
       // Check if magic link already exists
       const existingLink = await storage.getMagicLinkByBookingId(bookingId);
       if (existingLink && !existingLink.usedAt && new Date(existingLink.expiresAt) > new Date()) {
-        // Return existing valid link
-        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
+        const existingFullLink = buildReviewLink(existingLink.token);
         return res.json({
-          magicLink: `${baseUrl}/r/${existingLink.token}`,
-          whatsappText: generateWhatsAppText(`${baseUrl}/r/${existingLink.token}`, booking.customerName, barberName),
+          magicLink: existingFullLink,
+          whatsappText: generateWhatsAppText(existingFullLink, booking.customerName, barberName),
           expiresAt: existingLink.expiresAt,
         });
       }
       
       const customerPhone = booking.normalizedPhone || booking.customerPhone || null;
       const magicLink = await storage.createMagicLink(booking.clientId || null, bookingId, booking.specialistId, false, !booking.clientId ? customerPhone : null);
-      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
-      const fullLink = `${baseUrl}/r/${magicLink.token}`;
+      const fullLink = buildReviewLink(magicLink.token);
       
       res.json({
         magicLink: fullLink,
@@ -1215,25 +1222,23 @@ export async function registerRoutes(
       // Check if follow-up already exists
       const existingFollowup = await storage.getMagicLinkByBookingId(bookingId);
       if (existingFollowup && existingFollowup.isFollowup && !existingFollowup.usedAt && new Date(existingFollowup.expiresAt) > new Date()) {
-        const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
+        const existingFullLink = buildReviewLink(existingFollowup.token);
         const specialist = await storage.getSpecialist(booking.specialistId);
         const barberName = specialist?.name || 'барберу';
         return res.json({
-          magicLink: `${baseUrl}/r/${existingFollowup.token}`,
-          whatsappText: generateFollowupWhatsAppText(`${baseUrl}/r/${existingFollowup.token}`, booking.customerName, barberName),
+          magicLink: existingFullLink,
+          whatsappText: generateFollowupWhatsAppText(existingFullLink, booking.customerName, barberName),
           expiresAt: existingFollowup.expiresAt,
           isFollowup: true,
         });
       }
       
-      // Get specialist name
       const specialist = await storage.getSpecialist(booking.specialistId);
       const barberName = specialist?.name || 'барберу';
       
       const followupPhone = booking.normalizedPhone || booking.customerPhone || null;
       const magicLink = await storage.createMagicLink(booking.clientId || null, bookingId, booking.specialistId, true, !booking.clientId ? followupPhone : null);
-      const baseUrl = process.env.NODE_ENV === 'production' ? 'https://www.rateus.kz' : `${req.protocol}://${req.get('host')}`;
-      const fullLink = `${baseUrl}/r/${magicLink.token}`;
+      const fullLink = buildReviewLink(magicLink.token);
       
       res.json({
         magicLink: fullLink,
@@ -1981,8 +1986,7 @@ ${magicLink}`;
         false,
         hasClientId ? null : customerPhone
       );
-      const baseUrl = 'https://www.rateus.kz';
-      const fullLink = `${baseUrl}/r/${magicLink.token}`;
+      const fullLink = buildReviewLink(magicLink.token);
       console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
 
       if (customerPhone) {
