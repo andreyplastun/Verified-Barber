@@ -1896,10 +1896,33 @@ ${magicLink}`;
     return { eligible: true, reason: 'OK' };
   }
 
+  function isSpecialistAction(source: string): boolean {
+    return source.startsWith('specialist_');
+  }
+
+  async function sendReviewLinkDirect(booking: any, link: string, source: string): Promise<boolean> {
+    let phone = booking.normalizedPhone || booking.customerPhone || null;
+    if (!phone && booking.clientId) {
+      const clientUser = await storage.getUser(booking.clientId);
+      if (clientUser?.phone) phone = clientUser.phone;
+    }
+    if (!phone) {
+      console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} NO_PHONE`);
+      return false;
+    }
+    const specialist = await storage.getSpecialist(booking.specialistId);
+    const specialistDative = toDativeCase(specialist?.name || "специалисту");
+    const reviewText = `Спасибо за визит к ${specialistDative}!\n\nОставьте отзыв по ссылке:\n${link}`;
+    const waResult = await sendDirectWaMessage(phone, reviewText, booking.id);
+    console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} phone=${phone} link=${link} success=${waResult.success}`);
+    return waResult.success;
+  }
+
   async function tryCreateMagicLinkForCompletedVisit(bookingId: number, source: string): Promise<boolean> {
     try {
       const booking = await storage.getBooking(bookingId);
-      console.log(`[MAGIC_LINK_TRACE] booking=${bookingId} source=${source} status=${booking?.status} clientId=${booking?.clientId} normalizedPhone=${booking?.normalizedPhone} customerPhone=${booking?.customerPhone} bookingSource=${(booking as any)?.bookingSource} invalidPhone=${(booking as any)?.invalidPhone} paymentStatus=${(booking as any)?.paymentStatus}`);
+      const specAction = isSpecialistAction(source);
+      console.log(`[MAGIC_LINK_TRACE] booking=${bookingId} source=${source} specialistAction=${specAction} status=${booking?.status} clientId=${booking?.clientId} normalizedPhone=${booking?.normalizedPhone} customerPhone=${booking?.customerPhone} bookingSource=${(booking as any)?.bookingSource} invalidPhone=${(booking as any)?.invalidPhone} paymentStatus=${(booking as any)?.paymentStatus}`);
       if (!booking || booking.status !== 'completed') {
         console.log(`[MAGIC_LINK_TRACE] booking=${bookingId} BLOCKED: status=${booking?.status} (need completed)`);
         return false;
@@ -1909,17 +1932,13 @@ ${magicLink}`;
         return false;
       }
 
-      if ((booking as any).invalidPhone) {
-        const isManual = (booking as any).bookingSource === "specialist_manual";
-        if (!isManual) {
-          console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: invalid phone number (source=${source})`);
-          await storage.updateBooking(bookingId, {
-            reviewEligibility: false,
-            reviewEligibilityReason: 'invalid_phone',
-          } as any);
-          return false;
-        }
-        console.log(`[MAGIC_LINK] booking=${bookingId}: invalid phone but manual booking — proceeding (source=${source})`);
+      if ((booking as any).invalidPhone && !specAction) {
+        console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: invalid phone number (source=${source})`);
+        await storage.updateBooking(bookingId, {
+          reviewEligibility: false,
+          reviewEligibilityReason: 'invalid_phone',
+        } as any);
+        return false;
       }
 
       const hasClientId = !!booking.clientId;
@@ -1930,60 +1949,41 @@ ${magicLink}`;
         return false;
       }
 
-      if (booking.normalizedPhone) {
-        const isManualAction = (booking as any).bookingSource === "specialist_manual" && 
-          (source === 'specialist_send_review' || source === 'specialist_request_payment' || source === 'specialist_mark_paid');
-        if (!isManualAction) {
-          const recentLinkExists = await storage.getRecentMagicLinkByPhone(booking.specialistId, booking.normalizedPhone, 28);
-          if (recentLinkExists) {
-            console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: same phone ${booking.normalizedPhone} already had magic link for specialist ${booking.specialistId} within 28 days (source=${source})`);
-            await storage.updateBooking(bookingId, {
-              reviewEligibility: false,
-              reviewEligibilityReason: 'repeat_phone_28d',
-            } as any);
-            return false;
-          }
-        } else {
-          console.log(`[MAGIC_LINK] booking=${bookingId}: bypassing repeat_phone_28d for manual booking action (source=${source})`);
+      if (booking.normalizedPhone && !specAction) {
+        const recentLinkExists = await storage.getRecentMagicLinkByPhone(booking.specialistId, booking.normalizedPhone, 28);
+        if (recentLinkExists) {
+          console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: same phone ${booking.normalizedPhone} already had magic link for specialist ${booking.specialistId} within 28 days (source=${source})`);
+          await storage.updateBooking(bookingId, {
+            reviewEligibility: false,
+            reviewEligibilityReason: 'repeat_phone_28d',
+          } as any);
+          return false;
         }
+      } else if (booking.normalizedPhone && specAction) {
+        console.log(`[MAGIC_LINK] booking=${bookingId}: bypassing repeat_phone_28d for specialist action (source=${source})`);
       }
 
-      if (hasClientId) {
+      if (hasClientId && !specAction) {
         const eligibilityResult = await checkReviewEligibility(booking.clientId!, booking.specialistId, bookingId);
         console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} client_id=${booking.clientId} specialist_id=${booking.specialistId} eligible=${eligibilityResult.eligible} reason=${eligibilityResult.reason} source=${source}`);
-
         await storage.updateBooking(bookingId, {
           reviewEligibility: eligibilityResult.eligible,
           reviewEligibilityReason: eligibilityResult.reason,
         } as any);
-
         if (!eligibilityResult.eligible) return false;
       } else {
         await storage.updateBooking(bookingId, {
           reviewEligibility: true,
-          reviewEligibilityReason: 'phone_only_client',
+          reviewEligibilityReason: specAction ? 'specialist_action' : 'phone_only_client',
         } as any);
-        console.log(`[REVIEW_ELIGIBILITY] visit_id=${bookingId} phone=${booking.normalizedPhone || booking.customerPhone} specialist_id=${booking.specialistId} eligible=true reason=phone_only_client source=${source}`);
       }
 
       const existingLink = await storage.getMagicLinkByBookingId(bookingId);
       if (existingLink) {
-        console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId} (source=${source})`);
-        const isSpecialistAction = source.startsWith('specialist_');
-        if (isSpecialistAction) {
-          let existingPhone = booking.normalizedPhone || booking.customerPhone || null;
-          if (!existingPhone && booking.clientId) {
-            const clientUser = await storage.getUser(booking.clientId);
-            if (clientUser?.phone) existingPhone = clientUser.phone;
-          }
-          if (existingPhone) {
-            const existingFullLink = buildReviewLink(existingLink.token);
-            const specialist = await storage.getSpecialist(booking.specialistId);
-            const specialistDative = toDativeCase(specialist?.name || "специалисту");
-            const reviewText = `Спасибо за визит к ${specialistDative}!\n\nОставьте отзыв по ссылке:\n${existingFullLink}`;
-            const waResult = await sendDirectWaMessage(existingPhone, reviewText, bookingId);
-            console.log(`[MAGIC_LINK] Resent existing link for booking ${bookingId} via direct WA: success=${waResult.success} (source=${source})`);
-          }
+        console.log(`[MAGIC_LINK] Existing link found for booking ${bookingId} (source=${source})`);
+        if (specAction) {
+          const fullLink = buildReviewLink(existingLink.token);
+          await sendReviewLinkDirect(booking, fullLink, source);
         }
         return false;
       }
@@ -2007,21 +2007,24 @@ ${magicLink}`;
       console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
 
       if (customerPhone) {
-        const isSpecialistAction = source.startsWith('specialist_');
-        const specialist = await storage.getSpecialist(booking.specialistId);
-        try {
-          await enqueueReviewMessage({
-            bookingId,
-            specialistId: booking.specialistId,
-            customerPhone,
-            customerName: booking.customerName,
-            specialistName: specialist?.name || "специалисту",
-            reviewLink: fullLink,
-            messageType: "primary",
-            immediate: isSpecialistAction,
-          });
-        } catch (waErr: any) {
-          console.error(`[WA_QUEUE_ERROR] booking=${bookingId} error=${waErr.message}`);
+        if (specAction) {
+          await sendReviewLinkDirect(booking, fullLink, source);
+        } else {
+          const specialist = await storage.getSpecialist(booking.specialistId);
+          try {
+            await enqueueReviewMessage({
+              bookingId,
+              specialistId: booking.specialistId,
+              customerPhone,
+              customerName: booking.customerName,
+              specialistName: specialist?.name || "специалисту",
+              reviewLink: fullLink,
+              messageType: "primary",
+              immediate: false,
+            });
+          } catch (waErr: any) {
+            console.error(`[WA_QUEUE_ERROR] booking=${bookingId} error=${waErr.message}`);
+          }
         }
       } else {
         console.log(`[WA_SKIP] booking=${bookingId}: no phone number available for WhatsApp (clientId=${booking.clientId}, normalizedPhone=${booking.normalizedPhone}, customerPhone=${booking.customerPhone}) source=${source}`);
