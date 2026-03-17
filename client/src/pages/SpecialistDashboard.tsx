@@ -516,8 +516,8 @@ export default function SpecialistDashboard() {
             'x-user-id': currentUser.id,
           },
           body: JSON.stringify({
-            customerName: newBookingName || (document.getElementById('new-booking-name') as HTMLInputElement)?.value || '',
-            customerPhone: newBookingPhone || (document.getElementById('new-booking-phone') as HTMLInputElement)?.value || '',
+            customerName: (document.getElementById('new-booking-name') as HTMLInputElement)?.value || newBookingName || '',
+            customerPhone: (document.getElementById('new-booking-phone') as HTMLInputElement)?.value || newBookingPhone || '',
             appointmentTime: appointmentTime.toISOString(),
             force: opts?.force || false,
           }),
@@ -1300,9 +1300,13 @@ export default function SpecialistDashboard() {
                   <Label htmlFor="new-booking-phone">Телефон клиента</Label>
                   <Input
                     id="new-booking-phone"
+                    type="tel"
+                    inputMode="tel"
                     placeholder="+7 777 123 4567"
                     value={newBookingPhone}
                     onChange={(e) => setNewBookingPhone(e.target.value)}
+                    onInput={(e) => setNewBookingPhone((e.target as HTMLInputElement).value)}
+                    onBlur={(e) => setNewBookingPhone(e.target.value)}
                     data-testid="input-new-booking-phone"
                   />
                 </div>
@@ -1339,14 +1343,19 @@ export default function SpecialistDashboard() {
                     size="sm"
                     className="flex-1"
                     onClick={() => {
+                      const nameEl = document.getElementById('new-booking-name') as HTMLInputElement;
+                      const phoneEl = document.getElementById('new-booking-phone') as HTMLInputElement;
                       const dateEl = document.getElementById('new-booking-date') as HTMLInputElement;
                       const timeEl = document.getElementById('new-booking-time') as HTMLInputElement;
+                      if (nameEl?.value && nameEl.value !== newBookingName) setNewBookingName(nameEl.value);
+                      if (phoneEl?.value && phoneEl.value !== newBookingPhone) setNewBookingPhone(phoneEl.value);
                       if (dateEl?.value && dateEl.value !== newBookingDate) setNewBookingDate(dateEl.value);
                       if (timeEl?.value && timeEl.value !== newBookingTime) setNewBookingTime(timeEl.value);
+                      const name = nameEl?.value || newBookingName;
                       const date = dateEl?.value || newBookingDate;
                       const time = timeEl?.value || newBookingTime;
-                      if (!newBookingName || !date || !time) {
-                        toast({ title: 'Заполните все поля', description: `Имя: ${newBookingName ? '✓' : '✗'}, Дата: ${date ? '✓' : '✗'}, Время: ${time ? '✓' : '✗'}`, variant: 'destructive' });
+                      if (!name || !date || !time) {
+                        toast({ title: 'Заполните все поля', description: `Имя: ${name ? '✓' : '✗'}, Дата: ${date ? '✓' : '✗'}, Время: ${time ? '✓' : '✗'}`, variant: 'destructive' });
                         return;
                       }
                       createBookingMutation.mutate({});
