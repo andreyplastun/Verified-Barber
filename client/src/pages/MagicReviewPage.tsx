@@ -220,7 +220,7 @@ export default function MagicReviewPage() {
   const generateKaspiDeepLink = (amount: number) => {
     if (!linkData?.kaspiPhone) return '';
     const phone = linkData.kaspiPhone.replace(/\D/g, '');
-    return `https://kaspi.kz/pay/P2P?phone=${phone}&amount=${amount}&comment=${encodeURIComponent('Чаевые через WHO')}`;
+    return `https://kaspi.kz/pay/p2p?to=${phone}&amount=${amount}`;
   };
 
   const [kaspiOpened, setKaspiOpened] = useState(false);

@@ -1623,7 +1623,7 @@ ${magicLink}`;
       }
 
       const cleanKaspiPhone = kaspiPhone.replace(/\D/g, "");
-      const kaspiLink = `https://kaspi.kz/pay/P2P?phone=${cleanKaspiPhone}&amount=${price}`;
+      const kaspiLink = `https://kaspi.kz/pay/p2p?to=${cleanKaspiPhone}&amount=${price}`;
 
       const updated = await storage.updateBooking(bookingId, {
         status: "payment_requested",
