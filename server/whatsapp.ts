@@ -226,8 +226,8 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number, 
     delivery_callback_url: "https://www.rateus.kz/api/webhooks/assistbot-delivery",
   };
 
-  console.log(`[WA_SEND] source=${source} phone=${phoneFormatted} bookingId=${bookingId} text="${text.substring(0, 80)}..."`);
-  console.log(`[WA_LINK] ${text.match(/https?:\/\/[^\s]+/)?.[0] || 'NO_LINK_FOUND'}`);
+  console.log(`[WA_SEND] source=${source} phone=${phoneFormatted} bookingId=${bookingId} text="${text}"`);
+  console.log(`[WA_LINK] source=${source} booking=${bookingId} link=${text.match(/https?:\/\/[^\s]+/)?.[0] || 'NO_LINK_FOUND'}`);
 
   const response = await fetch("https://lk.assistbot.ru/api/web/index.php/sms/", {
     method: "POST",
