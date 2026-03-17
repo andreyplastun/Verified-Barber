@@ -3,6 +3,22 @@ import { db } from "./db";
 import { appConfig, waMessages } from "@shared/schema";
 import { eq, and, asc, sql } from "drizzle-orm";
 
+function validateReviewLink(link: string, context: string): void {
+  if (!link.startsWith('https://')) {
+    const stack = new Error().stack || '';
+    console.error(`[INVALID_LINK_DETECTED] context=${context} link="${link}" stack=${stack}`);
+    throw new Error(`[FAIL_FAST] Relative review link forbidden: "${link}" in ${context}`);
+  }
+}
+
+function validateMessageText(text: string, context: string): void {
+  if (/:\s*\/r\//.test(text) && !text.includes('https://')) {
+    const stack = new Error().stack || '';
+    console.error(`[INVALID_MESSAGE_TEXT] context=${context} text="${text.substring(0, 120)}" stack=${stack}`);
+    throw new Error(`[FAIL_FAST] Message contains relative /r/ link in ${context}`);
+  }
+}
+
 const PRIMARY_TEMPLATES = [
   "{clientName}, спасибо за визит к {specialistNameDative}. Оставьте, пожалуйста, отзыв: {reviewLink}",
   "{clientName}, благодарим за визит к {specialistNameDative}. Будем признательны за оставленный отзыв: {reviewLink}",
@@ -274,6 +290,8 @@ export async function enqueueReviewMessage(params: {
   delayMs?: number;
   immediate?: boolean;
 }): Promise<void> {
+  validateReviewLink(params.reviewLink, `enqueue_${params.messageType}_booking=${params.bookingId}`);
+
   const dedupeKey = `${params.messageType}_${params.bookingId}`;
 
   const isOptedOut = await storage.isWaOptedOut(params.customerPhone.replace(/\D/g, ""));
@@ -290,6 +308,8 @@ export async function enqueueReviewMessage(params: {
     specialistName: params.specialistName,
     reviewLink: params.reviewLink,
   });
+
+  validateMessageText(messageText, `enqueue_${params.messageType}_booking=${params.bookingId}`);
 
   const now = new Date();
   let scheduledAt: Date;
@@ -326,7 +346,7 @@ export async function enqueueReviewMessage(params: {
     throw err;
   }
 
-  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey}`);
+  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
 
   if (params.immediate && params.messageType === "primary") {
     const claimed = await db.update(waMessages)
@@ -354,11 +374,8 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
   const delayMs = randomMinutes(21 * 60, 24 * 60);
   const scheduledAt = adjustForQuietHours(new Date(Date.now() + delayMs));
 
-  let reviewLink = msg.reviewLink;
-  if (reviewLink && !reviewLink.startsWith('http')) {
-    reviewLink = `https://www.rateus.kz${reviewLink}`;
-    console.log(`[WA_FOLLOWUP_LINK_FIX] booking=${msg.bookingId} fixed reviewLink → "${reviewLink}"`);
-  }
+  const reviewLink = msg.reviewLink;
+  validateReviewLink(reviewLink, `createFollowup_booking=${msg.bookingId}`);
 
   const lastIndex = await storage.getLastSentTemplateIndex("reminder");
   const templateIndex = pickTemplateIndex("reminder", lastIndex);
@@ -368,6 +385,8 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
     specialistName: msg.specialistName,
     reviewLink: reviewLink,
   });
+
+  validateMessageText(messageText, `createFollowup_booking=${msg.bookingId}`);
 
   try {
     await db.insert(waMessages).values({
@@ -418,6 +437,9 @@ async function checkPrimaryBeforeFollowup(msg: typeof waMessages.$inferSelect): 
 
 async function doSend(msg: typeof waMessages.$inferSelect): Promise<boolean> {
   try {
+    if (/:\s*\/r\//.test(msg.messageText) && !msg.messageText.includes('https://')) {
+      throw new Error(`[FAIL_FAST] doSend blocked: relative /r/ link in msg=${msg.id}`);
+    }
     const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
     console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
@@ -466,14 +488,11 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
     return false;
   }
 
-  const relativeMatch = msg.messageText.match(/(?:отзыв|ссылк[аеу]):\s*(\/r\/\S+)/i) || msg.messageText.match(/:\s*(\/r\/\S+)/);
-  if (relativeMatch) {
-    const brokenPath = relativeMatch[1];
-    const fixedLink = `https://www.rateus.kz${brokenPath}`;
-    const fixedText = msg.messageText.replace(brokenPath, fixedLink);
-    console.log(`[WA_LINK_FIX] msg=${msg.id} booking=${msg.bookingId} fixed "${brokenPath}" → "${fixedLink}"`);
-    await db.update(waMessages).set({ messageText: fixedText } as any).where(eq(waMessages.id, msg.id));
-    (msg as any).messageText = fixedText;
+  if (/:\s*\/r\//.test(msg.messageText) && !msg.messageText.includes('https://')) {
+    const stack = new Error().stack || '';
+    console.error(`[INVALID_LINK_AT_SEND] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} text="${msg.messageText.substring(0, 120)}" stack=${stack}`);
+    await storage.markWaMessageSkipped(msg.id, "invalid_relative_link");
+    return false;
   }
 
   if (msg.messageType === "reminder") {
@@ -513,14 +532,10 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
 
   const msg = claimed[0];
 
-  const resendRelativeMatch = msg.messageText.match(/(?:отзыв|ссылк[аеу]):\s*(\/r\/\S+)/i) || msg.messageText.match(/:\s*(\/r\/\S+)/);
-  if (resendRelativeMatch) {
-    const brokenPath = resendRelativeMatch[1];
-    const fixedLink = `https://www.rateus.kz${brokenPath}`;
-    const fixedText = msg.messageText.replace(brokenPath, fixedLink);
-    console.log(`[WA_RESEND_LINK_FIX] msg=${msg.id} booking=${msg.bookingId} fixed "${brokenPath}" → "${fixedLink}"`);
-    await db.update(waMessages).set({ messageText: fixedText } as any).where(eq(waMessages.id, msg.id));
-    (msg as any).messageText = fixedText;
+  if (/:\s*\/r\//.test(msg.messageText) && !msg.messageText.includes('https://')) {
+    console.error(`[INVALID_LINK_AT_RESEND] msg=${msg.id} booking=${msg.bookingId} text="${msg.messageText.substring(0, 120)}"`);
+    await db.update(waMessages).set({ status: "queued" } as any).where(eq(waMessages.id, msg.id));
+    return { success: false, error: "Сообщение содержит битую ссылку /r/ без домена" };
   }
 
   if (msg.messageType === "reminder") {
