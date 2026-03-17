@@ -376,13 +376,17 @@ export default function SpecialistDashboard() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setCompletingBookingId(null);
       setPriceDialogBookingId(null);
       setPriceInputValue('');
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-      toast({ title: 'Запрос оплаты отправлен клиенту' });
+      if (data?.waSent) {
+        toast({ title: 'Запрос оплаты отправлен клиенту в WhatsApp' });
+      } else {
+        toast({ title: 'Запрос оплаты создан', description: 'Сообщение в WhatsApp не отправлено — проверьте номер телефона клиента' });
+      }
     },
     onError: (err: Error) => {
       setCompletingBookingId(null);

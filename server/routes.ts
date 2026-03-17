@@ -1633,7 +1633,8 @@ ${magicLink}`;
       } as any);
 
       let waSent = false;
-      const customerPhone = booking.customerPhone;
+      const customerPhone = booking.customerPhone || booking.normalizedPhone || null;
+      console.log(`[KASPI_PAYMENT] booking=${bookingId} customerPhone="${booking.customerPhone}" normalizedPhone="${booking.normalizedPhone}" resolvedPhone="${customerPhone}"`);
       if (customerPhone) {
         const specialistDative = toDativeCase(specialist.name);
         const waText = `Спасибо за визит к ${specialistDative}!\n\nОплатить услугу можно через Kaspi:\n\n${kaspiLink}\n\nПосле оплаты мастер завершит визит и отправит ссылку для отзыва.`;
@@ -1642,6 +1643,8 @@ ${magicLink}`;
         if (!waSent) {
           console.error(`[KASPI_PAYMENT] WA send failed for booking=${bookingId}: ${waResult.error}`);
         }
+      } else {
+        console.log(`[KASPI_PAYMENT] booking=${bookingId} NO_PHONE — Kaspi link NOT sent via WA`);
       }
 
       console.log(`[KASPI_PAYMENT] booking=${bookingId} status=payment_requested price=${price} kaspiPhone=${cleanKaspiPhone} waSent=${waSent} userId=${userId}`);
