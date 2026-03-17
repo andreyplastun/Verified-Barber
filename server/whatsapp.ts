@@ -213,10 +213,11 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number, 
   const cleanPhone = phone.replace(/\D/g, "");
   const phoneFormatted = cleanPhone.startsWith("7") ? `+${cleanPhone}` : `+7${cleanPhone}`;
 
+  const messageUniqueId = `rateus_${source}_${bookingId}_${Date.now()}`;
   const payload = {
     destination_params: [
       {
-        id: `rateus_visit_${bookingId}`,
+        id: messageUniqueId,
         phone: phoneFormatted,
       },
     ],
