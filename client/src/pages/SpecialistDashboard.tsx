@@ -1382,7 +1382,7 @@ export default function SpecialistDashboard() {
                   return (
                     <div 
                       key={booking.id} 
-                      className={`p-3 rounded-md space-y-2 ${
+                      className={`p-3 rounded-md space-y-2 overflow-hidden ${
                         isNotCompleted ? 'bg-muted/30 opacity-60' :
                         isManual ? 'bg-green-50/50 dark:bg-green-950/20 border border-green-200 dark:border-green-800' :
                         status === 'ready_to_complete' ? 'bg-amber-50/50 dark:bg-amber-950/20' :
@@ -1513,34 +1513,35 @@ export default function SpecialistDashboard() {
                               )}
                             </div>
                           )}
-                          <div className="flex gap-2">
+                          <div className="flex flex-wrap gap-2">
                             {isAltegio ? (
                               <Button
                                 size="sm"
-                                className="flex-1"
+                                className="flex-1 min-w-0"
                                 onClick={() => markPaidMutation.mutate(booking.id)}
                                 disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
                                 data-testid={`button-mark-paid-${booking.id}`}
                               >
-                                <CheckCircle2 className="w-4 h-4 mr-2" />
-                                {completingBookingId === booking.id ? 'Загрузка...' : 'Отметить оплату'}
+                                <CheckCircle2 className="w-4 h-4 mr-1 shrink-0" />
+                                <span className="truncate">{completingBookingId === booking.id ? 'Загрузка...' : 'Отметить оплату'}</span>
                               </Button>
                             ) : (
                               <Button
                                 size="sm"
-                                className="flex-1"
+                                className="flex-1 min-w-0"
                                 onClick={() => setConfirmPaymentBooking({ id: booking.id, price: (booking as any).price })}
                                 disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
                                 data-testid={`button-confirm-payment-${booking.id}`}
                               >
-                                <CheckCircle2 className="w-4 h-4 mr-2" />
-                                {completingBookingId === booking.id ? 'Загрузка...' : 'Подтвердить оплату'}
+                                <CheckCircle2 className="w-4 h-4 mr-1 shrink-0" />
+                                <span className="truncate">{completingBookingId === booking.id ? 'Загрузка...' : 'Подтвердить оплату'}</span>
                               </Button>
                             )}
                             {!isAltegio && (
                               <Button
                                 size="sm"
                                 variant="outline"
+                                className="min-w-0"
                                 onClick={() => {
                                   setPriceInputValue((booking as any).price?.toString() || '');
                                   setPriceDialogBookingId(booking.id);
@@ -1548,9 +1549,11 @@ export default function SpecialistDashboard() {
                                 disabled={completeRequestPaymentMutation.isPending}
                                 data-testid={`button-resend-payment-${booking.id}`}
                               >
-                                Повторить отправку
+                                <span className="truncate">Повторить</span>
                               </Button>
                             )}
+                          </div>
+                          <div className="flex justify-end">
                             <Button
                               size="sm"
                               variant="ghost"

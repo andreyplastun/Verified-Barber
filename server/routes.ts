@@ -1635,7 +1635,8 @@ ${magicLink}`;
       let waSent = false;
       const customerPhone = booking.customerPhone;
       if (customerPhone) {
-        const waText = `Спасибо за визит!\n\nОплатить услугу можно через Kaspi:\n\n${kaspiLink}\n\nПосле оплаты мастер завершит визит и отправит ссылку для отзыва.`;
+        const specialistDative = toDativeCase(specialist.name);
+        const waText = `Спасибо за визит к ${specialistDative}!\n\nОплатить услугу можно через Kaspi:\n\n${kaspiLink}\n\nПосле оплаты мастер завершит визит и отправит ссылку для отзыва.`;
         const waResult = await sendDirectWaMessage(customerPhone, waText, bookingId);
         waSent = waResult.success;
         if (!waSent) {
