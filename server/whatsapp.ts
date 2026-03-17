@@ -29,6 +29,7 @@ const NON_DECLINABLE_NAMES = new Set([
   "назгуль", "айгуль", "нургуль", "айнур", "нурсулу",
   "мейрамгуль", "жаннур", "гульнур", "актолкын",
   "жансулу", "карлыгаш", "инжу", "маржан", "айсулу",
+  "гүлсезім",
 ]);
 
 function isNonDeclinable(name: string): boolean {
@@ -327,9 +328,15 @@ export async function enqueueReviewMessage(params: {
   console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey}`);
 
   if (params.immediate && params.messageType === "primary") {
-    const [msg] = await db.select().from(waMessages).where(eq(waMessages.dedupeKey, dedupeKey));
-    if (msg) {
-      const sendResult = await sendSingleMessage(msg);
+    const claimed = await db.update(waMessages)
+      .set({ status: "sending" } as any)
+      .where(and(
+        eq(waMessages.dedupeKey, dedupeKey),
+        eq(waMessages.status, "queued")
+      ))
+      .returning();
+    if (claimed.length > 0) {
+      const sendResult = await doSend(claimed[0]);
       console.log(`[WA_IMMEDIATE] Send result for booking=${params.bookingId}: success=${sendResult}`);
     }
   }
@@ -379,33 +386,30 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
   }
 }
 
-async function sendSingleMessage(msg: typeof waMessages.$inferSelect): Promise<boolean> {
-  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
-  if (isOptedOut) {
-    await storage.markWaMessageSkipped(msg.id, "opt_out");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} reason=opt_out`);
-    return false;
+async function checkPrimaryBeforeFollowup(msg: typeof waMessages.$inferSelect): Promise<"ok" | "wait" | "orphan"> {
+  const [primary] = await db.select().from(waMessages)
+    .where(and(
+      eq(waMessages.bookingId, msg.bookingId),
+      sql`${waMessages.messageType} = 'primary'`
+    ))
+    .limit(1);
+
+  if (!primary) {
+    return "orphan";
   }
 
-  const booking = await storage.getBooking(msg.bookingId);
-  if (!booking) {
-    await storage.markWaMessageSkipped(msg.id, "booking_not_found");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} reason=booking_not_found`);
-    return false;
-  }
-  if (booking.hasReview) {
-    await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} reason=review_already_submitted`);
-    return false;
-  }
-  if (booking.status === "cancelled") {
-    await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} reason=booking_cancelled`);
-    return false;
+  if (primary.status === "sent") {
+    return "ok";
   }
 
-  await storage.markWaMessageSending(msg.id);
+  if (primary.status === "failed" || primary.status === "skipped") {
+    return "orphan";
+  }
 
+  return "wait";
+}
+
+async function doSend(msg: typeof waMessages.$inferSelect): Promise<boolean> {
   try {
     const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId);
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
@@ -419,24 +423,90 @@ async function sendSingleMessage(msg: typeof waMessages.$inferSelect): Promise<b
     const newAttempts = (msg.attempts || 0) + 1;
     if (newAttempts >= msg.maxAttempts) {
       await storage.markWaMessageFailed(msg.id, err.message);
-      console.error(`[WA_PROCESSOR] Failed permanently msg=${msg.id} error=${err.message} attempts=${newAttempts}/${msg.maxAttempts}`);
+      console.error(`[WA_PROCESSOR] Failed permanently msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} error=${err.message} attempts=${newAttempts}/${msg.maxAttempts}`);
     } else {
       const retryDelayMs = randomMinutes(10, 30);
       const nextScheduledAt = new Date(Date.now() + retryDelayMs);
       await storage.markWaMessageFailed(msg.id, err.message, nextScheduledAt);
-      console.error(`[WA_PROCESSOR] Failed msg=${msg.id} error=${err.message} attempt=${newAttempts}/${msg.maxAttempts} retry_at=${nextScheduledAt.toISOString()}`);
+      console.error(`[WA_PROCESSOR] Failed msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} error=${err.message} attempt=${newAttempts}/${msg.maxAttempts} retry_at=${nextScheduledAt.toISOString()}`);
     }
     return false;
   }
 }
 
-export async function sendWaMessageNow(messageId: number): Promise<{ success: boolean; error?: string }> {
-  const messages = await db.select().from(waMessages).where(eq(waMessages.id, messageId));
-  const msg = messages[0];
-  if (!msg) return { success: false, error: "Сообщение не найдено" };
-  if (msg.status !== "queued" && msg.status !== "sending") return { success: false, error: `Статус "${msg.status}" — можно отправить только из очереди` };
+async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<boolean> {
+  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
+  if (isOptedOut) {
+    await storage.markWaMessageSkipped(msg.id, "opt_out");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=opt_out`);
+    return false;
+  }
 
-  const success = await sendSingleMessage(msg);
+  const booking = await storage.getBooking(msg.bookingId);
+  if (!booking) {
+    await storage.markWaMessageSkipped(msg.id, "booking_not_found");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_not_found`);
+    return false;
+  }
+  if (booking.hasReview) {
+    await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=review_already_submitted`);
+    return false;
+  }
+  if (booking.status === "cancelled") {
+    await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_cancelled`);
+    return false;
+  }
+
+  if (msg.messageType === "reminder") {
+    const primaryCheck = await checkPrimaryBeforeFollowup(msg);
+    if (primaryCheck === "wait") {
+      console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=reminder reason=WAIT_PRIMARY (primary not yet sent)`);
+      const deferTo = new Date(Date.now() + 30 * 60 * 1000);
+      await db.update(waMessages)
+        .set({ scheduledAt: deferTo } as any)
+        .where(eq(waMessages.id, msg.id));
+      return false;
+    }
+    if (primaryCheck === "orphan") {
+      await storage.markWaMessageSkipped(msg.id, "orphan_primary_terminal");
+      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=reminder reason=orphan_primary_terminal (primary missing/failed/skipped)`);
+      return false;
+    }
+  }
+
+  return await doSend(msg);
+}
+
+export async function sendWaMessageNow(messageId: number): Promise<{ success: boolean; error?: string }> {
+  const claimed = await db.update(waMessages)
+    .set({ status: "sending" } as any)
+    .where(and(
+      eq(waMessages.id, messageId),
+      sql`${waMessages.status} IN ('queued', 'sending')`
+    ))
+    .returning();
+
+  if (claimed.length === 0) {
+    const [existing] = await db.select().from(waMessages).where(eq(waMessages.id, messageId));
+    if (!existing) return { success: false, error: "Сообщение не найдено" };
+    return { success: false, error: `Статус "${existing.status}" — можно отправить только из очереди` };
+  }
+
+  const msg = claimed[0];
+
+  if (msg.messageType === "reminder") {
+    const primaryCheck = await checkPrimaryBeforeFollowup(msg);
+    if (primaryCheck !== "ok") {
+      await db.update(waMessages)
+        .set({ status: "queued" } as any)
+        .where(eq(waMessages.id, msg.id));
+      return { success: false, error: "Primary ещё не отправлен — follow-up ждёт" };
+    }
+  }
+
+  const success = await doSend(msg);
   return { success };
 }
 
@@ -519,31 +589,50 @@ export async function processWaQueue(): Promise<void> {
     return;
   }
 
-  const batch = await db.select().from(waMessages)
-    .where(and(
-      eq(waMessages.status, "queued"),
-      sql`${waMessages.scheduledAt} <= ${now}`
-    ))
-    .orderBy(
-      sql`CASE WHEN ${waMessages.messageType} = 'reminder' THEN 1 ELSE 2 END`,
-      asc(waMessages.scheduledAt)
+  const batch = await db.update(waMessages)
+    .set({ status: "sending" } as any)
+    .where(
+      sql`${waMessages.id} IN (
+        SELECT id FROM wa_messages
+        WHERE status = 'queued' AND scheduled_at <= ${now}
+        ORDER BY
+          booking_id,
+          CASE message_type WHEN 'primary' THEN 1 WHEN 'reminder' THEN 2 END,
+          scheduled_at ASC
+        LIMIT ${available}
+      )`
     )
-    .limit(available);
+    .returning();
 
   if (batch.length === 0) {
     return;
   }
 
   const sentTodayByType = await storage.countWaMessagesSentTodayByType();
-  console.log(`[WA_PROCESSOR] Processing batch of ${batch.length} messages (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, available=${available})`);
+  console.log(`[WA_PROCESSOR] Claimed batch of ${batch.length} messages (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, available=${available})`);
 
   let sentCount = 0;
+  let skippedCount = 0;
+  let deferredCount = 0;
+
   for (const msg of batch) {
-    const success = await sendSingleMessage(msg);
-    if (success) sentCount++;
+    if (msg.status !== "sending") continue;
+
+    const result = await processOneMessage(msg);
+    if (result) {
+      sentCount++;
+    } else {
+      const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
+      if (refreshed?.status === "sending") {
+        await db.update(waMessages)
+          .set({ status: "queued" } as any)
+          .where(eq(waMessages.id, msg.id));
+        deferredCount++;
+      } else {
+        skippedCount++;
+      }
+    }
   }
 
-  if (sentCount > 0) {
-    console.log(`[WA_PROCESSOR] Batch complete: ${sentCount}/${batch.length} sent`);
-  }
+  console.log(`[WA_PROCESSOR] Batch complete: ${sentCount} sent, ${skippedCount} skipped, ${deferredCount} deferred out of ${batch.length}`);
 }

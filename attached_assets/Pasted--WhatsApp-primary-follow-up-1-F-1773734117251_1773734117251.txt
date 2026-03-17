@@ -1,0 +1,179 @@
+ЗАДАЧА: Полностью исправить систему отправки WhatsApp (primary + follow-up)
+
+КОНТЕКСТ ПРОБЛЕМЫ:
+1. Follow-up иногда отправляется БЕЗ primary → клиент видит сообщение как первое → нет доверия → падение конверсии
+2. Ранее была логика orphan_no_primary, которая ошибочно убивала follow-up
+3. После фикса — follow-up начали отправляться даже если primary ещё НЕ отправлен
+4. Нет защиты от дублей WhatsApp (повторные отправки при ретраях / рестартах)
+
+ЦЕЛЬ:
+Сделать систему, где:
+— follow-up НИКОГДА не отправляется раньше primary
+— сообщения не теряются
+— нет дублей
+— система устойчива к рестартам
+
+---
+
+1. ЖЁСТКОЕ ПРАВИЛО ОТПРАВКИ
+
+Перед отправкой follow-up ОБЯЗАТЕЛЬНО:
+
+const primary = await getPrimaryMessageForBooking(bookingId)
+
+if (!primary || primary.status !== 'sent') {
+  return WAIT_PRIMARY
+}
+
+ВАЖНО:
+— status должен быть строго 'sent'
+— queued / pending НЕ подходят
+
+---
+
+2. НЕ УБИВАТЬ FOLLOW-UP
+
+Если primary ещё не отправлен:
+
+— НЕ ставить skipped
+— НЕ ставить failed
+— НЕ ставить orphan
+
+Оставлять:
+status = 'queued'
+
+---
+
+3. РЕТРАЙ ЛОГИКА
+
+Follow-up должен автоматически пробоваться снова:
+
+— при каждом запуске процессора
+— без ограничения количества попыток (в разумных пределах, напр. до 48ч)
+
+Добавить поле:
+next_attempt_at
+
+---
+
+4. ИСПРАВИТЬ ORPHAN ЛОГИКУ
+
+Удалить старое условие:
+
+"если нет sent primary → orphan"
+
+Заменить на:
+
+orphan ТОЛЬКО если:
+— primary.status IN ('failed', 'skipped')
+ИЛИ
+— primary отсутствует ВООБЩЕ (битые данные)
+
+---
+
+5. ГАРАНТИЯ ПОРЯДКА
+
+В обработчике очереди:
+
+ORDER BY:
+  booking_id,
+  CASE message_type
+    WHEN 'primary' THEN 1
+    WHEN 'follow_up' THEN 2
+  END,
+  created_at
+
+Это гарантирует:
+primary всегда обрабатывается раньше
+
+---
+
+6. КРИТИЧНО: ЗАЩИТА ОТ ДУБЛЕЙ (ANTI-DUPLICATION)
+
+Добавить idempotency:
+
+Перед отправкой WA:
+
+if (message.status === 'sent') return
+
+После успешной отправки:
+
+UPDATE messages
+SET status = 'sent',
+    sent_at = NOW(),
+    provider_message_id = waMessageId
+
+Добавить уникальность:
+
+UNIQUE(provider_message_id)
+
+И дополнительную защиту:
+
+UNIQUE(booking_id, message_type, attempt_number)
+
+---
+
+7. БЛОКИРОВКА ПАРАЛЛЕЛЬНОЙ ОТПРАВКИ
+
+Чтобы два воркера не отправили одно и то же:
+
+SELECT ... FOR UPDATE SKIP LOCKED
+
+или
+
+UPDATE ... WHERE status='queued' RETURNING *
+
+---
+
+8. ГАРАНТИЯ "PRIMARY → FOLLOW-UP"
+
+Добавить флаг:
+
+primary_sent_at
+
+Follow-up может идти только если:
+
+primary_sent_at IS NOT NULL
+AND now() >= primary_sent_at + interval '21 hours'
+
+---
+
+9. ВОССТАНОВЛЕНИЕ ПРИ РЕСТАРТЕ
+
+При старте сервера:
+
+— НЕ трогать queued follow-up
+— НЕ переводить их в orphan
+— НЕ пересоздавать
+
+Просто оставить как есть
+
+---
+
+10. ЛОГИ (ОБЯЗАТЕЛЬНО)
+
+Логировать:
+
+[WA_PROCESSOR]
+bookingId
+messageType
+status
+reason (WAIT_PRIMARY / SENT / SKIPPED)
+
+---
+
+ОЖИДАЕМЫЙ РЕЗУЛЬТАТ:
+
+— follow-up всегда приходит ПОСЛЕ primary
+— в WhatsApp всегда есть история сообщений
+— нет дублей сообщений
+— нет потерь follow-up
+— стабильная работа при рестартах
+— рост конверсии (особенно follow-up)
+
+---
+
+ВАЖНО:
+
+Это критический бизнес-флоу.
+Лучше НЕ отправить follow-up, чем отправить его первым.
