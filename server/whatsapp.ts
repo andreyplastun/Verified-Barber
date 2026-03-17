@@ -191,10 +191,18 @@ async function getAssistBotToken(): Promise<string | null> {
 }
 
 async function sendViaAssistBot(phone: string, text: string, bookingId: number, source: string = "unknown"): Promise<string | null> {
-  if (/\/r\//.test(text) && !/https:\/\/[^\s]*\/r\//.test(text)) {
+  const allRLinks = text.match(/(?:^|\s|:)\s*(\/r\/\S+)/g) || [];
+  const hasAbsoluteRLink = /https:\/\/\S*\/r\//.test(text);
+  if (allRLinks.length > 0 && !hasAbsoluteRLink) {
     const stack = new Error().stack || '';
-    console.error(`[CRITICAL_INVALID_LINK] source=${source} booking=${bookingId} text="${text.substring(0, 150)}" stack=${stack}`);
-    throw new Error(`[BLOCKED] Message contains relative /r/ link without domain. source=${source} booking=${bookingId}`);
+    console.error(`[CRITICAL_BYPASS] source=${source} booking=${bookingId} matches=${JSON.stringify(allRLinks)} text="${text}" stack=${stack}`);
+    throw new Error(`[BLOCKED] Relative /r/ link detected at final sender. source=${source} booking=${bookingId}`);
+  }
+  const bareSlashR = text.match(/(?<!\S)\/r\/\S+/g);
+  if (bareSlashR) {
+    const stack = new Error().stack || '';
+    console.error(`[CRITICAL_BYPASS_BARE] source=${source} booking=${bookingId} bare=${JSON.stringify(bareSlashR)} text="${text}" stack=${stack}`);
+    throw new Error(`[BLOCKED] Bare /r/ link at final sender. source=${source} booking=${bookingId}`);
   }
 
   const token = await getAssistBotToken();
