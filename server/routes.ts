@@ -1932,7 +1932,7 @@ ${magicLink}`;
 
       if (booking.normalizedPhone) {
         const isManualAction = (booking as any).bookingSource === "specialist_manual" && 
-          (source === 'specialist_send_review' || source === 'specialist_request_payment');
+          (source === 'specialist_send_review' || source === 'specialist_request_payment' || source === 'specialist_mark_paid');
         if (!isManualAction) {
           const recentLinkExists = await storage.getRecentMagicLinkByPhone(booking.specialistId, booking.normalizedPhone, 28);
           if (recentLinkExists) {
@@ -1969,6 +1969,22 @@ ${magicLink}`;
       const existingLink = await storage.getMagicLinkByBookingId(bookingId);
       if (existingLink) {
         console.log(`[MAGIC_LINK] Reusing existing link for booking ${bookingId} (source=${source})`);
+        const isSpecialistAction = source.startsWith('specialist_');
+        if (isSpecialistAction) {
+          let existingPhone = booking.normalizedPhone || booking.customerPhone || null;
+          if (!existingPhone && booking.clientId) {
+            const clientUser = await storage.getUser(booking.clientId);
+            if (clientUser?.phone) existingPhone = clientUser.phone;
+          }
+          if (existingPhone) {
+            const existingFullLink = buildReviewLink(existingLink.token);
+            const specialist = await storage.getSpecialist(booking.specialistId);
+            const specialistDative = toDativeCase(specialist?.name || "специалисту");
+            const reviewText = `Спасибо за визит к ${specialistDative}!\n\nОставьте отзыв по ссылке:\n${existingFullLink}`;
+            const waResult = await sendDirectWaMessage(existingPhone, reviewText, bookingId);
+            console.log(`[MAGIC_LINK] Resent existing link for booking ${bookingId} via direct WA: success=${waResult.success} (source=${source})`);
+          }
+        }
         return false;
       }
 
