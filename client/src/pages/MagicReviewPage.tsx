@@ -217,20 +217,15 @@ export default function MagicReviewPage() {
     submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName, priceMismatch: triggers.includes("Итоговая цена отличалась от заявленной") });
   };
 
-  const generateKaspiDeepLink = (amount: number) => {
-    if (!linkData?.kaspiPhone) return '';
-    const phone = linkData.kaspiPhone.replace(/[^0-9]/g, '').slice(-11);
-    return `https://kaspi.kz/pay/${phone}?amount=${amount}`;
+  const [selectedTipAmount, setSelectedTipAmount] = useState<number | null>(null);
+
+  const formatKaspiPhone = (phone: string) => {
+    const digits = phone.replace(/[^0-9]/g, '').slice(-11);
+    return `+${digits.slice(0,1)} ${digits.slice(1,4)} ${digits.slice(4,7)} ${digits.slice(7,9)} ${digits.slice(9,11)}`;
   };
 
-  const [kaspiOpened, setKaspiOpened] = useState(false);
-
   const handleTipClick = (amount: number) => {
-    const deepLink = generateKaspiDeepLink(amount);
-    if (deepLink) {
-      window.open(deepLink, '_blank');
-      setKaspiOpened(true);
-    }
+    setSelectedTipAmount(amount);
   };
 
   const handleCustomTip = () => {
@@ -319,7 +314,7 @@ export default function MagicReviewPage() {
           Это необязательно. Деньги поступят напрямую мастеру через Kaspi.
         </p>
         
-        {!kaspiOpened ? (
+        {!selectedTipAmount ? (
           <>
             <TipPulse trigger={showTipsScreen}>
               <div className="flex flex-wrap justify-center gap-3 mb-6 max-w-sm">
@@ -380,27 +375,36 @@ export default function MagicReviewPage() {
             </button>
           </>
         ) : (
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Kaspi открыт. После завершения перевода нажмите кнопку ниже.
-            </p>
+          <div className="space-y-4 w-full max-w-xs">
+            <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2">
+              <p className="text-sm text-muted-foreground">Переведите в Kaspi:</p>
+              <p className="text-lg font-bold" data-testid="text-tip-amount">Сумма: {selectedTipAmount.toLocaleString('ru-KZ')} ₸</p>
+              <p className="text-lg font-mono" data-testid="text-tip-phone">Номер: {formatKaspiPhone(linkData.kaspiPhone!)}</p>
+            </div>
             <Button
               size="lg"
               onClick={() => {
                 setShowTipsScreen(false);
                 setShowThankYouScreen(true);
               }}
-              className="w-full max-w-xs"
+              className="w-full"
               data-testid="button-completed-payment"
             >
               Я перевёл чаевые
             </Button>
             <button 
+              onClick={() => setSelectedTipAmount(null)}
+              className="text-muted-foreground text-sm hover:underline block mx-auto"
+              data-testid="button-back-tips"
+            >
+              Назад
+            </button>
+            <button 
               onClick={skipTips}
               className="text-muted-foreground text-sm hover:underline block mx-auto"
-              data-testid="button-skip-after-open"
+              data-testid="button-skip-after-select"
             >
-              Не получилось / Пропустить
+              Пропустить
             </button>
           </div>
         )}

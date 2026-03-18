@@ -1622,9 +1622,9 @@ ${magicLink}`;
         return res.status(400).json({ message: "Укажите корректную сумму оплаты (целое число от 1 до 10 000 000 ₸)" });
       }
 
-      const cleanKaspiPhone = kaspiPhone.replace(/[^0-9]/g, "").slice(-11);
-      const kaspiLink = `https://kaspi.kz/pay/${cleanKaspiPhone}?amount=${price}`;
-      console.log('[KASPI_LINK]', kaspiLink);
+      const digits = kaspiPhone.replace(/[^0-9]/g, "").slice(-11);
+      const formattedKaspiPhone = `+${digits.slice(0,1)} ${digits.slice(1,4)} ${digits.slice(4,7)} ${digits.slice(7,9)} ${digits.slice(9,11)}`;
+      const formattedPrice = price.toLocaleString('ru-KZ');
 
       const updated = await storage.updateBooking(bookingId, {
         status: "payment_requested",
@@ -1637,21 +1637,19 @@ ${magicLink}`;
       const customerPhone = booking.customerPhone || booking.normalizedPhone || null;
       console.log(`[KASPI_PAYMENT] booking=${bookingId} customerPhone="${booking.customerPhone}" normalizedPhone="${booking.normalizedPhone}" resolvedPhone="${customerPhone}"`);
       if (customerPhone) {
-        const specialistDative = toDativeCase(specialist.name);
-        const formattedPrice = price.toLocaleString('ru-KZ');
-        const waText = `Спасибо за визит к ${specialistDative}!\n\nСумма к оплате: ${formattedPrice} ₸\n\nОплатить через Kaspi:\n${kaspiLink}\n\nПосле оплаты мастер завершит визит и отправит ссылку для отзыва.`;
+        const waText = `Оплатить в Kaspi:\nСумма: ${formattedPrice} ₸\nНомер: ${formattedKaspiPhone}`;
         const waResult = await sendDirectWaMessage(customerPhone, waText, bookingId);
         waSent = waResult.success;
         if (!waSent) {
           console.error(`[KASPI_PAYMENT] WA send failed for booking=${bookingId}: ${waResult.error}`);
         }
       } else {
-        console.log(`[KASPI_PAYMENT] booking=${bookingId} NO_PHONE — Kaspi link NOT sent via WA`);
+        console.log(`[KASPI_PAYMENT] booking=${bookingId} NO_PHONE — payment info NOT sent via WA`);
       }
 
-      console.log(`[KASPI_PAYMENT] booking=${bookingId} status=payment_requested price=${price} kaspiPhone=${cleanKaspiPhone} waSent=${waSent} userId=${userId}`);
+      console.log(`[KASPI_PAYMENT] booking=${bookingId} status=payment_requested price=${price} kaspiPhone=${formattedKaspiPhone} waSent=${waSent} userId=${userId}`);
 
-      res.json({ booking: updated, kaspiLink, waSent });
+      res.json({ booking: updated, waSent });
     } catch (err: any) {
       console.error("Error requesting payment:", err);
       res.status(500).json({ message: err.message });
