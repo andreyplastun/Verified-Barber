@@ -506,6 +506,8 @@ export default function SpecialistDashboard() {
       if (!actualDate || !actualTime) throw new Error('Укажите дату и время');
       const appointmentTime = new Date(`${actualDate}T${actualTime}`);
       if (isNaN(appointmentTime.getTime())) throw new Error('Неверный формат даты/времени');
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      if (appointmentTime < twentyFourHoursAgo) throw new Error('Можно выбрать только текущую дату или последние 24 часа');
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000);
       try {
@@ -1318,9 +1320,35 @@ export default function SpecialistDashboard() {
                       type="date"
                       className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                       value={newBookingDate}
-                      onChange={(e) => setNewBookingDate(e.target.value)}
-                      onInput={(e) => setNewBookingDate((e.target as HTMLInputElement).value)}
-                      onBlur={(e) => setNewBookingDate(e.target.value)}
+                      min={(() => { const d = new Date(Date.now() - 24*60*60*1000); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; })()}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        const selected = new Date(val + 'T23:59:59');
+                        const cutoff = new Date(Date.now() - 24*60*60*1000);
+                        if (selected < cutoff) {
+                          toast({ title: 'Дата недоступна', description: 'Можно выбрать только текущую дату или последние 24 часа', variant: 'destructive' });
+                          return;
+                        }
+                        setNewBookingDate(val);
+                      }}
+                      onInput={(e) => {
+                        const val = (e.target as HTMLInputElement).value;
+                        const selected = new Date(val + 'T23:59:59');
+                        const cutoff = new Date(Date.now() - 24*60*60*1000);
+                        if (selected < cutoff) return;
+                        setNewBookingDate(val);
+                      }}
+                      onBlur={(e) => {
+                        const val = e.target.value;
+                        const selected = new Date(val + 'T23:59:59');
+                        const cutoff = new Date(Date.now() - 24*60*60*1000);
+                        if (selected < cutoff) {
+                          e.target.value = '';
+                          setNewBookingDate('');
+                          return;
+                        }
+                        setNewBookingDate(val);
+                      }}
                       data-testid="input-new-booking-date"
                     />
                   </div>

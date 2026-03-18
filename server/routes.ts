@@ -657,6 +657,17 @@ export async function registerRoutes(
       }
       
       const input = api.bookings.create.input.parse(body);
+
+      const apptDate = new Date(input.appointmentTime);
+      if (isNaN(apptDate.getTime())) {
+        return res.status(400).json({ message: "Неверный формат даты" });
+      }
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      if (apptDate < twentyFourHoursAgo) {
+        console.log(`[BOOKING_CREATE] Rejected: date too old. appt=${apptDate.toISOString()} cutoff=${twentyFourHoursAgo.toISOString()}`);
+        return res.status(400).json({ message: "Нельзя создать запись старше 24 часов" });
+      }
+
       const normalized = normalizePhone(input.customerPhone);
       const booking = await storage.createBooking({
         ...input,
@@ -990,6 +1001,16 @@ export async function registerRoutes(
       
       if (!specialistId || !customerName || !customerPhone || !customerEmail || !appointmentTime) {
         return res.status(400).json({ message: "Missing required fields (including email)" });
+      }
+
+      const apptDate = new Date(appointmentTime);
+      if (isNaN(apptDate.getTime())) {
+        return res.status(400).json({ message: "Неверный формат даты" });
+      }
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      if (apptDate < twentyFourHoursAgo) {
+        console.log(`[ADMIN_BOOKING] Rejected: date too old. appt=${apptDate.toISOString()} cutoff=${twentyFourHoursAgo.toISOString()}`);
+        return res.status(400).json({ message: "Нельзя создать запись старше 24 часов" });
       }
       
       // Look up or create user by email
@@ -1535,6 +1556,16 @@ ${magicLink}`;
 
       if (!customerName || !appointmentTime) {
         return res.status(400).json({ message: "Имя клиента и время записи обязательны" });
+      }
+
+      const apptDate = new Date(appointmentTime);
+      if (isNaN(apptDate.getTime())) {
+        return res.status(400).json({ message: "Неверный формат даты" });
+      }
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      if (apptDate < twentyFourHoursAgo) {
+        console.log(`[SPECIALIST_BOOKING] Rejected: date too old. appt=${apptDate.toISOString()} cutoff=${twentyFourHoursAgo.toISOString()}`);
+        return res.status(400).json({ message: "Нельзя создать запись старше 24 часов" });
       }
 
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);

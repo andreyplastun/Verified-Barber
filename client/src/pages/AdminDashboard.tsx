@@ -679,7 +679,14 @@ export default function AdminDashboard() {
                   id="appointmentTime"
                   type="datetime-local"
                   value={formData.appointmentTime}
-                  onChange={(e) => setFormData({ ...formData, appointmentTime: e.target.value })}
+                  min={(() => { const d = new Date(Date.now() - 24*60*60*1000); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0'); const h = String(d.getHours()).padStart(2,'0'); const min = String(d.getMinutes()).padStart(2,'0'); return `${y}-${m}-${day}T${h}:${min}`; })()}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    const selected = new Date(val);
+                    const cutoff = new Date(Date.now() - 24*60*60*1000);
+                    if (selected < cutoff) return;
+                    setFormData({ ...formData, appointmentTime: val });
+                  }}
                   required
                   data-testid="input-appointment-time"
                 />
