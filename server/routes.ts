@@ -1622,8 +1622,9 @@ ${magicLink}`;
         return res.status(400).json({ message: "Укажите корректную сумму оплаты (целое число от 1 до 10 000 000 ₸)" });
       }
 
-      const cleanKaspiPhone = kaspiPhone.replace(/\D/g, "");
-      const kaspiLink = `https://kaspi.kz/pay/p2p?to=${cleanKaspiPhone}&amount=${price}`;
+      const cleanKaspiPhone = kaspiPhone.replace(/[^0-9]/g, "").slice(-11);
+      const kaspiLink = `https://kaspi.kz/pay/${cleanKaspiPhone}?amount=${price}`;
+      console.log('[KASPI_LINK]', kaspiLink);
 
       const updated = await storage.updateBooking(bookingId, {
         status: "payment_requested",
