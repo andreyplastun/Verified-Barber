@@ -19,6 +19,25 @@ function validateMessageText(text: string, context: string): void {
   }
 }
 
+const ALMATY_UTC_OFFSET_EARLY = 5;
+
+function isVisitToday(appointmentTime: Date | string | null): boolean {
+  if (!appointmentTime) return false;
+  const appt = new Date(appointmentTime);
+  const nowAlmaty = new Date(Date.now() + ALMATY_UTC_OFFSET_EARLY * 60 * 60 * 1000);
+  const apptAlmaty = new Date(appt.getTime() + ALMATY_UTC_OFFSET_EARLY * 60 * 60 * 1000);
+  return nowAlmaty.getUTCFullYear() === apptAlmaty.getUTCFullYear() &&
+         nowAlmaty.getUTCMonth() === apptAlmaty.getUTCMonth() &&
+         nowAlmaty.getUTCDate() === apptAlmaty.getUTCDate();
+}
+
+function isEveningVisit(appointmentTime: Date | string | null): boolean {
+  if (!appointmentTime) return false;
+  const appt = new Date(appointmentTime);
+  const almatyHour = (appt.getUTCHours() + ALMATY_UTC_OFFSET_EARLY) % 24;
+  return almatyHour >= 20 && almatyHour < 21;
+}
+
 const PRIMARY_TEMPLATES = [
   "{clientName}, спасибо за визит к {specialistNameDative}. Оставьте, пожалуйста, отзыв: {reviewLink}",
   "{clientName}, благодарим за визит к {specialistNameDative}. Будем признательны за оставленный отзыв: {reviewLink}",
@@ -309,6 +328,14 @@ export async function enqueueReviewMessage(params: {
 
   const dedupeKey = `${params.messageType}_${params.bookingId}`;
 
+  if (params.messageType === "primary") {
+    const booking = await storage.getBooking(params.bookingId);
+    if (booking && !isVisitToday(booking.appointmentTime)) {
+      console.log(`[WA_QUEUE] Skipping primary for booking=${params.bookingId}: visit not today (appt=${booking.appointmentTime})`);
+      return;
+    }
+  }
+
   const isOptedOut = await storage.isWaOptedOut(params.customerPhone.replace(/\D/g, ""));
   if (isOptedOut) {
     console.log(`[WA_QUEUE] Skipping ${params.messageType} for booking=${params.bookingId}: phone opted out`);
@@ -332,8 +359,14 @@ export async function enqueueReviewMessage(params: {
   if (params.immediate) {
     scheduledAt = now;
   } else if (params.messageType === "primary") {
-    const delayMs = params.delayMs || randomMinutes(45, 75);
-    scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
+    const booking = await storage.getBooking(params.bookingId);
+    if (booking && isEveningVisit(booking.appointmentTime)) {
+      scheduledAt = new Date(now.getTime() + 10 * 60 * 1000);
+      console.log(`[WA_QUEUE] Evening visit booking=${params.bookingId}: scheduling in 10 min (ignoring quiet hours)`);
+    } else {
+      const delayMs = params.delayMs || randomMinutes(45, 75);
+      scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
+    }
   } else {
     const delayMs = params.delayMs || randomMinutes(21 * 60, 24 * 60);
     scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
@@ -499,6 +532,18 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
     console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_cancelled`);
     return false;
   }
+  if (msg.messageType === "primary" && !isVisitToday(booking.appointmentTime)) {
+    await storage.markWaMessageSkipped(msg.id, "expired_not_today");
+    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=primary reason=expired_not_today appt=${booking.appointmentTime}`);
+    return false;
+  }
+
+  if (isInQuietHours(new Date()) && !isEveningVisit(booking.appointmentTime)) {
+    await db.update(waMessages)
+      .set({ status: "queued" } as any)
+      .where(eq(waMessages.id, msg.id));
+    return false;
+  }
 
   if (msg.messageType === "reminder") {
     const primaryCheck = await checkPrimaryBeforeFollowup(msg);
@@ -614,9 +659,7 @@ export async function processWaQueue(): Promise<void> {
   }
 
   const now = new Date();
-  if (isInQuietHours(now)) {
-    return;
-  }
+  const inQuiet = isInQuietHours(now);
 
   const expired = await expireOldMessages();
   if (expired > 0) {

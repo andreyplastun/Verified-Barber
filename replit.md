@@ -56,7 +56,8 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **Message Types**: PRIMARY (on visit completion) + FOLLOWUP/REMINDER (created ONLY after primary is successfully sent, 21-24h delay)
 - **Event-based model**: Only PRIMARY is enqueued at magic link creation. FOLLOWUP is created automatically by `createFollowup()` after primary send succeeds. Deduplication via `dedupe_key` (format: `{type}_{bookingId}`, unique index).
 - **Templates**: 5 variations per type with {clientName}, {specialistNameDative}, {specialistNameGenitive}, {reviewLink} placeholders. Russian declension (dative/genitive) with non-declinable name list for Kazakh names. Random selection, no repeats.
-- **Scheduling**: PRIMARY delay: random 45-75min after visit completion. FOLLOWUP delay: random 21-24h after primary sent. Quiet hours: 20:00-10:30 Almaty time — messages landing in quiet hours shift to 10:30 next day.
+- **Scheduling**: PRIMARY delay: random 45-75min after visit completion. FOLLOWUP delay: random 21-24h after primary sent. Quiet hours: 20:00-10:30 Almaty time — messages landing in quiet hours shift to 10:30 next day. Evening visits (20:00-21:00): primary scheduled +10min, ignoring quiet hours.
+- **Primary Guard**: Primary only created for today's visits (by appointment date in Almaty TZ). At send time, stale primaries (appointment != today) auto-skipped as `expired_not_today`. No backlog accumulation.
 - **Warmup**: Day1=2, Day2=3, Day3=5, Day4=8, Day5=12, Day6+=min(15, WA_DAILY_LIMIT).
 - **Processor**: Runs every 60s (separate from 5min main background jobs). Batch processing up to daily limit. Priority: followup > primary. No orphan detection needed (followups only exist after primary sent).
 - **Sending**: AssistBot WhatsApp provider via ASSISTBOT_TOKEN env var, endpoint: POST https://lk.assistbot.ru/api/web/index.php/sms/
