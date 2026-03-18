@@ -1637,7 +1637,9 @@ ${magicLink}`;
       const customerPhone = booking.customerPhone || booking.normalizedPhone || null;
       console.log(`[KASPI_PAYMENT] booking=${bookingId} customerPhone="${booking.customerPhone}" normalizedPhone="${booking.normalizedPhone}" resolvedPhone="${customerPhone}"`);
       if (customerPhone) {
-        const waText = `Оплатить в Kaspi:\nСумма: ${formattedPrice} ₸\nНомер: ${formattedKaspiPhone}`;
+        const specialistDative = toDativeCase(specialist.name);
+        const clientGreeting = booking.customerName ? `${booking.customerName}, спасибо за визит к ${specialistDative}!` : `Спасибо за визит к ${specialistDative}!`;
+        const waText = `${clientGreeting}\n\nК оплате: ${formattedPrice} ₸\n\nОплатить в Kaspi:\nНомер: ${formattedKaspiPhone}\n\nПосле оплаты мастер завершит визит и отправит ссылку для отзыва.`;
         const waResult = await sendDirectWaMessage(customerPhone, waText, bookingId);
         waSent = waResult.success;
         if (!waSent) {
