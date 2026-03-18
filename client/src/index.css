@@ -183,6 +183,18 @@ html, body {
   }
 }
 
+/* Lighter placeholders so they don't look like filled values */
+input::placeholder,
+textarea::placeholder {
+  color: hsl(220 9% 72%) !important;
+  opacity: 1;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: hsl(220 9% 45%) !important;
+  opacity: 1;
+}
+
 /* No horizontal scroll */
 .no-scrollbar {
   -ms-overflow-style: none;
