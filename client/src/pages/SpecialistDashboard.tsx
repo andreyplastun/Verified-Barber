@@ -4,7 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus } from 'lucide-react';
+import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
@@ -1265,7 +1267,7 @@ export default function SpecialistDashboard() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5" />
+              <CalendarIcon className="w-5 h-5" />
               <CardTitle>Предстоящие записи</CardTitle>
             </div>
             <div className="flex items-center gap-2">
@@ -1314,43 +1316,43 @@ export default function SpecialistDashboard() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="space-y-2">
-                    <Label htmlFor="new-booking-date">Дата *</Label>
-                    <input
-                      id="new-booking-date"
-                      type="date"
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      value={newBookingDate}
-                      min={(() => { const d = new Date(Date.now() - 24*60*60*1000); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,'0'); const day = String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${day}`; })()}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        const selected = new Date(val + 'T23:59:59');
-                        const cutoff = new Date(Date.now() - 24*60*60*1000);
-                        if (selected < cutoff) {
-                          toast({ title: 'Дата недоступна', description: 'Можно выбрать только текущую дату или последние 24 часа', variant: 'destructive' });
-                          return;
-                        }
-                        setNewBookingDate(val);
-                      }}
-                      onInput={(e) => {
-                        const val = (e.target as HTMLInputElement).value;
-                        const selected = new Date(val + 'T23:59:59');
-                        const cutoff = new Date(Date.now() - 24*60*60*1000);
-                        if (selected < cutoff) return;
-                        setNewBookingDate(val);
-                      }}
-                      onBlur={(e) => {
-                        const val = e.target.value;
-                        const selected = new Date(val + 'T23:59:59');
-                        const cutoff = new Date(Date.now() - 24*60*60*1000);
-                        if (selected < cutoff) {
-                          e.target.value = '';
-                          setNewBookingDate('');
-                          return;
-                        }
-                        setNewBookingDate(val);
-                      }}
-                      data-testid="input-new-booking-date"
-                    />
+                    <Label>Дата *</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-full justify-start text-left font-normal h-10"
+                          data-testid="input-new-booking-date"
+                        >
+                          <CalendarDays className="mr-2 h-4 w-4" />
+                          {newBookingDate ? format(new Date(newBookingDate + 'T00:00:00'), 'd MMM yyyy') : <span className="text-muted-foreground">Выберите</span>}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={newBookingDate ? new Date(newBookingDate + 'T00:00:00') : undefined}
+                          onSelect={(date) => {
+                            if (date) {
+                              const y = date.getFullYear();
+                              const m = String(date.getMonth() + 1).padStart(2, '0');
+                              const d = String(date.getDate()).padStart(2, '0');
+                              setNewBookingDate(`${y}-${m}-${d}`);
+                            }
+                          }}
+                          disabled={(date) => {
+                            const cutoff = new Date();
+                            cutoff.setDate(cutoff.getDate() - 1);
+                            cutoff.setHours(cutoff.getHours(), cutoff.getMinutes(), 0, 0);
+                            const startOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
+                            return startOfDay < new Date(Date.now() - 24 * 60 * 60 * 1000);
+                          }}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <input type="hidden" id="new-booking-date" value={newBookingDate} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="new-booking-time">Время *</Label>
