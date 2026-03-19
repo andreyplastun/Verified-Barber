@@ -765,13 +765,25 @@ export async function processWaQueue(): Promise<void> {
   let sentCount = 0;
   let skippedCount = 0;
   let deferredCount = 0;
+  const sentPhonesThisBatch = new Set<string>();
 
   for (const msg of batch) {
     if (msg.status !== "sending") continue;
 
+    if (sentPhonesThisBatch.has(msg.customerPhone)) {
+      const deferTo = new Date(Date.now() + 20 * 60 * 60 * 1000);
+      await db.update(waMessages)
+        .set({ scheduledAt: deferTo, status: "queued" } as any)
+        .where(eq(waMessages.id, msg.id));
+      console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=batch_phone_cooldown defer_to=${deferTo.toISOString()}`);
+      deferredCount++;
+      continue;
+    }
+
     const result = await processOneMessage(msg);
     if (result) {
       sentCount++;
+      sentPhonesThisBatch.add(msg.customerPhone);
     } else {
       const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
       if (refreshed?.status === "sending") {
