@@ -3,6 +3,54 @@ import { db } from "./db";
 import { appConfig, waMessages, magicLinks } from "@shared/schema";
 import { eq, and, asc, sql } from "drizzle-orm";
 
+const IS_PRODUCTION = process.env.REPL_SLUG === 'rateus' || process.env.RAILWAY_ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production';
+
+async function acquirePhoneLock(phone: string, ttlSeconds: number = 30): Promise<boolean> {
+  const lockKey = hashPhoneToLockId(phone);
+  try {
+    const result = await db.execute(sql`SELECT pg_try_advisory_lock(${lockKey}) as acquired`);
+    if (!(result.rows[0] as any)?.acquired) {
+      return false;
+    }
+    setTimeout(async () => {
+      try { await db.execute(sql`SELECT pg_advisory_unlock(${lockKey})`); } catch {}
+    }, ttlSeconds * 1000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function releasePhoneLock(phone: string): Promise<void> {
+  const lockKey = hashPhoneToLockId(phone);
+  try { await db.execute(sql`SELECT pg_advisory_unlock(${lockKey})`); } catch {}
+}
+
+function hashPhoneToLockId(phone: string): number {
+  let hash = 0x57410000;
+  for (let i = 0; i < phone.length; i++) {
+    hash = ((hash << 5) - hash + phone.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
+async function finalPhoneGuard(phone: string, excludeMsgId?: number): Promise<{ blocked: boolean; reason?: string; prevMsgId?: number }> {
+  const cleanPhone = phone.replace(/\D/g, "");
+  const result = await db.execute(sql`
+    SELECT id, booking_id, message_type, sent_at FROM wa_messages 
+    WHERE customer_phone = ${cleanPhone} 
+    AND status = 'sent' 
+    AND sent_at > NOW() - INTERVAL '20 hours'
+    ${excludeMsgId ? sql`AND id != ${excludeMsgId}` : sql``}
+    ORDER BY sent_at DESC LIMIT 1
+  `);
+  if (result.rows.length > 0) {
+    const prev = result.rows[0] as any;
+    return { blocked: true, reason: `phone_guard_20h (prev msg=${prev.id} booking=${prev.booking_id} sent=${prev.sent_at})`, prevMsgId: prev.id };
+  }
+  return { blocked: false };
+}
+
 function validateReviewLink(link: string, context: string): void {
   if (!link.startsWith('https://')) {
     const stack = new Error().stack || '';
@@ -210,6 +258,11 @@ async function getAssistBotToken(): Promise<string | null> {
 }
 
 async function sendViaAssistBot(phone: string, text: string, bookingId: number, source: string = "unknown"): Promise<string | null> {
+  if (!IS_PRODUCTION) {
+    console.log(`[WA_ENV_GUARD] BLOCKED send in non-production env. source=${source} phone=${phone} booking=${bookingId}`);
+    throw new Error(`[ENV_GUARD] WA sending blocked in non-production environment`);
+  }
+
   const allRLinks = text.match(/(?:^|\s|:)\s*(\/r\/\S+)/g) || [];
   const hasAbsoluteRLink = /https:\/\/\S*\/r\//.test(text);
   if (allRLinks.length > 0 && !hasAbsoluteRLink) {
@@ -588,7 +641,26 @@ async function refreshLinkIfExpired(msg: typeof waMessages.$inferSelect): Promis
 }
 
 async function doSend(msg: typeof waMessages.$inferSelect, source: string = "queue"): Promise<boolean> {
+  const lockAcquired = await acquirePhoneLock(msg.customerPhone);
+  if (!lockAcquired) {
+    console.log(`[WA_LOCK] Could not acquire lock for phone=${msg.customerPhone} msg=${msg.id} booking=${msg.bookingId} — rescheduling`);
+    const deferTo = new Date(Date.now() + 2 * 60 * 1000);
+    await db.update(waMessages)
+      .set({ scheduledAt: deferTo, status: "queued" } as any)
+      .where(eq(waMessages.id, msg.id));
+    return false;
+  }
+
   try {
+    const guard = await finalPhoneGuard(msg.customerPhone, msg.id);
+    if (guard.blocked) {
+      await db.update(waMessages)
+        .set({ status: "skipped", skipReason: `final_phone_guard: ${guard.reason}` } as any)
+        .where(eq(waMessages.id, msg.id));
+      console.log(`[WA_FINAL_GUARD] BLOCKED msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} phone=${msg.customerPhone} reason=${guard.reason}`);
+      return false;
+    }
+
     msg = await refreshLinkIfExpired(msg);
     const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId, `${source}_${msg.messageType}`);
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
@@ -610,6 +682,8 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
       console.error(`[WA_PROCESSOR] Failed msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} error=${err.message} attempt=${newAttempts}/${msg.maxAttempts} retry_at=${nextScheduledAt.toISOString()}`);
     }
     return false;
+  } finally {
+    await releasePhoneLock(msg.customerPhone);
   }
 }
 
@@ -619,26 +693,6 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
     await storage.markWaMessageSkipped(msg.id, "opt_out");
     console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=opt_out`);
     return false;
-  }
-
-  const recentSentToPhone = await db.execute(sql`
-    SELECT id, booking_id, message_type, sent_at FROM wa_messages 
-    WHERE customer_phone = ${msg.customerPhone} 
-    AND status = 'sent' 
-    AND sent_at > NOW() - INTERVAL '20 hours'
-    AND id != ${msg.id}
-    ORDER BY sent_at DESC LIMIT 1
-  `);
-  if (recentSentToPhone.rows.length > 0) {
-    const prev = recentSentToPhone.rows[0] as any;
-    const deferTo = new Date(new Date(prev.sent_at).getTime() + 20 * 60 * 60 * 1000);
-    if (deferTo > new Date()) {
-      await db.update(waMessages)
-        .set({ scheduledAt: deferTo } as any)
-        .where(eq(waMessages.id, msg.id));
-      console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=phone_cooldown (prev msg=${prev.id} sent_at=${prev.sent_at}) defer_to=${deferTo.toISOString()}`);
-      return false;
-    }
   }
 
   const booking = await storage.getBooking(msg.bookingId);
