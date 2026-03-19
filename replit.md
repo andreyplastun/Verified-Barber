@@ -54,6 +54,7 @@ The backend is built with Node.js and Express in TypeScript, featuring RESTful A
 - **Location**: `server/whatsapp.ts`
 - **Tables**: `wa_messages` (queue + log, `dedupe_key` unique column), `wa_opt_outs` (opt-out phones), settings in `app_config` (WA_SENDING_ENABLED, WA_WARMUP_START_DATE, WA_DAILY_LIMIT)
 - **Message Types**: PRIMARY (on visit completion) + FOLLOWUP/REMINDER (created ONLY after primary is successfully sent, 21-24h delay)
+- **Magic Link TTL**: 7 days from creation. Before sending any WA message, `refreshLinkIfExpired()` checks if the link is still valid — if expired, creates a new magic link and updates the message text/link in the wa_messages row. This prevents sending dead links when messages are delayed by warmup limits or queue backlog.
 - **Event-based model**: Only PRIMARY is enqueued at magic link creation. FOLLOWUP is created automatically by `createFollowup()` after primary send succeeds. Deduplication via `dedupe_key` (format: `{type}_{bookingId}`, unique index).
 - **Templates**: 5 variations per type with {clientName}, {specialistNameDative}, {specialistNameGenitive}, {reviewLink} placeholders. Russian declension (dative/genitive) with non-declinable name list for Kazakh names. Random selection, no repeats.
 - **Scheduling**: PRIMARY delay: random 45-75min after visit completion. FOLLOWUP delay: random 21-24h after primary sent. Quiet hours: 20:00-10:30 Almaty time — messages landing in quiet hours shift to 10:30 next day. Evening visits (20:00-21:00): primary scheduled +10min, ignoring quiet hours.

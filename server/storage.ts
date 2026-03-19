@@ -863,7 +863,7 @@ export class DatabaseStorage implements IStorage {
   // Magic Links
   async createMagicLink(userId: string | null, bookingId: number, specialistId: number, isFollowup: boolean = false, customerPhone: string | null = null): Promise<MagicLink> {
     const token = crypto.randomBytes(12).toString('base64url'); // 16 chars, URL-safe
-    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
     
     const [link] = await db.insert(magicLinks).values({
       token,

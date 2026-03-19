@@ -262,7 +262,7 @@ export default function MagicReviewPage() {
         </div>
         <h2 className="text-2xl font-bold mb-2">Ссылка больше не активна</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          {reason === 'expired' && 'Срок действия ссылки истёк (24 часа).'}
+          {reason === 'expired' && 'Срок действия ссылки истёк.'}
           {reason === 'used' && 'Эта ссылка уже была использована.'}
           {reason === 'review_exists' && 'Отзыв уже оставлен для этого визита.'}
           {!['expired', 'used', 'review_exists'].includes(reason) && 'Вы можете оставить отзыв, войдя в приложение вручную.'}

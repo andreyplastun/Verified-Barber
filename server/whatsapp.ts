@@ -1,6 +1,6 @@
 import { storage } from "./storage";
 import { db } from "./db";
-import { appConfig, waMessages } from "@shared/schema";
+import { appConfig, waMessages, magicLinks } from "@shared/schema";
 import { eq, and, asc, sql } from "drizzle-orm";
 
 function validateReviewLink(link: string, context: string): void {
@@ -483,8 +483,55 @@ async function checkPrimaryBeforeFollowup(msg: typeof waMessages.$inferSelect): 
   return "wait";
 }
 
+const REVIEW_BASE_URL = 'https://www.rateus.kz';
+
+async function refreshLinkIfExpired(msg: typeof waMessages.$inferSelect): Promise<typeof waMessages.$inferSelect> {
+  if (!msg.reviewLink) return msg;
+
+  const tokenMatch = msg.reviewLink.match(/\/r\/([^\/\s]+)$/);
+  if (!tokenMatch) return msg;
+
+  const token = tokenMatch[1];
+  const link = await storage.getMagicLinkByToken(token);
+
+  if (!link) {
+    console.log(`[WA_LINK_REFRESH] msg=${msg.id} booking=${msg.bookingId}: link token not found, keeping as-is`);
+    return msg;
+  }
+
+  const now = new Date();
+  if (new Date(link.expiresAt) > now) {
+    return msg;
+  }
+
+  console.log(`[WA_LINK_REFRESH] msg=${msg.id} booking=${msg.bookingId}: link expired at ${link.expiresAt}, creating new one`);
+
+  const newLink = await storage.createMagicLink(
+    link.userId,
+    link.bookingId,
+    link.specialistId,
+    link.isFollowup || false,
+    link.customerPhone
+  );
+
+  const newReviewLink = `${REVIEW_BASE_URL}/r/${newLink.token}`;
+  const newMessageText = msg.messageText.replace(msg.reviewLink, newReviewLink);
+
+  validateReviewLink(newReviewLink, `refreshLinkIfExpired_booking=${msg.bookingId}`);
+  validateMessageText(newMessageText, `refreshLinkIfExpired_booking=${msg.bookingId}`);
+
+  await db.update(waMessages)
+    .set({ reviewLink: newReviewLink, messageText: newMessageText } as any)
+    .where(eq(waMessages.id, msg.id));
+
+  console.log(`[WA_LINK_REFRESH] msg=${msg.id} booking=${msg.bookingId}: link refreshed, new token=${newLink.token}, expires=${newLink.expiresAt}`);
+
+  return { ...msg, reviewLink: newReviewLink, messageText: newMessageText };
+}
+
 async function doSend(msg: typeof waMessages.$inferSelect, source: string = "queue"): Promise<boolean> {
   try {
+    msg = await refreshLinkIfExpired(msg);
     const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId, `${source}_${msg.messageType}`);
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
     console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
