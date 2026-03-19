@@ -87,19 +87,19 @@ function isEveningVisit(appointmentTime: Date | string | null): boolean {
 }
 
 const PRIMARY_TEMPLATES = [
-  "{clientName}, спасибо за визит к {specialistNameDative}. Оставьте, пожалуйста, отзыв: {reviewLink}",
-  "{clientName}, благодарим за визит к {specialistNameDative}. Будем признательны за оставленный отзыв: {reviewLink}",
-  "{clientName}, как прошёл визит к {specialistNameDative}? Оставьте, пожалуйста, отзыв: {reviewLink}",
-  "{clientName}, спасибо за доверие к {specialistNameDative}. Поделитесь, пожалуйста, впечатлением: {reviewLink}",
-  "{clientName}, визит к {specialistNameDative} завершён. Оцените, пожалуйста, специалиста: {reviewLink}",
+  "{clientName}, спасибо за визит к вашему барберу {specialistNameDative}. Оставьте, пожалуйста, отзыв: {reviewLink}",
+  "{clientName}, благодарим за визит к вашему барберу {specialistNameDative}. Будем признательны за оставленный отзыв: {reviewLink}",
+  "{clientName}, как прошёл визит к вашему барберу {specialistNameDative}? Оставьте, пожалуйста, отзыв: {reviewLink}",
+  "{clientName}, спасибо, что выбрали барбера {specialistNameGenitive}. Поделитесь, пожалуйста, впечатлением: {reviewLink}",
+  "{clientName}, визит к вашему барберу {specialistNameDative} завершён. Оцените, пожалуйста, специалиста: {reviewLink}",
 ];
 
 const REMINDER_TEMPLATES = [
-  "{clientName}, отзыв о визите к {specialistNameDative} ещё не оставлен: {reviewLink}",
-  "{clientName}, напоминаем об отзыве для {specialistNameGenitive}. Это займёт всего несколько секунд: {reviewLink}",
-  "{clientName}, если удобно — оставьте отзыв о визите к {specialistNameDative}: {reviewLink}",
-  "{clientName}, оценка визита к {specialistNameDative} ещё не завершена. Завершить или пропустить: {reviewLink}",
-  "{clientName}, последняя возможность оценить визит к {specialistNameDative}: {reviewLink}",
+  "{clientName}, отзыв о визите к барберу {specialistNameDative} ещё не оставлен: {reviewLink}",
+  "{clientName}, напоминаем об отзыве для барбера {specialistNameGenitive}. Это займёт всего несколько секунд: {reviewLink}",
+  "{clientName}, если удобно — оставьте, пожалуйста, отзыв о визите к вашему барберу {specialistNameDative}: {reviewLink}",
+  "{clientName}, оценка визита к барберу {specialistNameDative} ещё не завершена. Завершить или пропустить: {reviewLink}",
+  "{clientName}, последняя возможность оценить визит к вашему барберу {specialistNameDative}: {reviewLink}",
 ];
 
 function getTemplates(type: "primary" | "reminder"): string[] {
