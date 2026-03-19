@@ -323,10 +323,12 @@ export async function enqueueReviewMessage(params: {
   messageType: "primary" | "reminder";
   delayMs?: number;
   immediate?: boolean;
+  isSpecialistAction?: boolean;
 }): Promise<void> {
   validateReviewLink(params.reviewLink, `enqueue_${params.messageType}_booking=${params.bookingId}`);
 
   const dedupeKey = `${params.messageType}_${params.bookingId}`;
+  const cleanPhone = params.customerPhone.replace(/\D/g, "");
 
   if (params.messageType === "primary") {
     const booking = await storage.getBooking(params.bookingId);
@@ -336,10 +338,53 @@ export async function enqueueReviewMessage(params: {
     }
   }
 
-  const isOptedOut = await storage.isWaOptedOut(params.customerPhone.replace(/\D/g, ""));
+  const isOptedOut = await storage.isWaOptedOut(cleanPhone);
   if (isOptedOut) {
     console.log(`[WA_QUEUE] Skipping ${params.messageType} for booking=${params.bookingId}: phone opted out`);
     return;
+  }
+
+  if (params.messageType === "primary" && !params.isSpecialistAction) {
+    const recentSent = await db.execute(sql`
+      SELECT id, booking_id, sent_at FROM wa_messages 
+      WHERE customer_phone = ${cleanPhone} 
+      AND status = 'sent' 
+      AND sent_at > NOW() - INTERVAL '20 hours'
+      ORDER BY sent_at DESC LIMIT 1
+    `);
+    if (recentSent.rows.length > 0) {
+      const prev = recentSent.rows[0] as any;
+      console.log(`[WA_QUEUE] Skipping primary for booking=${params.bookingId}: phone ${cleanPhone} in cooldown (prev msg=${prev.id} booking=${prev.booking_id} sent_at=${prev.sent_at})`);
+      return;
+    }
+
+    const existingQueued = await db.execute(sql`
+      SELECT wm.id, wm.booking_id, b.appointment_time 
+      FROM wa_messages wm
+      JOIN bookings b ON b.id = wm.booking_id
+      WHERE wm.customer_phone = ${cleanPhone} 
+      AND wm.message_type = 'primary'
+      AND wm.status IN ('queued', 'sending')
+      ORDER BY b.appointment_time DESC
+    `);
+
+    if (existingQueued.rows.length > 0) {
+      const booking = await storage.getBooking(params.bookingId);
+      const newApptTime = booking?.appointmentTime ? new Date(booking.appointmentTime) : new Date(0);
+
+      for (const existing of existingQueued.rows as any[]) {
+        const existingApptTime = existing.appointment_time ? new Date(existing.appointment_time) : new Date(0);
+        if (newApptTime >= existingApptTime) {
+          await db.update(waMessages)
+            .set({ status: "skipped", skipReason: "superseded_by_newer_visit" } as any)
+            .where(eq(waMessages.id, existing.id));
+          console.log(`[WA_PHONE_CENTRIC] Superseded msg=${existing.id} booking=${existing.booking_id} (older visit) in favor of booking=${params.bookingId} phone=${cleanPhone}`);
+        } else {
+          console.log(`[WA_PHONE_CENTRIC] Skipping enqueue for booking=${params.bookingId}: existing msg=${existing.id} booking=${existing.booking_id} has newer visit phone=${cleanPhone}`);
+          return;
+        }
+      }
+    }
   }
 
   const lastIndex = await storage.getLastSentTemplateIndex(params.messageType);
@@ -376,7 +421,7 @@ export async function enqueueReviewMessage(params: {
     await db.insert(waMessages).values({
       bookingId: params.bookingId,
       specialistId: params.specialistId,
-      customerPhone: params.customerPhone.replace(/\D/g, ""),
+      customerPhone: cleanPhone,
       customerName: params.customerName,
       specialistName: params.specialistName,
       reviewLink: params.reviewLink,
@@ -394,7 +439,7 @@ export async function enqueueReviewMessage(params: {
     throw err;
   }
 
-  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${params.customerPhone.replace(/\D/g, "")} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
+  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
 
   if (params.immediate && params.messageType === "primary") {
     const claimed = await db.update(waMessages)
@@ -416,6 +461,19 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
   if (booking?.hasReview) {
     console.log(`[WA_FOLLOWUP] Skip followup for booking=${msg.bookingId}: review already submitted`);
     return;
+  }
+
+  const superseded = await db.update(waMessages)
+    .set({ status: "skipped", skipReason: "superseded_followup_same_phone" } as any)
+    .where(and(
+      sql`${waMessages.customerPhone} = ${msg.customerPhone}`,
+      sql`${waMessages.messageType} = 'reminder'`,
+      sql`${waMessages.status} IN ('queued', 'sending')`,
+      sql`${waMessages.bookingId} != ${msg.bookingId}`
+    ))
+    .returning({ id: waMessages.id, bookingId: waMessages.bookingId });
+  if (superseded.length > 0) {
+    console.log(`[WA_PHONE_CENTRIC] Superseded ${superseded.length} old reminders for phone=${msg.customerPhone}: ${superseded.map(s => `msg=${s.id}/booking=${s.bookingId}`).join(', ')}`);
   }
 
   const dedupeKey = `reminder_${msg.bookingId}`;
@@ -450,7 +508,7 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
       scheduledAt,
       dedupeKey,
     }).onConflictDoNothing();
-    console.log(`[WA_FOLLOWUP] Created followup for booking=${msg.bookingId} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey}`);
+    console.log(`[WA_FOLLOWUP] Created followup for booking=${msg.bookingId} phone=${msg.customerPhone} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey}`);
   } catch (err: any) {
     if (err.code === '23505') {
       console.log(`[WA_FOLLOWUP] Dedupe: followup for booking=${msg.bookingId} already exists`);
@@ -713,6 +771,33 @@ async function expireOldMessages(): Promise<number> {
   return result.length;
 }
 
+async function deduplicateQueueByPhone(): Promise<number> {
+  const dupes = await db.execute(sql`
+    WITH ranked AS (
+      SELECT wm.id, wm.booking_id, wm.customer_phone, wm.message_type,
+             b.appointment_time, b.price,
+             ROW_NUMBER() OVER (
+               PARTITION BY wm.customer_phone, wm.message_type
+               ORDER BY b.appointment_time DESC NULLS LAST, b.price DESC NULLS LAST, wm.id DESC
+             ) as rn
+      FROM wa_messages wm
+      JOIN bookings b ON b.id = wm.booking_id
+      WHERE wm.status IN ('queued', 'sending')
+    )
+    SELECT id, booking_id, customer_phone, message_type FROM ranked WHERE rn > 1
+  `);
+
+  let superseded = 0;
+  for (const row of dupes.rows as any[]) {
+    await db.update(waMessages)
+      .set({ status: "skipped", skipReason: "superseded_phone_dedup" } as any)
+      .where(eq(waMessages.id, row.id));
+    console.log(`[WA_PHONE_CENTRIC] Pre-batch superseded msg=${row.id} booking=${row.booking_id} type=${row.message_type} phone=${row.customer_phone}`);
+    superseded++;
+  }
+  return superseded;
+}
+
 export async function processWaQueue(): Promise<void> {
   const settings = await getWaSettings();
 
@@ -726,11 +811,15 @@ export async function processWaQueue(): Promise<void> {
   }
 
   const now = new Date();
-  const inQuiet = isInQuietHours(now);
 
   const expired = await expireOldMessages();
   if (expired > 0) {
     console.log(`[WA_PROCESSOR] Expired ${expired} messages older than 7 days`);
+  }
+
+  const deduped = await deduplicateQueueByPhone();
+  if (deduped > 0) {
+    console.log(`[WA_PROCESSOR] Phone dedup: superseded ${deduped} duplicate messages`);
   }
 
   const sentToday = await storage.countWaMessagesSentToday();
@@ -744,12 +833,14 @@ export async function processWaQueue(): Promise<void> {
     .set({ status: "sending" } as any)
     .where(
       sql`${waMessages.id} IN (
-        SELECT id FROM wa_messages
-        WHERE status = 'queued' AND scheduled_at <= ${now}
-        ORDER BY
-          booking_id,
-          CASE message_type WHEN 'primary' THEN 1 WHEN 'reminder' THEN 2 END,
-          scheduled_at ASC
+        SELECT id FROM (
+          SELECT DISTINCT ON (customer_phone) id, customer_phone
+          FROM wa_messages
+          WHERE status = 'queued' AND scheduled_at <= ${now}
+          ORDER BY customer_phone, 
+            CASE message_type WHEN 'reminder' THEN 0 WHEN 'primary' THEN 1 END,
+            scheduled_at ASC
+        ) AS unique_phones
         LIMIT ${available}
       )`
     )
