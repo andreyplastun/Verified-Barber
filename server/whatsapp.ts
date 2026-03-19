@@ -563,6 +563,26 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
     return false;
   }
 
+  const recentSentToPhone = await db.execute(sql`
+    SELECT id, booking_id, message_type, sent_at FROM wa_messages 
+    WHERE customer_phone = ${msg.customerPhone} 
+    AND status = 'sent' 
+    AND sent_at > NOW() - INTERVAL '20 hours'
+    AND id != ${msg.id}
+    ORDER BY sent_at DESC LIMIT 1
+  `);
+  if (recentSentToPhone.rows.length > 0) {
+    const prev = recentSentToPhone.rows[0] as any;
+    const deferTo = new Date(new Date(prev.sent_at).getTime() + 20 * 60 * 60 * 1000);
+    if (deferTo > new Date()) {
+      await db.update(waMessages)
+        .set({ scheduledAt: deferTo } as any)
+        .where(eq(waMessages.id, msg.id));
+      console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=phone_cooldown (prev msg=${prev.id} sent_at=${prev.sent_at}) defer_to=${deferTo.toISOString()}`);
+      return false;
+    }
+  }
+
   const booking = await storage.getBooking(msg.bookingId);
   if (!booking) {
     await storage.markWaMessageSkipped(msg.id, "booking_not_found");
