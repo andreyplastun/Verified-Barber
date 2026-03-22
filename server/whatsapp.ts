@@ -212,7 +212,8 @@ function getWarmupDailyLimit(warmupStartDate: string, configLimit: number): numb
   if (daysSinceStart === 3) return Math.min(5, configLimit);
   if (daysSinceStart === 4) return Math.min(8, configLimit);
   if (daysSinceStart === 5) return Math.min(12, configLimit);
-  return Math.min(15, configLimit);
+  if (daysSinceStart <= 14) return Math.min(15, configLimit);
+  return Math.min(20, configLimit);
 }
 
 function randomMinutes(minMin: number, maxMin: number): number {
