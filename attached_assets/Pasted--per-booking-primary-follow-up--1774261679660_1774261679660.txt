@@ -1,0 +1,121 @@
+ЗАДАНИЕ: корректный расчёт конверсии (per booking) + разложение по primary / follow-up
+
+Цель:
+Исправить метрику конверсии так, чтобы:
+1) базовая конверсия считалась по уникальным визитам (booking), а не по сообщениям  
+2) при этом внутри была разбивка:
+   - конверсия после primary  
+   - вклад follow-up (дожим)  
+   - эффективность follow-up отдельно  
+
+---
+
+БЭКЕНД
+
+1. Базовая логика (per booking)
+
+Считать только уникальные booking_id, у которых был отправлен primary:
+
+- totalBookings = COUNT(DISTINCT booking_id WHERE primary_status = 'sent')
+- totalReviews = COUNT(DISTINCT booking_id WHERE has_review = true)
+
+- conversion = totalReviews / totalBookings
+
+❗ Важно:
+- НЕ считать по количеству сообщений
+- primary + follow-up = 1 попытка (один booking)
+
+---
+
+2. Разделение отзывов
+
+Для каждого booking определить:
+
+- reviewAfterPrimary:
+  has_review = true AND review_created_at < followup_sent_at (или followup не был отправлен)
+
+- reviewAfterFollowup:
+  has_review = true AND review_created_at >= followup_sent_at
+
+Агрегаты:
+
+- reviewsAfterPrimary = COUNT(booking_id где reviewAfterPrimary)
+- reviewsAfterFollowup = COUNT(booking_id где reviewAfterFollowup)
+
+Проверка:
+reviewsAfterPrimary + reviewsAfterFollowup = totalReviews
+
+---
+
+3. Метрики
+
+Основные:
+
+- conversionTotal = totalReviews / totalBookings
+
+- conversionPrimary = reviewsAfterPrimary / totalBookings
+- conversionFollowupContribution = reviewsAfterFollowup / totalBookings
+
+Дополнительно (отдельно, не в основной карточке):
+
+- followupSent = COUNT(booking_id WHERE followup_status = 'sent')
+
+- conversionFollowupEfficiency = 
+  reviewsAfterFollowup / followupSent
+
+---
+
+ФРОНТ (админка)
+
+Карточка "Конверсия":
+
+Крупно:
+- XX% — общая конверсия (conversionTotal)
+
+Под ней:
+
+- После primary: X%   (conversionPrimary)
+- Дожали follow-up: +X%   (conversionFollowupContribution)
+
+Разделитель
+
+Низ карточки:
+
+- Всего визитов: totalBookings
+- Отзывов: totalReviews
+  (N после primary, M после follow-up)
+
+---
+
+Доп. блок (мелким / tooltip / раскрытие):
+
+- Follow-up отправлено: followupSent
+- Конверсия follow-up: X% (conversionFollowupEfficiency)
+
+---
+
+ИНВАРИАНТЫ (обязательно проверить)
+
+1. follow-up никогда не существует без primary  
+2. totalBookings считает только primary sent  
+3. один booking учитывается 1 раз в базе  
+4. сумма вкладов:
+   conversionPrimary + conversionFollowupContribution = conversionTotal  
+
+---
+
+ЗАПРЕЩЕНО
+
+- Делить на (primary + follow-up) сообщения  
+- Удваивать один booking  
+- Считать conversion per message как основную метрику  
+
+---
+
+РЕЗУЛЬТАТ
+
+- Главная цифра = честная конверсия по визитам  
+- Видно:
+  → сколько даёт primary  
+  → сколько добавляет follow-up  
+  → насколько follow-up эффективен сам по себе

@@ -454,6 +454,8 @@ export default function AdminDashboard() {
     conversionPercent: number;
     primaryConversionPercent: number;
     followupIncrementPercent: number;
+    followupSent: number;
+    followupEfficiencyPercent: number;
     days: number;
   }>({
     queryKey: ["/api/admin/whatsapp/conversion", waStatsPeriod],
@@ -1246,6 +1248,14 @@ export default function AdminDashboard() {
                         <div className="flex justify-between items-center text-xs text-muted-foreground">
                           <span>Отзывов</span>
                           <span data-testid="text-wa-total-reviews">{waConversion.totalReviews} ({waConversion.reviewsAfterPrimary} после primary, {waConversion.reviewsAfterFollowup} после follow-up)</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-muted-foreground">
+                          <span>Follow-up отправлено</span>
+                          <span data-testid="text-wa-followup-sent">{waConversion.followupSent}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-muted-foreground">
+                          <span>Конверсия follow-up</span>
+                          <span data-testid="text-wa-followup-efficiency">{waConversion.followupEfficiencyPercent}%</span>
                         </div>
                       </div>
                     </div>

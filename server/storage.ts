@@ -142,6 +142,8 @@ export interface IStorage {
     conversionPercent: number;
     primaryConversionPercent: number;
     followupIncrementPercent: number;
+    followupSent: number;
+    followupEfficiencyPercent: number;
   }>;
 
   // WhatsApp Opt-outs
@@ -1255,6 +1257,8 @@ export class DatabaseStorage implements IStorage {
     conversionPercent: number;
     primaryConversionPercent: number;
     followupIncrementPercent: number;
+    followupSent: number;
+    followupEfficiencyPercent: number;
   }> {
     const sentPrimaries = await db.select({
       bookingId: waMessages.bookingId,
@@ -1271,7 +1275,7 @@ export class DatabaseStorage implements IStorage {
     const totalBookings = uniqueBookingIds.length;
 
     if (totalBookings === 0) {
-      return { totalBookings: 0, totalReviews: 0, reviewsAfterPrimary: 0, reviewsAfterFollowup: 0, conversionPercent: 0, primaryConversionPercent: 0, followupIncrementPercent: 0 };
+      return { totalBookings: 0, totalReviews: 0, reviewsAfterPrimary: 0, reviewsAfterFollowup: 0, conversionPercent: 0, primaryConversionPercent: 0, followupIncrementPercent: 0, followupSent: 0, followupEfficiencyPercent: 0 };
     }
 
     const bookingReviews = await db.select({
@@ -1293,6 +1297,7 @@ export class DatabaseStorage implements IStorage {
       )
     );
     const followupSentMap = new Map(sentFollowups.map(f => [f.bookingId, f.sentAt]));
+    const followupSent = new Set(sentFollowups.map(f => f.bookingId)).size;
 
     let reviewsAfterPrimary = 0;
     let reviewsAfterFollowup = 0;
@@ -1319,6 +1324,8 @@ export class DatabaseStorage implements IStorage {
       conversionPercent: totalBookings > 0 ? Math.round(totalReviews / totalBookings * 100) : 0,
       primaryConversionPercent: totalBookings > 0 ? Math.round(reviewsAfterPrimary / totalBookings * 100) : 0,
       followupIncrementPercent: totalBookings > 0 ? Math.round(reviewsAfterFollowup / totalBookings * 100) : 0,
+      followupSent,
+      followupEfficiencyPercent: followupSent > 0 ? Math.round(reviewsAfterFollowup / followupSent * 100) : 0,
     };
   }
 
