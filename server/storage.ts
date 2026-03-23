@@ -135,12 +135,13 @@ export interface IStorage {
   getWaMessages(limit: number, offset: number): Promise<{ messages: WaMessage[]; total: number }>;
   getLastSentTemplateIndex(messageType: string): Promise<number | null>;
   getWaConversionStats(from: Date, to: Date): Promise<{
-    primarySent: number;
-    reminderSent: number;
-    primaryReviewed: number;
-    reminderReviewed: number;
-    primaryQueued: number;
-    reminderQueued: number;
+    totalBookings: number;
+    totalReviews: number;
+    reviewsAfterPrimary: number;
+    reviewsAfterFollowup: number;
+    conversionPercent: number;
+    primaryConversionPercent: number;
+    followupIncrementPercent: number;
   }>;
 
   // WhatsApp Opt-outs
@@ -1247,57 +1248,77 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWaConversionStats(from: Date, to: Date): Promise<{
-    primarySent: number;
-    reminderSent: number;
-    primaryReviewed: number;
-    reminderReviewed: number;
-    primaryQueued: number;
-    reminderQueued: number;
+    totalBookings: number;
+    totalReviews: number;
+    reviewsAfterPrimary: number;
+    reviewsAfterFollowup: number;
+    conversionPercent: number;
+    primaryConversionPercent: number;
+    followupIncrementPercent: number;
   }> {
-    const periodMessages = await db.select({
-      messageType: waMessages.messageType,
+    const sentPrimaries = await db.select({
       bookingId: waMessages.bookingId,
-      status: waMessages.status,
       sentAt: waMessages.sentAt,
-      createdAt: waMessages.createdAt,
     }).from(waMessages).where(
-      sql`(${waMessages.status} = 'sent' AND ${waMessages.sentAt} >= ${from} AND ${waMessages.sentAt} < ${to})
-       OR (${waMessages.status} IN ('skipped', 'failed') AND ${waMessages.createdAt} >= ${from} AND ${waMessages.createdAt} < ${to})`
+      and(
+        eq(waMessages.status, "sent"),
+        eq(waMessages.messageType, "primary"),
+        sql`${waMessages.sentAt} >= ${from} AND ${waMessages.sentAt} < ${to}`
+      )
     );
 
-    const queuedMessages = await db.select({
-      messageType: waMessages.messageType,
-      bookingId: waMessages.bookingId,
-      status: waMessages.status,
-    }).from(waMessages).where(
-      sql`${waMessages.status} IN ('queued', 'sending')`
-    );
+    const uniqueBookingIds = [...new Set(sentPrimaries.map(m => m.bookingId))];
+    const totalBookings = uniqueBookingIds.length;
 
-    const sentPrimary = periodMessages.filter(m => m.status === "sent" && m.messageType === "primary");
-    const sentReminder = periodMessages.filter(m => m.status === "sent" && m.messageType === "reminder");
-    const queuedPrimary = queuedMessages.filter(m => m.messageType === "primary");
-    const queuedReminder = queuedMessages.filter(m => m.messageType === "reminder");
-
-    const allSentBookingIds = [...new Set([
-      ...sentPrimary.map(m => m.bookingId),
-      ...sentReminder.map(m => m.bookingId),
-    ])];
-
-    let reviewedSet = new Set<number>();
-    if (allSentBookingIds.length > 0) {
-      const reviewedBookings = await db.select({ bookingId: reviews.bookingId })
-        .from(reviews)
-        .where(sql`${reviews.bookingId} IN (${sql.join(allSentBookingIds.map(id => sql`${id}`), sql`, `)})`);
-      reviewedSet = new Set(reviewedBookings.map(r => r.bookingId));
+    if (totalBookings === 0) {
+      return { totalBookings: 0, totalReviews: 0, reviewsAfterPrimary: 0, reviewsAfterFollowup: 0, conversionPercent: 0, primaryConversionPercent: 0, followupIncrementPercent: 0 };
     }
 
+    const bookingReviews = await db.select({
+      bookingId: reviews.bookingId,
+      createdAt: reviews.createdAt,
+    }).from(reviews).where(
+      sql`${reviews.bookingId} IN (${sql.join(uniqueBookingIds.map(id => sql`${id}`), sql`, `)})`
+    );
+    const reviewMap = new Map(bookingReviews.map(r => [r.bookingId, r.createdAt]));
+
+    const sentFollowups = await db.select({
+      bookingId: waMessages.bookingId,
+      sentAt: waMessages.sentAt,
+    }).from(waMessages).where(
+      and(
+        eq(waMessages.status, "sent"),
+        eq(waMessages.messageType, "reminder"),
+        sql`${waMessages.bookingId} IN (${sql.join(uniqueBookingIds.map(id => sql`${id}`), sql`, `)})`
+      )
+    );
+    const followupSentMap = new Map(sentFollowups.map(f => [f.bookingId, f.sentAt]));
+
+    let reviewsAfterPrimary = 0;
+    let reviewsAfterFollowup = 0;
+
+    for (const bookingId of uniqueBookingIds) {
+      const reviewCreatedAt = reviewMap.get(bookingId);
+      if (!reviewCreatedAt) continue;
+
+      const followupSentAt = followupSentMap.get(bookingId);
+      if (followupSentAt && reviewCreatedAt > followupSentAt) {
+        reviewsAfterFollowup++;
+      } else {
+        reviewsAfterPrimary++;
+      }
+    }
+
+    const totalReviews = reviewsAfterPrimary + reviewsAfterFollowup;
+
     return {
-      primarySent: sentPrimary.length,
-      reminderSent: sentReminder.length,
-      primaryReviewed: sentPrimary.filter(m => reviewedSet.has(m.bookingId)).length,
-      reminderReviewed: sentReminder.filter(m => reviewedSet.has(m.bookingId)).length,
-      primaryQueued: queuedPrimary.length,
-      reminderQueued: queuedReminder.length,
+      totalBookings,
+      totalReviews,
+      reviewsAfterPrimary,
+      reviewsAfterFollowup,
+      conversionPercent: totalBookings > 0 ? Math.round(totalReviews / totalBookings * 100) : 0,
+      primaryConversionPercent: totalBookings > 0 ? Math.round(reviewsAfterPrimary / totalBookings * 100) : 0,
+      followupIncrementPercent: totalBookings > 0 ? Math.round(reviewsAfterFollowup / totalBookings * 100) : 0,
     };
   }
 

@@ -447,12 +447,13 @@ export default function AdminDashboard() {
   });
 
   const { data: waConversion } = useQuery<{
-    primarySent: number;
-    reminderSent: number;
-    primaryReviewed: number;
-    reminderReviewed: number;
-    primaryQueued: number;
-    reminderQueued: number;
+    totalBookings: number;
+    totalReviews: number;
+    reviewsAfterPrimary: number;
+    reviewsAfterFollowup: number;
+    conversionPercent: number;
+    primaryConversionPercent: number;
+    followupIncrementPercent: number;
     days: number;
   }>({
     queryKey: ["/api/admin/whatsapp/conversion", waStatsPeriod],
@@ -1222,52 +1223,32 @@ export default function AdminDashboard() {
               <CardContent>
                 {waConversion ? (
                   <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="border rounded-lg p-3 space-y-1">
-                        <p className="text-xs text-muted-foreground">1-е сообщение</p>
-                        <div className="flex items-baseline gap-1.5">
-                          <p className="text-2xl font-bold" data-testid="text-wa-primary-sent">{waConversion.primarySent}</p>
-                          {waConversion.primaryQueued > 0 && (
-                            <span className="text-xs text-yellow-600 dark:text-yellow-400">+{waConversion.primaryQueued} ожид.</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-green-600 dark:text-green-400 font-medium" data-testid="text-wa-primary-reviewed">
-                            {waConversion.primaryReviewed} отзыв{waConversion.primaryReviewed === 1 ? '' : waConversion.primaryReviewed >= 2 && waConversion.primaryReviewed <= 4 ? 'а' : 'ов'}
-                          </span>
-                          {waConversion.primarySent > 0 && (
-                            <span className="text-xs text-muted-foreground">
-                              ({Math.round(waConversion.primaryReviewed / waConversion.primarySent * 100)}%)
-                            </span>
-                          )}
-                        </div>
+                    <div className="text-center space-y-1">
+                      <p className="text-3xl font-bold" data-testid="text-wa-conversion-percent">{waConversion.conversionPercent}%</p>
+                      <p className="text-xs text-muted-foreground">
+                        {waConversion.days === -1 ? 'за вчера' : waConversion.days === 1 ? 'за сегодня' : `за ${waConversion.days} дн.`}
+                      </p>
+                    </div>
+                    <div className="space-y-2 pt-2">
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">После primary</span>
+                        <span className="font-medium" data-testid="text-wa-primary-conversion">{waConversion.primaryConversionPercent}%</span>
                       </div>
-                      <div className="border rounded-lg p-3 space-y-1">
-                        <p className="text-xs text-muted-foreground">Follow-up</p>
-                        <div className="flex items-baseline gap-1.5">
-                          <p className="text-2xl font-bold" data-testid="text-wa-reminder-sent">{waConversion.reminderSent}</p>
-                          {waConversion.reminderQueued > 0 && (
-                            <span className="text-xs text-yellow-600 dark:text-yellow-400">+{waConversion.reminderQueued} ожид.</span>
-                          )}
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">Дожали follow-up</span>
+                        <span className="font-medium text-green-600 dark:text-green-400" data-testid="text-wa-followup-increment">+{waConversion.followupIncrementPercent}%</span>
+                      </div>
+                      <div className="border-t pt-2 space-y-1">
+                        <div className="flex justify-between items-center text-xs text-muted-foreground">
+                          <span>Всего визитов</span>
+                          <span data-testid="text-wa-total-bookings">{waConversion.totalBookings}</span>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs text-green-600 dark:text-green-400 font-medium" data-testid="text-wa-reminder-reviewed">
-                            {waConversion.reminderReviewed} отзыв{waConversion.reminderReviewed === 1 ? '' : waConversion.reminderReviewed >= 2 && waConversion.reminderReviewed <= 4 ? 'а' : 'ов'}
-                          </span>
-                          {waConversion.reminderSent > 0 && (
-                            <span className="text-xs text-muted-foreground">
-                              ({Math.round(waConversion.reminderReviewed / waConversion.reminderSent * 100)}%)
-                            </span>
-                          )}
+                        <div className="flex justify-between items-center text-xs text-muted-foreground">
+                          <span>Отзывов</span>
+                          <span data-testid="text-wa-total-reviews">{waConversion.totalReviews} ({waConversion.reviewsAfterPrimary} после primary, {waConversion.reviewsAfterFollowup} после follow-up)</span>
                         </div>
                       </div>
                     </div>
-                    {waConversion.primarySent + waConversion.reminderSent > 0 && (
-                      <div className="text-xs text-muted-foreground text-center pt-1" data-testid="text-wa-total-conversion">
-                        Общая конверсия: {Math.round((waConversion.primaryReviewed + waConversion.reminderReviewed) / (waConversion.primarySent + waConversion.reminderSent) * 100)}%{' '}
-                        {waConversion.days === -1 ? 'за вчера' : waConversion.days === 1 ? 'за сегодня' : `за ${waConversion.days} дн.`}
-                      </div>
-                    )}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground text-center py-4">Загрузка...</p>
