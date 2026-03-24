@@ -631,12 +631,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getClientAttemptStats(phone: string, specialistId: number): Promise<{ attemptCount: number; lastAttemptAt: Date | null; lastReviewAt: Date | null }> {
+    const cleanPhone = phone.replace(/\D/g, "");
+    const plusPhone = phone.startsWith("+") ? phone : `+${phone}`;
+
     const waResult = await db.execute(sql`
       SELECT
         COUNT(*) FILTER (WHERE message_type = 'primary' AND status = 'sent') as attempt_count,
         MAX(sent_at) FILTER (WHERE message_type = 'primary' AND status = 'sent') as last_attempt_at
       FROM wa_messages
-      WHERE customer_phone = ${phone}
+      WHERE customer_phone IN (${cleanPhone}, ${plusPhone})
         AND specialist_id = ${specialistId}
     `);
 
@@ -644,7 +647,7 @@ export class DatabaseStorage implements IStorage {
       SELECT MAX(r.created_at) as last_review_at
       FROM reviews r
       JOIN bookings b ON b.id = r.booking_id
-      WHERE b.normalized_phone = ${phone}
+      WHERE b.normalized_phone IN (${cleanPhone}, ${plusPhone})
         AND r.specialist_id = ${specialistId}
     `);
 
