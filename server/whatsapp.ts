@@ -34,7 +34,7 @@ function hashPhoneToLockId(phone: string): number {
   return hash;
 }
 
-async function finalPhoneGuard(phone: string, excludeMsgId?: number): Promise<{ blocked: boolean; reason?: string; prevMsgId?: number }> {
+async function phoneCooldownCheck(phone: string, excludeMsgId?: number): Promise<{ inCooldown: boolean; lastSentAt?: Date; reason?: string }> {
   const cleanPhone = phone.replace(/\D/g, "");
   const result = await db.execute(sql`
     SELECT id, booking_id, message_type, sent_at FROM wa_messages 
@@ -46,9 +46,9 @@ async function finalPhoneGuard(phone: string, excludeMsgId?: number): Promise<{ 
   `);
   if (result.rows.length > 0) {
     const prev = result.rows[0] as any;
-    return { blocked: true, reason: `phone_guard_20h (prev msg=${prev.id} booking=${prev.booking_id} sent=${prev.sent_at})`, prevMsgId: prev.id };
+    return { inCooldown: true, lastSentAt: new Date(prev.sent_at), reason: `phone_cooldown_20h (prev msg=${prev.id} booking=${prev.booking_id} sent=${prev.sent_at})` };
   }
-  return { blocked: false };
+  return { inCooldown: false };
 }
 
 function validateReviewLink(link: string, context: string): void {
@@ -399,19 +399,6 @@ export async function enqueueReviewMessage(params: {
   }
 
   if (params.messageType === "primary" && !params.isSpecialistAction) {
-    const recentSent = await db.execute(sql`
-      SELECT id, booking_id, sent_at FROM wa_messages 
-      WHERE customer_phone = ${cleanPhone} 
-      AND status = 'sent' 
-      AND sent_at > NOW() - INTERVAL '20 hours'
-      ORDER BY sent_at DESC LIMIT 1
-    `);
-    if (recentSent.rows.length > 0) {
-      const prev = recentSent.rows[0] as any;
-      console.log(`[WA_QUEUE] Skipping primary for booking=${params.bookingId}: phone ${cleanPhone} in cooldown (prev msg=${prev.id} booking=${prev.booking_id} sent_at=${prev.sent_at})`);
-      return;
-    }
-
     const existingQueued = await db.execute(sql`
       SELECT wm.id, wm.booking_id, b.appointment_time 
       FROM wa_messages wm
@@ -653,12 +640,13 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
   }
 
   try {
-    const guard = await finalPhoneGuard(msg.customerPhone, msg.id);
-    if (guard.blocked) {
+    const cooldown = await phoneCooldownCheck(msg.customerPhone, msg.id);
+    if (cooldown.inCooldown && cooldown.lastSentAt) {
+      const deferTo = new Date(cooldown.lastSentAt.getTime() + 20 * 60 * 60 * 1000);
       await db.update(waMessages)
-        .set({ status: "skipped", skipReason: `final_phone_guard: ${guard.reason}` } as any)
+        .set({ scheduledAt: deferTo, status: "queued" } as any)
         .where(eq(waMessages.id, msg.id));
-      console.log(`[WA_FINAL_GUARD] BLOCKED msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} phone=${msg.customerPhone} reason=${guard.reason}`);
+      console.log(`[WA_COOLDOWN] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} phone=${msg.customerPhone} reason=${cooldown.reason} defer_to=${deferTo.toISOString()}`);
       return false;
     }
 
@@ -878,70 +866,84 @@ export async function processWaQueue(): Promise<void> {
   }
 
   const sentToday = await storage.countWaMessagesSentToday();
-  const available = effectiveLimit - sentToday;
+  let available = effectiveLimit - sentToday;
 
   if (available <= 0) {
     return;
   }
 
-  const batch = await db.update(waMessages)
-    .set({ status: "sending" } as any)
-    .where(
-      sql`${waMessages.id} IN (
-        SELECT id FROM (
-          SELECT DISTINCT ON (customer_phone) id, customer_phone
-          FROM wa_messages
-          WHERE status = 'queued' AND scheduled_at <= ${now}
-          ORDER BY customer_phone, 
-            CASE message_type WHEN 'reminder' THEN 0 WHEN 'primary' THEN 1 END,
-            scheduled_at ASC
-        ) AS unique_phones
-        LIMIT ${available}
-      )`
-    )
-    .returning();
-
-  if (batch.length === 0) {
-    return;
-  }
-
-  const sentTodayByType = await storage.countWaMessagesSentTodayByType();
-  console.log(`[WA_PROCESSOR] Claimed batch of ${batch.length} messages (sent today: ${sentTodayByType.primary}p+${sentTodayByType.reminder}r=${sentToday}/${effectiveLimit}, available=${available})`);
-
-  let sentCount = 0;
-  let skippedCount = 0;
-  let deferredCount = 0;
+  let totalSent = 0;
+  let totalSkipped = 0;
+  let totalDeferred = 0;
+  let totalCandidates = 0;
   const sentPhonesThisBatch = new Set<string>();
+  const processedIds = new Set<number>();
+  const MAX_ROUNDS = 5;
 
-  for (const msg of batch) {
-    if (msg.status !== "sending") continue;
+  for (let round = 0; round < MAX_ROUNDS && available > 0; round++) {
+    const fetchLimit = available * 3;
 
-    if (sentPhonesThisBatch.has(msg.customerPhone)) {
-      const deferTo = new Date(Date.now() + 20 * 60 * 60 * 1000);
-      await db.update(waMessages)
-        .set({ scheduledAt: deferTo, status: "queued" } as any)
-        .where(eq(waMessages.id, msg.id));
-      console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=batch_phone_cooldown defer_to=${deferTo.toISOString()}`);
-      deferredCount++;
-      continue;
-    }
+    const candidates = await db.select()
+      .from(waMessages)
+      .where(
+        and(
+          eq(waMessages.status, "queued"),
+          sql`${waMessages.scheduledAt} <= ${now}`
+        )
+      )
+      .orderBy(
+        sql`CASE ${waMessages.messageType} WHEN 'reminder' THEN 0 WHEN 'primary' THEN 1 END`,
+        waMessages.scheduledAt
+      )
+      .limit(fetchLimit);
 
-    const result = await processOneMessage(msg);
-    if (result) {
-      sentCount++;
-      sentPhonesThisBatch.add(msg.customerPhone);
-    } else {
-      const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
-      if (refreshed?.status === "sending") {
+    const newCandidates = candidates.filter(c => !processedIds.has(c.id));
+    if (newCandidates.length === 0) break;
+
+    totalCandidates += newCandidates.length;
+    let roundSent = 0;
+
+    for (const msg of newCandidates) {
+      if (available <= 0) break;
+      processedIds.add(msg.id);
+
+      if (sentPhonesThisBatch.has(msg.customerPhone)) {
+        const deferTo = new Date(Date.now() + 20 * 60 * 60 * 1000);
         await db.update(waMessages)
-          .set({ status: "queued" } as any)
+          .set({ scheduledAt: deferTo } as any)
           .where(eq(waMessages.id, msg.id));
-        deferredCount++;
+        console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=batch_phone_dedup defer_to=${deferTo.toISOString()}`);
+        totalDeferred++;
+        continue;
+      }
+
+      await db.update(waMessages)
+        .set({ status: "sending" } as any)
+        .where(eq(waMessages.id, msg.id));
+
+      const result = await processOneMessage({ ...msg, status: "sending" as any });
+      if (result) {
+        totalSent++;
+        roundSent++;
+        sentPhonesThisBatch.add(msg.customerPhone);
+        available--;
       } else {
-        skippedCount++;
+        const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
+        if (refreshed?.status === "sending") {
+          await db.update(waMessages)
+            .set({ status: "queued" } as any)
+            .where(eq(waMessages.id, msg.id));
+          totalDeferred++;
+        } else {
+          totalSkipped++;
+        }
       }
     }
+
+    if (roundSent === 0) break;
   }
 
-  console.log(`[WA_PROCESSOR] Batch complete: ${sentCount} sent, ${skippedCount} skipped, ${deferredCount} deferred out of ${batch.length}`);
+  if (totalCandidates > 0) {
+    console.log(`[WA_PROCESSOR] Complete: ${totalSent} sent, ${totalSkipped} skipped, ${totalDeferred} deferred out of ${totalCandidates} candidates (limit=${effectiveLimit}, sentToday=${sentToday + totalSent})`);
+  }
 }

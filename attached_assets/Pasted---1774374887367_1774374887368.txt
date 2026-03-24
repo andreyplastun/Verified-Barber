@@ -1,0 +1,131 @@
+ЗАДАЧА: устранить потерю сообщений и обеспечить добор до дневного лимита без поломки существующей логики (quiet hours, finalPhoneGuard, dedupe, scheduled_at).
+
+ТЕКУЩИЕ ПРОБЛЕМЫ:
+1. Сообщения теряются на этапе enqueue из-за phone cooldown (не создаются вообще)
+2. Batch берёт ровно LIMIT available и не добирает при скипах (cooldown, guards и т.д.)
+3. Нет retry-логики — если часть сообщений не отправилась, система не компенсирует
+
+---
+
+ЧТО НУЖНО СДЕЛАТЬ:
+
+1. УБРАТЬ COOLDOWN НА ENQUEUE (КРИТИЧНО)
+
+Сейчас:
+- если клиенту писали < 20 часов назад → primary НЕ создаётся
+
+Нужно:
+- ВСЕГДА создавать primary (enqueue всегда проходит)
+- cooldown проверять ТОЛЬКО на этапе отправки
+
+Изменение:
+- удалить/закомментировать phone cooldown в enqueue (строки ~401-413)
+- enqueue всегда делает insert в wa_messages
+
+---
+
+2. ПЕРЕНЕСТИ COOLDOWN В SEND (RESCHEDULE, А НЕ SKIP)
+
+В processOneMessage:
+
+Сейчас:
+- если cooldown → skip (сообщение теряется)
+
+Нужно:
+- если cooldown → НЕ skip
+- а reschedule: scheduled_at = last_sent_at + 20h
+
+Псевдокод:
+
+if (cooldown) {
+  update wa_messages
+  set scheduled_at = last_sent_at + interval '20 hours',
+      status = 'queued'
+  where id = message.id
+
+  return false
+}
+
+ВАЖНО:
+- НЕ должно быть второго такого же cooldown в finalPhoneGuard
+- если есть — убрать дубликат проверки
+
+---
+
+3. ДОБОР ДО ЛИМИТА (ГЛАВНОЕ)
+
+Сейчас:
+- берётся LIMIT available → часть не отправляется → итог < лимита
+
+Нужно:
+- добавить цикл добора
+
+Псевдокод:
+
+let sent = 0
+
+while (sent < daily_limit) {
+  const candidates = select из wa_messages
+    where status = 'queued'
+      and scheduled_at <= now
+    limit (daily_limit - sent) * 3
+
+  if (candidates.length === 0) break
+
+  for (msg of candidates) {
+    if (sent >= daily_limit) break
+
+    const ok = processOneMessage(msg)
+
+    if (ok) sent++
+  }
+
+  если ни одно сообщение не отправилось → break (защита от бесконечного цикла)
+}
+
+---
+
+4. УБРАТЬ DISTINCT ON (НЕ ЛОМАЯ ЛОГИКУ)
+
+Сейчас:
+- DISTINCT ON (customer_phone)
+
+Нужно:
+- убрать DISTINCT ON из SQL
+- оставить dedupe через sentPhonesThisBatch (Set в коде)
+
+---
+
+5. BATCH С ЗАПАСОМ
+
+Сейчас:
+- LIMIT available
+
+Нужно:
+- брать с запасом (x3 от недостающего)
+- потому что часть сообщений уйдёт в reschedule
+
+---
+
+6. НЕ ТРОГАТЬ:
+
+- scheduled_at <= now (обязательно оставить)
+- quiet hours (adjustForQuietHours)
+- логику evening visit (20:00–21:00)
+- hasReview / superseded / opt-out
+
+---
+
+ОЖИДАЕМЫЙ РЕЗУЛЬТАТ:
+
+- primary больше не теряются (enqueue всегда создаёт)
+- сообщения при cooldown не пропадают, а переносятся
+- система добирает до лимита (например 20/20, а не 17/20)
+- quiet hours и антиспам защита остаются
+
+---
+
+КРИТЕРИЙ УСПЕХА:
+
+Если за день было достаточно визитов → отправлено ровно daily_limit  
+(например 20 из 20, а не 17)
