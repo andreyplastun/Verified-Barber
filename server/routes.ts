@@ -3638,8 +3638,10 @@ ${magicLink}`;
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
       const sentToday = await storage.countWaMessagesSentToday();
+      const sentTodayByType = await storage.countWaMessagesSentTodayByType();
+      const sentYesterdayByType = await storage.countWaMessagesSentYesterdayByType();
       const settings = await getWaSettings();
-      res.json({ sentToday, ...settings });
+      res.json({ sentToday, sentTodayByType, sentYesterdayByType, ...settings });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

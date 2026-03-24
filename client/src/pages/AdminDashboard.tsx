@@ -414,7 +414,7 @@ export default function AdminDashboard() {
     },
   });
 
-  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number };
+  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number; sentToday?: number; sentTodayByType?: { primary: number; reminder: number }; sentYesterdayByType?: { primary: number; reminder: number } };
   type WaMessageType = {
     id: number; bookingId: number; customerPhone: string; customerName: string;
     specialistName: string; messageType: string; status: string; templateIndex: number;
@@ -423,9 +423,9 @@ export default function AdminDashboard() {
   };
 
   const { data: waSettings, refetch: refetchWaSettings } = useQuery<WaSettingsType>({
-    queryKey: ["/api/admin/whatsapp/settings"],
+    queryKey: ["/api/admin/whatsapp/stats"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/whatsapp/settings", {
+      const res = await fetch("/api/admin/whatsapp/stats", {
         headers: { "x-user-id": currentUser?.id || "" },
       });
       if (!res.ok) throw new Error("Failed");
@@ -1165,21 +1165,18 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {waMessagesData && (
+                {waSettings && (
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge variant="secondary" data-testid="badge-wa-sent-today">
-                      Сегодня: {waMessagesData.sentTodayByType 
-                        ? `${waMessagesData.sentTodayByType.primary} осн. + ${waMessagesData.sentTodayByType.reminder} follow-up`
-                        : waMessagesData.sentToday}
+                      Сегодня: {waSettings.sentTodayByType 
+                        ? `${waSettings.sentTodayByType.primary} осн. + ${waSettings.sentTodayByType.reminder} follow-up`
+                        : waSettings.sentToday || 0}
                     </Badge>
-                    {waMessagesData.sentYesterdayByType && (waMessagesData.sentYesterdayByType.primary > 0 || waMessagesData.sentYesterdayByType.reminder > 0) && (
+                    {waSettings.sentYesterdayByType && (waSettings.sentYesterdayByType.primary > 0 || waSettings.sentYesterdayByType.reminder > 0) && (
                       <Badge variant="outline" data-testid="badge-wa-sent-yesterday">
-                        Вчера: {waMessagesData.sentYesterdayByType.primary} осн. + {waMessagesData.sentYesterdayByType.reminder} follow-up
+                        Вчера: {waSettings.sentYesterdayByType.primary} осн. + {waSettings.sentYesterdayByType.reminder} follow-up
                       </Badge>
                     )}
-                    <Badge variant="outline" data-testid="badge-wa-total">
-                      Всего: {waMessagesData.total}
-                    </Badge>
                     <Button
                       size="sm"
                       variant="outline"
