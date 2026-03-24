@@ -1,0 +1,154 @@
+ЗАДАЧА: Гарантировать отправку до дневного лимита (WA_DAILY_LIMIT), убрать потери сообщений и недобор (например 17/20)
+
+ЦЕЛЬ:
+Система должна всегда отправлять максимум (например 20 сообщений), если есть достаточное количество визитов.
+
+---
+
+1. УБРАТЬ ПОТЕРЮ СООБЩЕНИЙ НА ENQUEUE
+
+БЫЛО:
+- если cooldown < 20ч → primary НЕ создаётся
+
+НУЖНО:
+- ВСЕГДА создавать primary
+- НИКАКИХ skip на enqueue
+
+---
+
+2. ПЕРЕНЕСТИ COOLDOWN В SEND
+
+Перед отправкой:
+
+if (lastMessageAt < 20h):
+    reschedule на (lastMessageAt + 20h)
+    return "deferred"
+
+Важно:
+- НЕ удалять
+- НЕ скипать
+- только переносить
+
+---
+
+3. ПЕРЕПИСАТЬ BATCH (КЛЮЧЕВОЕ)
+
+БЫЛО:
+SELECT ... WHERE scheduled_at <= now LIMIT N
+
+ПРОБЛЕМА:
+- если доступных < лимита → недобор
+
+---
+
+НУЖНО:
+
+ШАГ 1 — брать с запасом:
+SELECT *
+FROM wa_messages
+WHERE status = 'queued'
+ORDER BY scheduled_at ASC
+LIMIT 100
+
+ШАГ 2 — обрабатывать в коде:
+
+sent = 0
+
+for message in candidates:
+    if sent >= DAILY_LIMIT:
+        break
+
+    result = trySend(message)
+
+    if result == "sent":
+        sent += 1
+
+---
+
+4. УБРАТЬ DISTINCT ON ИЗ SQL
+
+БЫЛО:
+DISTINCT ON (customer_phone)
+
+НУЖНО:
+контроль в коде:
+
+usedPhones = new Set()
+
+if phone уже был:
+    continue
+
+---
+
+5. ЛОГИКА trySend
+
+function trySend(message):
+
+    if cooldown:
+        reschedule
+        return "deferred"
+
+    if quietHours AND !isEveningVisit:
+        reschedule на завтра 10:30
+        return "deferred"
+
+    if final_phone_guard:
+        return "skipped"
+
+    send()
+
+    создать followup
+
+    return "sent"
+
+---
+
+6. ЛИМИТ СЧИТАТЬ ПО SENT
+
+sentToday = count(status = 'sent')
+
+available = DAILY_LIMIT - sentToday
+
+Важно:
+- НЕ по queued
+- НЕ по попыткам
+- только реально отправленные
+
+---
+
+7. ДОБОР ДО ЛИМИТА
+
+Главная идея:
+
+НЕ:
+взяли 20 → часть умерла → получили 17
+
+А:
+взяли 100 → пока sent < 20 → продолжаем
+
+---
+
+8. ЛОГИ (ОБЯЗАТЕЛЬНО)
+
+Логировать:
+- total_candidates
+- sent
+- deferred
+- skipped
+
+Чтобы видеть где теряется объём
+
+---
+
+РЕЗУЛЬТАТ:
+
+- всегда добивает лимит
+- нет потерь сообщений
+- cooldown не убивает поток
+- scheduled_at не блокирует отправку
+
+---
+
+СЛОЖНОСТЬ: 2–4 часа
+РИСК: низкий
+ЭФФЕКТ: +15–30% отправок
