@@ -1,0 +1,151 @@
+ЗАДАЧА: увеличить конверсию через умный follow-up по поведению (opened vs not opened), НЕ ломая текущую архитектуру (cooldown, лимиты, quiet hours, batch, attempt logic)
+
+ЦЕЛЬ:
+- дожимать “тёплых” (кто открыл ссылку, но не оставил отзыв)
+- не тратить лимит на “холодных”
+- повысить конверсию без увеличения количества отправок
+
+---
+
+1. ТРЕКИНГ ОТКРЫТИЯ ССЫЛКИ
+
+При открытии страницы по ссылке /r/{token}:
+
+- записывать link_opened_at (если ещё не записан)
+
+ВАЖНО:
+- записывать только первый факт открытия
+- не обновлять при повторных заходах
+
+---
+
+2. СЕГМЕНТАЦИЯ
+
+Для каждого booking:
+
+A. NOT_OPENED:
+- link_opened_at IS NULL
+- review отсутствует
+
+B. OPENED_NOT_CONVERTED:
+- link_opened_at есть
+- review отсутствует
+
+C. CONVERTED:
+- есть review
+
+---
+
+3. ЛОГИКА FOLLOW-UP (ЗАМЕНА ФИКСИРОВАННОГО ТАЙМИНГА)
+
+A. Если OPENED_NOT_CONVERTED:
+
+scheduled_at = link_opened_at + random(2–4 часа)
+priority = HIGH
+
+---
+
+B. Если NOT_OPENED:
+
+scheduled_at = primary_sent_at + random(18–24 часа)
+priority = NORMAL
+
+---
+
+C. Если есть review:
+
+follow-up НЕ создавать
+
+---
+
+4. ОБНОВЛЕНИЕ FOLLOW-UP (КРИТИЧНО)
+
+Если follow-up уже создан (как NOT_OPENED),
+и пользователь открыл ссылку:
+
+UPDATE wa_messages
+SET
+  scheduled_at = link_opened_at + random(2–4 часа),
+  priority = HIGH
+WHERE type = 'followup'
+  AND booking_id = ?
+
+---
+
+5. ОЧЕРЕДЬ (PRIORITY ORDER)
+
+Изменить выборку batch:
+
+ORDER BY
+  priority DESC,
+  scheduled_at ASC
+
+---
+
+6. COOLDOWN (НЕ МЕНЯТЬ ЛОГИКУ)
+
+Follow-up проходит через существующий cooldown:
+
+если last_message < 20ч:
+→ НЕ skip
+→ reschedule (как сейчас)
+
+---
+
+7. ОГРАНИЧЕНИЯ
+
+- максимум 1 follow-up на booking (оставить как есть)
+- follow-up создаётся только после primary (оставить)
+
+---
+
+8. НЕ ТРОГАТЬ
+
+- attempt logic (30 / 90 / 180)
+- quiet hours
+- batch добор до лимита
+- scheduled_at <= now
+- dedupe по телефону
+- send pipeline
+
+---
+
+9. ТЕКСТЫ
+
+PRIMARY:
+- нейтральный, мягкий
+
+FOLLOW-UP (opened):
+- акцент: “вы уже заходили”
+- “можно быстро завершить”
+
+FOLLOW-UP (not opened):
+- лёгкое напоминание
+
+---
+
+10. МЕТРИКИ
+
+Добавить:
+
+- opened_count
+- conversion_opened = отзывы / opened
+- conversion_not_opened = отзывы / not_opened
+
+---
+
+РЕЗУЛЬТАТ:
+
+- follow-up уходит быстрее к “горячим”
+- не тратим лимит на холодных
+- рост конверсии без роста отправок
+- система реагирует на поведение, а не просто на время
+
+---
+
+КРИТЕРИЙ:
+
+- если открыл → follow-up через 2–4 часа
+- если не открыл → через 18–24 часа
+- при открытии follow-up пересчитывается
+- лимит продолжает добираться

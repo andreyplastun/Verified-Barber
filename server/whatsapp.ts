@@ -102,8 +102,18 @@ const REMINDER_TEMPLATES = [
   "{clientName}, последняя возможность оценить визит к вашему барберу {specialistNameDative}: {reviewLink}",
 ];
 
-function getTemplates(type: "primary" | "reminder"): string[] {
-  return type === "primary" ? PRIMARY_TEMPLATES : REMINDER_TEMPLATES;
+const REMINDER_OPENED_TEMPLATES = [
+  "{clientName}, вы уже заходили по ссылке — можно быстро завершить оценку визита к барберу {specialistNameDative}: {reviewLink}",
+  "{clientName}, осталось совсем немного — завершите отзыв о визите к вашему барберу {specialistNameDative}: {reviewLink}",
+  "{clientName}, вы начали оценку визита к барберу {specialistNameDative}. Завершить можно за пару секунд: {reviewLink}",
+  "{clientName}, мы заметили, что вы заглянули — оставьте, пожалуйста, отзыв о барбере {specialistNameGenitive}: {reviewLink}",
+  "{clientName}, отзыв о визите к вашему барберу {specialistNameDative} почти готов, осталось только оценить: {reviewLink}",
+];
+
+function getTemplates(type: "primary" | "reminder" | "reminder_opened"): string[] {
+  if (type === "primary") return PRIMARY_TEMPLATES;
+  if (type === "reminder_opened") return REMINDER_OPENED_TEMPLATES;
+  return REMINDER_TEMPLATES;
 }
 
 const NON_DECLINABLE_NAMES = new Set([
@@ -168,7 +178,7 @@ function renderTemplate(template: string, vars: { clientName: string; specialist
     .replace(/\{reviewLink\}/g, vars.reviewLink);
 }
 
-function pickTemplateIndex(type: "primary" | "reminder", lastIndex: number | null): number {
+function pickTemplateIndex(type: "primary" | "reminder" | "reminder_opened", lastIndex: number | null): number {
   const templates = getTemplates(type);
   const count = templates.length;
   let idx: number;
@@ -517,16 +527,34 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
     console.log(`[WA_PHONE_CENTRIC] Superseded ${superseded.length} old reminders for phone=${msg.customerPhone}: ${superseded.map(s => `msg=${s.id}/booking=${s.bookingId}`).join(', ')}`);
   }
 
-  const dedupeKey = `reminder_${msg.bookingId}`;
-  const delayMs = randomMinutes(21 * 60, 24 * 60);
+  const magicLink = await storage.getMagicLinkByBookingId(msg.bookingId);
+  const isOpened = !!magicLink?.openedAt;
+
+  let delayMs: number;
+  let priority: number;
+  let templateType: "reminder" | "reminder_opened";
+
+  if (isOpened) {
+    delayMs = randomMinutes(2 * 60, 4 * 60);
+    priority = 10;
+    templateType = "reminder_opened";
+    console.log(`[WA_FOLLOWUP] booking=${msg.bookingId} segment=OPENED_NOT_CONVERTED openedAt=${magicLink!.openedAt!.toISOString()} priority=HIGH delay=2-4h`);
+  } else {
+    delayMs = randomMinutes(18 * 60, 24 * 60);
+    priority = 0;
+    templateType = "reminder";
+    console.log(`[WA_FOLLOWUP] booking=${msg.bookingId} segment=NOT_OPENED priority=NORMAL delay=18-24h`);
+  }
+
   const scheduledAt = adjustForQuietHours(new Date(Date.now() + delayMs));
+  const dedupeKey = `reminder_${msg.bookingId}`;
 
   const reviewLink = msg.reviewLink;
   validateReviewLink(reviewLink, `createFollowup_booking=${msg.bookingId}`);
 
   const lastIndex = await storage.getLastSentTemplateIndex("reminder");
-  const templateIndex = pickTemplateIndex("reminder", lastIndex);
-  const templates = getTemplates("reminder");
+  const templateIndex = pickTemplateIndex(templateType, lastIndex);
+  const templates = getTemplates(templateType);
   const messageText = renderTemplate(templates[templateIndex], {
     clientName: msg.customerName,
     specialistName: msg.specialistName,
@@ -548,8 +576,9 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
       messageText,
       scheduledAt,
       dedupeKey,
-    }).onConflictDoNothing();
-    console.log(`[WA_FOLLOWUP] Created followup for booking=${msg.bookingId} phone=${msg.customerPhone} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey}`);
+      priority,
+    } as any).onConflictDoNothing();
+    console.log(`[WA_FOLLOWUP] Created followup for booking=${msg.bookingId} phone=${msg.customerPhone} scheduledAt=${scheduledAt.toISOString()} priority=${priority} segment=${isOpened ? 'opened' : 'not_opened'} dedupe=${dedupeKey}`);
   } catch (err: any) {
     if (err.code === '23505') {
       console.log(`[WA_FOLLOWUP] Dedupe: followup for booking=${msg.bookingId} already exists`);
@@ -557,6 +586,40 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
     }
     console.error(`[WA_FOLLOWUP] Error creating followup for booking=${msg.bookingId}: ${err.message}`);
   }
+}
+
+export async function upgradeFollowupOnLinkOpen(bookingId: number, openedAt: Date): Promise<void> {
+  const [existingFollowup] = await db.select().from(waMessages)
+    .where(and(
+      eq(waMessages.bookingId, bookingId),
+      sql`${waMessages.messageType} = 'reminder'`,
+      sql`${waMessages.status} = 'queued'`
+    ));
+
+  if (!existingFollowup) return;
+
+  const delayMs = randomMinutes(2 * 60, 4 * 60);
+  const newScheduledAt = adjustForQuietHours(new Date(openedAt.getTime() + delayMs));
+
+  const lastIndex = await storage.getLastSentTemplateIndex("reminder");
+  const templateIndex = pickTemplateIndex("reminder_opened", lastIndex);
+  const templates = getTemplates("reminder_opened");
+  const messageText = renderTemplate(templates[templateIndex], {
+    clientName: existingFollowup.customerName,
+    specialistName: existingFollowup.specialistName,
+    reviewLink: existingFollowup.reviewLink,
+  });
+
+  await db.update(waMessages)
+    .set({
+      scheduledAt: newScheduledAt,
+      priority: 10,
+      templateIndex,
+      messageText,
+    } as any)
+    .where(eq(waMessages.id, existingFollowup.id));
+
+  console.log(`[WA_FOLLOWUP_UPGRADE] booking=${bookingId} msg=${existingFollowup.id} upgraded to OPENED segment, newScheduledAt=${newScheduledAt.toISOString()} priority=10`);
 }
 
 async function checkPrimaryBeforeFollowup(msg: typeof waMessages.$inferSelect): Promise<"ok" | "wait" | "orphan"> {
@@ -892,6 +955,7 @@ export async function processWaQueue(): Promise<void> {
         )
       )
       .orderBy(
+        sql`${waMessages.priority} DESC`,
         sql`CASE ${waMessages.messageType} WHEN 'reminder' THEN 0 WHEN 'primary' THEN 1 END`,
         waMessages.scheduledAt
       )

@@ -456,6 +456,9 @@ export default function AdminDashboard() {
     followupIncrementPercent: number;
     followupSent: number;
     followupEfficiencyPercent: number;
+    openedCount: number;
+    conversionOpened: number;
+    conversionNotOpened: number;
     days: number;
   }>({
     queryKey: ["/api/admin/whatsapp/conversion", waStatsPeriod],
@@ -1256,6 +1259,20 @@ export default function AdminDashboard() {
                         <div className="flex justify-between items-center text-xs text-muted-foreground">
                           <span>Конверсия follow-up</span>
                           <span data-testid="text-wa-followup-efficiency">{waConversion.followupEfficiencyPercent}%</span>
+                        </div>
+                      </div>
+                      <div className="border-t pt-2 space-y-1">
+                        <div className="flex justify-between items-center text-xs text-muted-foreground">
+                          <span>Открыли ссылку</span>
+                          <span data-testid="text-wa-opened-count">{waConversion.openedCount}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-muted-foreground">
+                          <span>Конверсия (открыли)</span>
+                          <span data-testid="text-wa-conversion-opened">{waConversion.conversionOpened}%</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-muted-foreground">
+                          <span>Конверсия (не открыли)</span>
+                          <span data-testid="text-wa-conversion-not-opened">{waConversion.conversionNotOpened}%</span>
                         </div>
                       </div>
                     </div>

@@ -11,7 +11,7 @@ import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioS
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
 import { appConfig } from "@shared/schema";
-import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage } from "./whatsapp";
+import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen } from "./whatsapp";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 
@@ -1293,9 +1293,11 @@ export async function registerRoutes(
         return res.status(410).json({ valid: false, reason: "used" });
       }
       
-      // Mark as opened (for metrics)
       if (!link.openedAt) {
         await storage.markMagicLinkOpened(link.id);
+        upgradeFollowupOnLinkOpen(link.bookingId, new Date()).catch(err => {
+          console.error(`[WA_FOLLOWUP_UPGRADE] Error for booking=${link.bookingId}: ${err.message}`);
+        });
       }
       
       // Get booking and specialist info
