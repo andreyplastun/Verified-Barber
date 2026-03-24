@@ -1986,17 +1986,39 @@ ${magicLink}`;
       }
 
       if (booking.normalizedPhone && !specAction) {
-        const recentLinkExists = await storage.getRecentMagicLinkByPhone(booking.specialistId, booking.normalizedPhone, 28);
-        if (recentLinkExists) {
-          console.log(`[MAGIC_LINK] Skipping booking ${bookingId}: same phone ${booking.normalizedPhone} already had magic link for specialist ${booking.specialistId} within 28 days (source=${source})`);
+        const stats = await storage.getClientAttemptStats(booking.normalizedPhone, booking.specialistId);
+        const now = Date.now();
+        const daysSinceLastAttempt = stats.lastAttemptAt ? (now - stats.lastAttemptAt.getTime()) / (24 * 60 * 60 * 1000) : null;
+        const daysSinceLastReview = stats.lastReviewAt ? (now - stats.lastReviewAt.getTime()) / (24 * 60 * 60 * 1000) : null;
+        const hasReviewAfterLastAttempt = stats.lastReviewAt && stats.lastAttemptAt && stats.lastReviewAt > stats.lastAttemptAt;
+
+        console.log(`[ATTEMPT_CHECK] phone=${booking.normalizedPhone} specialist=${booking.specialistId} attempts=${stats.attemptCount} lastAttempt=${stats.lastAttemptAt?.toISOString() || 'never'} lastReview=${stats.lastReviewAt?.toISOString() || 'never'} hasReviewAfter=${hasReviewAfterLastAttempt}`);
+
+        let skipReason: string | null = null;
+
+        if (hasReviewAfterLastAttempt) {
+          if (daysSinceLastReview !== null && daysSinceLastReview < 90) {
+            skipReason = 'skip_90d';
+          }
+        } else {
+          if (stats.attemptCount === 1 && daysSinceLastAttempt !== null && daysSinceLastAttempt < 30) {
+            skipReason = 'skip_30d';
+          }
+          if (stats.attemptCount >= 2 && daysSinceLastAttempt !== null && daysSinceLastAttempt < 180) {
+            skipReason = 'skip_180d';
+          }
+        }
+
+        if (skipReason) {
+          console.log(`[ATTEMPT_CHECK] SKIP phone=${booking.normalizedPhone} specialist=${booking.specialistId} reason=${skipReason} attempts=${stats.attemptCount} daysSinceAttempt=${daysSinceLastAttempt?.toFixed(1)} daysSinceReview=${daysSinceLastReview?.toFixed(1)}`);
           await storage.updateBooking(bookingId, {
             reviewEligibility: false,
-            reviewEligibilityReason: 'repeat_phone_28d',
+            reviewEligibilityReason: skipReason,
           } as any);
           return false;
         }
       } else if (booking.normalizedPhone && specAction) {
-        console.log(`[MAGIC_LINK] booking=${bookingId}: bypassing repeat_phone_28d for specialist action (source=${source})`);
+        console.log(`[MAGIC_LINK] booking=${bookingId}: bypassing attempt check for specialist action (source=${source})`);
       }
 
       if (hasClientId && !specAction) {

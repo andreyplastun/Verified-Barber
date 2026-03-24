@@ -44,6 +44,7 @@ export interface IStorage {
   getRecentSpecialistManualBookings(specialistId: number, since: Date): Promise<Booking[]>;
   getInvalidPhoneCountToday(specialistId: number): Promise<number>;
   getRecentMagicLinkByPhone(specialistId: number, normalizedPhone: string, withinDays: number): Promise<boolean>;
+  getClientAttemptStats(phone: string, specialistId: number): Promise<{ attemptCount: number; lastAttemptAt: Date | null; lastReviewAt: Date | null }>;
   getBookings(): Promise<Booking[]>; // Admin/Debug
   getBookingsForSpecialist(specialistId: number): Promise<Booking[]>;
   getBookingsForClient(clientId: string): Promise<Booking[]>;
@@ -627,6 +628,34 @@ export class DatabaseStorage implements IStorage {
       )
     );
     return result.length > 0;
+  }
+
+  async getClientAttemptStats(phone: string, specialistId: number): Promise<{ attemptCount: number; lastAttemptAt: Date | null; lastReviewAt: Date | null }> {
+    const waResult = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE message_type = 'primary' AND status = 'sent') as attempt_count,
+        MAX(sent_at) FILTER (WHERE message_type = 'primary' AND status = 'sent') as last_attempt_at
+      FROM wa_messages
+      WHERE customer_phone = ${phone}
+        AND specialist_id = ${specialistId}
+    `);
+
+    const reviewResult = await db.execute(sql`
+      SELECT MAX(r.created_at) as last_review_at
+      FROM reviews r
+      JOIN bookings b ON b.id = r.booking_id
+      WHERE b.normalized_phone = ${phone}
+        AND r.specialist_id = ${specialistId}
+    `);
+
+    const row = waResult.rows?.[0] || {};
+    const reviewRow = reviewResult.rows?.[0] || {};
+
+    return {
+      attemptCount: Number(row.attempt_count || 0),
+      lastAttemptAt: row.last_attempt_at ? new Date(row.last_attempt_at as string) : null,
+      lastReviewAt: reviewRow.last_review_at ? new Date(reviewRow.last_review_at as string) : null,
+    };
   }
 
   async getBookings(): Promise<Booking[]> {

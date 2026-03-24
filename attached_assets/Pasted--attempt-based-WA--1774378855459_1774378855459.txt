@@ -1,0 +1,150 @@
+ЗАДАЧА: внедрить продуктовую логику попыток (attempt-based), не ломая текущую WA-архитектуру (очередь, cooldown, batch, quiet hours)
+
+---
+
+ЦЕЛЬ:
+- ограничить частоту запросов
+- не спамить клиентов
+- сохранить текущую систему отправки (enqueue → queue → send)
+
+---
+
+КЛЮЧЕВОЕ:
+Попытка = primary + follow-up  
+Считаем НЕ сообщения, а попытки
+
+---
+
+1. ДАННЫЕ (НЕ СОЗДАВАТЬ НОВЫЕ ТАБЛИЦЫ)
+
+Использовать wa_messages:
+
+Нужно агрегировать по phone + specialist_id:
+
+- attemptCount = количество primary (sent)
+- lastAttemptAt = max(sent_at) по primary
+- lastReviewAt = max(review.created_at)
+
+primary определяется по:
+type = 'primary'
+
+---
+
+2. ЛОГИКА ENQUEUE (ГЛАВНОЕ)
+
+Перед созданием primary добавить проверку eligibility:
+
+Псевдокод:
+
+const stats = getClientStats(phone, specialistId)
+
+const hasReviewAfterLastAttempt =
+    stats.lastReviewAt && stats.lastReviewAt > stats.lastAttemptAt
+
+if (hasReviewAfterLastAttempt) {
+    if (now - stats.lastReviewAt < 90 days) {
+        SKIP enqueue
+    }
+} else {
+    if (stats.attemptCount == 1 && now - stats.lastAttemptAt < 30 days) {
+        SKIP enqueue
+    }
+
+    if (stats.attemptCount >= 2 && now - stats.lastAttemptAt < 180 days) {
+        SKIP enqueue
+    }
+}
+
+Если ни одно условие не сработало:
+→ создаём primary как сейчас
+
+---
+
+3. FOLLOW-UP НЕ ТРОГАТЬ
+
+- follow-up создаётся только после успешного primary
+- не участвует в attemptCount
+- логика остаётся как есть
+
+---
+
+4. RESET ЛОГИКИ
+
+Если клиент оставил отзыв:
+→ attemptCount НЕ обнулять физически
+
+НО:
+
+hasReviewAfterLastAttempt автоматически:
+→ переводит клиента в ветку 90 дней
+
+---
+
+5. getClientStats РЕАЛИЗАЦИЯ
+
+SQL:
+
+SELECT
+  COUNT(*) FILTER (WHERE type = 'primary' AND status = 'sent') as attempt_count,
+  MAX(sent_at) FILTER (WHERE type = 'primary' AND status = 'sent') as last_attempt_at
+FROM wa_messages
+WHERE customer_phone = $1
+  AND specialist_id = $2
+
++
+
+SELECT MAX(created_at) as last_review_at
+FROM reviews
+WHERE phone = $1
+  AND specialist_id = $2
+
+---
+
+6. ВАЖНО
+
+НЕ ТРОГАТЬ:
+
+- cooldown (20ч в send)
+- batch добор до лимита
+- quiet hours
+- scheduled_at
+- dedupe
+- follow-up delay
+
+---
+
+7. ЛОГИ ДЛЯ ОТЛАДКИ (ОБЯЗАТЕЛЬНО)
+
+При SKIP enqueue логировать:
+
+- phone
+- attemptCount
+- lastAttemptAt
+- lastReviewAt
+- причина:
+
+  "skip_30d"
+  "skip_90d"
+  "skip_180d"
+
+---
+
+РЕЗУЛЬТАТ:
+
+- клиент максимум:
+  1-я попытка → сразу
+  2-я → через 30 дней
+  далее → раз в 180 дней
+  после отзыва → раз в 90 дней
+
+- система не спамит
+- система не теряет сообщения
+- текущая архитектура не ломается
+
+---
+
+КРИТЕРИЙ УСПЕХА:
+
+- enqueue создаёт primary только если прошёл eligibility
+- попытки ограничены по правилам
+- лимит отправки продолжает добираться до DAILY_LIMIT
