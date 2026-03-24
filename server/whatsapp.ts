@@ -619,7 +619,7 @@ export async function upgradeFollowupOnLinkOpen(bookingId: number, openedAt: Dat
     } as any)
     .where(eq(waMessages.id, existingFollowup.id));
 
-  console.log(`[WA_FOLLOWUP_UPGRADE] booking=${bookingId} msg=${existingFollowup.id} upgraded to OPENED segment, newScheduledAt=${newScheduledAt.toISOString()} priority=10`);
+  console.log(`[FOLLOWUP_UPGRADED] booking=${bookingId} msg=${existingFollowup.id} upgraded to OPENED segment, newScheduledAt=${newScheduledAt.toISOString()} priority=10`);
 }
 
 async function checkPrimaryBeforeFollowup(msg: typeof waMessages.$inferSelect): Promise<"ok" | "wait" | "orphan"> {
@@ -705,12 +705,33 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
   try {
     const cooldown = await phoneCooldownCheck(msg.customerPhone, msg.id);
     if (cooldown.inCooldown && cooldown.lastSentAt) {
-      const deferTo = new Date(cooldown.lastSentAt.getTime() + 20 * 60 * 60 * 1000);
-      await db.update(waMessages)
-        .set({ scheduledAt: deferTo, status: "queued" } as any)
-        .where(eq(waMessages.id, msg.id));
-      console.log(`[WA_COOLDOWN] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} phone=${msg.customerPhone} reason=${cooldown.reason} defer_to=${deferTo.toISOString()}`);
-      return false;
+      let bypassCooldown = false;
+      if (msg.messageType === "reminder" && (msg as any).priority >= 10) {
+        const magicLink = await storage.getMagicLinkByBookingId(msg.bookingId);
+        if (magicLink?.openedAt) {
+          const [primaryMsg] = await db.select().from(waMessages)
+            .where(and(
+              eq(waMessages.bookingId, msg.bookingId),
+              sql`${waMessages.messageType} = 'primary'`,
+              sql`${waMessages.status} = 'sent'`
+            ));
+          if (primaryMsg?.sentAt) {
+            const hoursSincePrimary = (Date.now() - new Date(primaryMsg.sentAt).getTime()) / (1000 * 60 * 60);
+            if (hoursSincePrimary >= 2) {
+              bypassCooldown = true;
+              console.log(`[COOLDOWN_BYPASS] msg=${msg.id} booking=${msg.bookingId} type=reminder opened=true hoursSincePrimary=${hoursSincePrimary.toFixed(1)} — bypassing 20h cooldown`);
+            }
+          }
+        }
+      }
+      if (!bypassCooldown) {
+        const deferTo = new Date(cooldown.lastSentAt.getTime() + 20 * 60 * 60 * 1000);
+        await db.update(waMessages)
+          .set({ scheduledAt: deferTo, status: "queued" } as any)
+          .where(eq(waMessages.id, msg.id));
+        console.log(`[WA_COOLDOWN] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} phone=${msg.customerPhone} reason=${cooldown.reason} defer_to=${deferTo.toISOString()}`);
+        return false;
+      }
     }
 
     msg = await refreshLinkIfExpired(msg);
@@ -770,9 +791,24 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
   }
 
   if (isInQuietHours(new Date()) && !isEveningVisit(booking.appointmentTime)) {
+    const nextAllowed = adjustForQuietHours(new Date());
+    if (msg.messageType === "reminder" && (msg as any).priority >= 10) {
+      const magicLink = await storage.getMagicLinkByBookingId(msg.bookingId);
+      if (magicLink?.openedAt) {
+        const randomOffsetMs = randomMinutes(0, 2 * 60);
+        const deferTo = new Date(nextAllowed.getTime() + randomOffsetMs);
+        await db.update(waMessages)
+          .set({ scheduledAt: deferTo, status: "queued" } as any)
+          .where(eq(waMessages.id, msg.id));
+        console.log(`[QUIET_RESCHEDULE] msg=${msg.id} booking=${msg.bookingId} type=reminder opened=true defer_to=${deferTo.toISOString()} (nextAllowed + 0-2h random)`);
+        return false;
+      }
+    }
+    const deferTo = nextAllowed;
     await db.update(waMessages)
-      .set({ status: "queued" } as any)
+      .set({ scheduledAt: deferTo, status: "queued" } as any)
       .where(eq(waMessages.id, msg.id));
+    console.log(`[QUIET_RESCHEDULE] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} defer_to=${deferTo.toISOString()}`);
     return false;
   }
 

@@ -1,0 +1,143 @@
+ЗАДАЧА: реализовать поведенческий follow-up (opened vs not opened) с приоритетом, корректной работой cooldown (20ч) и quiet hours, без поломки текущей архитектуры (batch, лимиты, attempt logic)
+
+ЦЕЛЬ:
+- дожимать “горячих” клиентов (opened) в течение 2–4 часов
+- не терять их из-за cooldown и quiet hours
+- сохранить анти-спам и стабильность системы
+
+---
+
+1. ТРЕКИНГ ОТКРЫТИЯ
+
+При открытии /r/{token}:
+
+- если link_opened_at IS NULL → записать now()
+- вызвать upgradeFollowupOnLinkOpen(booking_id)
+
+---
+
+2. СОЗДАНИЕ FOLLOW-UP (createFollowup)
+
+Если link_opened_at есть:
+
+scheduled_at = link_opened_at + random(2–4 часа)
+priority = 10
+template = OPENED_TEMPLATE
+
+Иначе:
+
+scheduled_at = primary_sent_at + random(18–24 часа)
+priority = 0
+template = DEFAULT_TEMPLATE
+
+---
+
+3. UPGRADE FOLLOW-UP ПРИ ОТКРЫТИИ
+
+Если follow-up уже существует:
+
+UPDATE wa_messages
+SET
+  scheduled_at = link_opened_at + random(2–4 часа),
+  priority = 10,
+  template = OPENED_TEMPLATE
+WHERE booking_id = ?
+  AND type = 'followup'
+
+---
+
+4. BATCH ВЫБОРКА
+
+ORDER BY:
+  priority DESC,
+  scheduled_at ASC
+
+---
+
+5. COOLDOWN (ИСПРАВЛЕНИЕ)
+
+В send pipeline:
+
+const isFollowup = message.type === 'followup'
+const hasOpened = message.link_opened_at != null
+const hoursSincePrimary = now - message.primary_sent_at
+
+const allowBypass =
+  isFollowup &&
+  hasOpened &&
+  hoursSincePrimary >= 2 часа
+
+if (!allowBypass && now - lastSentAt < 20 часов) {
+  reschedule (как сейчас)
+}
+
+---
+
+6. QUIET HOURS (КРИТИЧНО)
+
+НИКОГДА не блокировать:
+
+- запись link_opened_at
+- upgrade follow-up
+
+Quiet hours применяются ТОЛЬКО при отправке:
+
+if (isQuietHours(now)) {
+
+  if (message.type === 'followup' && message.link_opened_at != null) {
+    scheduled_at = nextAllowedTime + random(0–2 часа)
+  } else {
+    scheduled_at = nextAllowedTime
+  }
+
+  reschedule
+}
+
+---
+
+7. ВАЖНЫЕ ОГРАНИЧЕНИЯ
+
+- максимум 1 follow-up на booking (оставить)
+- follow-up только после primary (оставить)
+- bypass cooldown ТОЛЬКО для opened follow-up
+- primary всегда подчиняется cooldown
+
+---
+
+8. ЧТО НЕ ТРОГАТЬ
+
+- attempt logic (30 / 90 / 180)
+- batch добор до лимита
+- scheduled_at <= now фильтр
+- dedupe по телефону
+- ENV guard
+
+---
+
+9. ЛОГИ
+
+Добавить:
+
+[LINK_OPENED] booking_id=...
+[FOLLOWUP_UPGRADED] booking_id=...
+[COOLDOWN_BYPASS] booking_id=...
+[QUIET_RESCHEDULE] booking_id=...
+
+---
+
+10. КРИТЕРИИ УСПЕХА
+
+- opened → follow-up уходит в тот же день (не через 20ч)
+- not opened → поведение не меняется
+- quiet hours не ломают логику, только сдвигают send
+- batch продолжает добирать лимит
+- конверсия follow-up растёт
+
+---
+
+РЕЗУЛЬТАТ:
+
+Система становится поведенческой:
+- реагирует на открытие
+- дожимает в нужный момент
+- не теряет клиентов из-за cooldown/quiet hours

@@ -1295,6 +1295,7 @@ export async function registerRoutes(
       
       if (!link.openedAt) {
         await storage.markMagicLinkOpened(link.id);
+        console.log(`[LINK_OPENED] booking=${link.bookingId} token=${token} magicLinkId=${link.id}`);
         upgradeFollowupOnLinkOpen(link.bookingId, new Date()).catch(err => {
           console.error(`[WA_FOLLOWUP_UPGRADE] Error for booking=${link.bookingId}: ${err.message}`);
         });
