@@ -940,7 +940,23 @@ async function deduplicateQueueByPhone(): Promise<number> {
   return superseded;
 }
 
+let heartbeatCounter = 0;
+const HEARTBEAT_EVERY_N = 10;
+let isProcessingQueue = false;
+
 export async function processWaQueue(): Promise<void> {
+  if (isProcessingQueue) {
+    return;
+  }
+  isProcessingQueue = true;
+  try {
+    await _processWaQueueInner();
+  } finally {
+    isProcessingQueue = false;
+  }
+}
+
+async function _processWaQueueInner(): Promise<void> {
   const settings = await getWaSettings();
 
   if (!settings.enabled) {
@@ -953,6 +969,14 @@ export async function processWaQueue(): Promise<void> {
   }
 
   const now = new Date();
+
+  const stuckResult = await db.update(waMessages)
+    .set({ status: "queued" } as any)
+    .where(eq(waMessages.status, "sending"))
+    .returning({ id: waMessages.id, bookingId: waMessages.bookingId });
+  if (stuckResult.length > 0) {
+    console.log(`[WA_PROCESSOR] Recovered ${stuckResult.length} stuck 'sending' messages: ${stuckResult.map(r => `msg=${r.id}/booking=${r.bookingId}`).join(', ')}`);
+  }
 
   const expired = await expireOldMessages();
   if (expired > 0) {
@@ -1045,5 +1069,19 @@ export async function processWaQueue(): Promise<void> {
 
   if (totalCandidates > 0) {
     console.log(`[WA_PROCESSOR] Complete: ${totalSent} sent, ${totalSkipped} skipped, ${totalDeferred} deferred out of ${totalCandidates} candidates (limit=${effectiveLimit}, sentToday=${sentToday + totalSent})`);
+  } else {
+    heartbeatCounter++;
+    if (heartbeatCounter >= HEARTBEAT_EVERY_N) {
+      heartbeatCounter = 0;
+      const queuedCount = await db.select({ count: sql<number>`count(*)` })
+        .from(waMessages)
+        .where(eq(waMessages.status, "queued"));
+      const sendingCount = await db.select({ count: sql<number>`count(*)` })
+        .from(waMessages)
+        .where(eq(waMessages.status, "sending"));
+      const totalQueued = Number(queuedCount[0]?.count || 0);
+      const totalSending = Number(sendingCount[0]?.count || 0);
+      console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sending=${totalSending} sentToday=${sentToday} limit=${effectiveLimit} time=${now.toISOString()}`);
+    }
   }
 }
