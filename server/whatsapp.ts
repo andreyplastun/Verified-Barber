@@ -87,19 +87,19 @@ function isEveningVisit(appointmentTime: Date | string | null): boolean {
 }
 
 const PRIMARY_TEMPLATES = [
-  "{clientName}, спасибо за визит к вашему барберу {specialistNameDative}. Оставьте, пожалуйста, отзыв: {reviewLink}",
-  "{clientName}, благодарим за визит к вашему барберу {specialistNameDative}. Будем признательны за оставленный отзыв: {reviewLink}",
-  "{clientName}, как прошёл визит к вашему барберу {specialistNameDative}? Оставьте, пожалуйста, отзыв: {reviewLink}",
-  "{clientName}, спасибо, что выбрали барбера {specialistNameGenitive}. Поделитесь, пожалуйста, впечатлением: {reviewLink}",
-  "{clientName}, визит к вашему барберу {specialistNameDative} завершён. Оцените, пожалуйста, специалиста: {reviewLink}",
+  "{clientName}, спасибо за визит к вашему барберу {specialistNameDative}.\nОставьте, пожалуйста, отзыв, это можно сделать и анонимно:\n{reviewLink}\nНам важна честная оценка — даже если что-то не понравилось.",
+  "{clientName}, благодарим за визит к вашему барберу {specialistNameDative}.\nБудем признательны за оставленный отзыв, в том числе анонимный:\n{reviewLink}\nЛюбой отзыв важен, можно анонимно, — это помогает нам становиться лучше.",
+  "{clientName}, как прошёл визит к вашему барберу {specialistNameDative}?\nОставьте, пожалуйста, отзыв:\n{reviewLink}\nМожно написать как есть — это действительно важно для нас. Есть выбор оставить анонимно.",
+  "{clientName}, спасибо, что выбрали барбера {specialistNameGenitive}.\nПоделитесь, пожалуйста, впечатлением:\n{reviewLink}\nБудем благодарны за честный отзыв, можно оставить анонимно.",
+  "{clientName}, визит к вашему барберу {specialistNameDative} завершён.\nОцените, пожалуйста, специалиста:\n{reviewLink}\nВажно ваше реальное мнение — это помогает нам исправлять ошибки. Можно выбрать оставить отзыв анонимно.",
 ];
 
 const REMINDER_TEMPLATES = [
-  "{clientName}, отзыв о визите к барберу {specialistNameDative} ещё не оставлен: {reviewLink}",
-  "{clientName}, напоминаем об отзыве для барбера {specialistNameGenitive}. Это займёт всего несколько секунд: {reviewLink}",
-  "{clientName}, если удобно — оставьте, пожалуйста, отзыв о визите к вашему барберу {specialistNameDative}: {reviewLink}",
-  "{clientName}, оценка визита к барберу {specialistNameDative} ещё не завершена. Завершить или пропустить: {reviewLink}",
-  "{clientName}, последняя возможность оценить визит к вашему барберу {specialistNameDative}: {reviewLink}",
+  "{clientName}, отзыв о визите к барберу {specialistNameDative} ещё не оставлен:\n{reviewLink}\nМожно написать как есть — даже если что-то не понравилось. Можно оставить анонимно.",
+  "{clientName}, напоминаем об отзыве для барбера {specialistNameGenitive}.\nЭто займёт всего несколько секунд:\n{reviewLink}\nНам важна объективная оценка, не только положительная, можно оставить анонимно.",
+  "{clientName}, если удобно — оставьте, пожалуйста, отзыв о визите к вашему барберу {specialistNameDative}:\n{reviewLink}\nЛюбое мнение важно — это помогает нам улучшать сервис.",
+  "{clientName}, оценка визита к барберу {specialistNameDative} ещё не завершена. Завершить, можно анонимно, или пропустить: {reviewLink}\nМожно оценить как есть — даже если опыт был не идеальным.",
+  "{clientName}, последняя возможность оценить визит к вашему барберу {specialistNameDative}:\n{reviewLink}\nБудем благодарны за честный отзыв — он действительно влияет на качество. Можно анонимно.",
 ];
 
 const REMINDER_OPENED_TEMPLATES = [
