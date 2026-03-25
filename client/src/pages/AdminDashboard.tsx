@@ -459,6 +459,8 @@ export default function AdminDashboard() {
     openedCount: number;
     conversionOpened: number;
     conversionNotOpened: number;
+    openedAfterPrimaryNoReview: number;
+    openedAfterFollowupNoReview: number;
     days: number;
   }>({
     queryKey: ["/api/admin/whatsapp/conversion", waStatsPeriod],
@@ -1262,6 +1264,14 @@ export default function AdminDashboard() {
                         <div className="flex justify-between items-center text-xs text-muted-foreground">
                           <span>Открыли ссылку</span>
                           <span data-testid="text-wa-opened-count">{waConversion.openedCount}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-muted-foreground pl-3">
+                          <span>↳ после primary, без отзыва</span>
+                          <span data-testid="text-wa-opened-primary-no-review">{waConversion.openedAfterPrimaryNoReview}</span>
+                        </div>
+                        <div className="flex justify-between items-center text-xs text-muted-foreground pl-3">
+                          <span>↳ после follow-up, без отзыва</span>
+                          <span data-testid="text-wa-opened-followup-no-review">{waConversion.openedAfterFollowupNoReview}</span>
                         </div>
                         <div className="flex justify-between items-center text-xs text-muted-foreground">
                           <span>Конверсия (открыли)</span>

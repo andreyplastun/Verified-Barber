@@ -148,6 +148,8 @@ export interface IStorage {
     openedCount: number;
     conversionOpened: number;
     conversionNotOpened: number;
+    openedAfterPrimaryNoReview: number;
+    openedAfterFollowupNoReview: number;
   }>;
 
   // WhatsApp Opt-outs
@@ -1313,7 +1315,7 @@ export class DatabaseStorage implements IStorage {
     const totalBookings = uniqueBookingIds.length;
 
     if (totalBookings === 0) {
-      return { totalBookings: 0, totalReviews: 0, reviewsAfterPrimary: 0, reviewsAfterFollowup: 0, conversionPercent: 0, primaryConversionPercent: 0, followupIncrementPercent: 0, followupSent: 0, followupEfficiencyPercent: 0, openedCount: 0, conversionOpened: 0, conversionNotOpened: 0 };
+      return { totalBookings: 0, totalReviews: 0, reviewsAfterPrimary: 0, reviewsAfterFollowup: 0, conversionPercent: 0, primaryConversionPercent: 0, followupIncrementPercent: 0, followupSent: 0, followupEfficiencyPercent: 0, openedCount: 0, conversionOpened: 0, conversionNotOpened: 0, openedAfterPrimaryNoReview: 0, openedAfterFollowupNoReview: 0 };
     }
 
     const bookingReviews = await db.select({
@@ -1339,6 +1341,7 @@ export class DatabaseStorage implements IStorage {
 
     const openedLinks = await db.select({
       bookingId: magicLinks.bookingId,
+      openedAt: magicLinks.openedAt,
     }).from(magicLinks).where(
       and(
         sql`${magicLinks.bookingId} IN (${sql.join(uniqueBookingIds.map(id => sql`${id}`), sql`, `)})`,
@@ -1346,27 +1349,38 @@ export class DatabaseStorage implements IStorage {
       )
     );
     const openedBookingIds = new Set(openedLinks.map(l => l.bookingId));
+    const openedAtMap = new Map(openedLinks.map(l => [l.bookingId, l.openedAt]));
 
     let reviewsAfterPrimary = 0;
     let reviewsAfterFollowup = 0;
     let reviewsFromOpened = 0;
     let reviewsFromNotOpened = 0;
+    let openedAfterPrimaryNoReview = 0;
+    let openedAfterFollowupNoReview = 0;
 
     for (const bookingId of uniqueBookingIds) {
       const reviewCreatedAt = reviewMap.get(bookingId);
-      if (!reviewCreatedAt) continue;
-
       const followupSentAt = followupSentMap.get(bookingId);
-      if (followupSentAt && reviewCreatedAt > followupSentAt) {
-        reviewsAfterFollowup++;
-      } else {
-        reviewsAfterPrimary++;
-      }
+      const linkOpenedAt = openedAtMap.get(bookingId);
 
-      if (openedBookingIds.has(bookingId)) {
-        reviewsFromOpened++;
-      } else {
-        reviewsFromNotOpened++;
+      if (reviewCreatedAt) {
+        if (followupSentAt && reviewCreatedAt > followupSentAt) {
+          reviewsAfterFollowup++;
+        } else {
+          reviewsAfterPrimary++;
+        }
+
+        if (openedBookingIds.has(bookingId)) {
+          reviewsFromOpened++;
+        } else {
+          reviewsFromNotOpened++;
+        }
+      } else if (linkOpenedAt) {
+        if (followupSentAt && linkOpenedAt > followupSentAt) {
+          openedAfterFollowupNoReview++;
+        } else {
+          openedAfterPrimaryNoReview++;
+        }
       }
     }
 
@@ -1387,6 +1401,8 @@ export class DatabaseStorage implements IStorage {
       openedCount,
       conversionOpened: openedCount > 0 ? Math.round(reviewsFromOpened / openedCount * 100) : 0,
       conversionNotOpened: notOpenedCount > 0 ? Math.round(reviewsFromNotOpened / notOpenedCount * 100) : 0,
+      openedAfterPrimaryNoReview,
+      openedAfterFollowupNoReview,
     };
   }
 
