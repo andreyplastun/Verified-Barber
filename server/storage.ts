@@ -824,11 +824,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async countTodayReviews(): Promise<number> {
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
     const result = await db.select({ count: sql<number>`count(*)` })
       .from(reviews)
-      .where(sql`${reviews.createdAt} >= ${todayStart}`);
+      .where(sql`${reviews.createdAt} >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'`);
     return Number(result[0]?.count || 0);
   }
 
