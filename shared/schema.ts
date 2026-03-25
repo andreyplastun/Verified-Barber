@@ -178,6 +178,7 @@ export const specialistPhotos = pgTable("specialist_photos", {
 export const magicLinks = pgTable("magic_links", {
   id: serial("id").primaryKey(),
   token: text("token").notNull().unique(), // Random secure token
+  shortCode: integer("short_code"), // Short numeric code for friendly URLs (1-9999, cycles)
   userId: uuid("user_id"), // References users.id - nullable for phone-only clients
   bookingId: integer("booking_id").notNull(), // References bookings.id
   specialistId: integer("specialist_id").notNull(), // References specialists.id
