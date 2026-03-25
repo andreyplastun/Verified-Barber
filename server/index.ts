@@ -229,7 +229,7 @@ app.use((req, res, next) => {
 
     // Backfill dedupe_key for existing wa_messages and create unique index
     await pool.query(`
-      UPDATE wa_messages SET dedupe_key = CONCAT(message_type, '_', booking_id)
+      UPDATE wa_messages SET dedupe_key = CONCAT(message_type, '_', booking_id, '_', id)
       WHERE dedupe_key IS NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS wa_messages_dedupe_key_idx ON wa_messages (dedupe_key) WHERE dedupe_key IS NOT NULL;
     `);
