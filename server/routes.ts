@@ -1389,57 +1389,64 @@ export async function registerRoutes(
     }
   });
 
-  // Submit review via magic link (no auth required)
   app.get("/api/review/:slug/:code", async (req, res) => {
     try {
       const { slug, code } = req.params;
       const shortCode = parseInt(code, 10);
-      if (isNaN(shortCode)) return res.status(400).json({ message: "Неверный код" });
+      if (isNaN(shortCode)) return res.status(404).json({ valid: false, reason: "not_found" });
       const link = await storage.getMagicLinkByShortCodeAndSlug(shortCode, slug);
-      if (!link) return res.status(404).json({ message: "Ссылка не найдена" });
-      req.params.token = link.token;
-      const token = link.token;
-      // fall through to same logic below
+      if (!link) return res.status(404).json({ valid: false, reason: "not_found" });
+
       if (new Date(link.expiresAt) < new Date()) {
-        return res.status(410).json({ message: "Ссылка истекла" });
+        return res.status(410).json({ valid: false, reason: "expired" });
       }
       if (link.usedAt) {
-        return res.status(410).json({ message: "Ссылка уже использована" });
+        return res.status(410).json({ valid: false, reason: "used" });
       }
+
       const booking = await storage.getBooking(link.bookingId);
       if (!booking) {
-        return res.status(404).json({ message: "Визит не найден" });
+        return res.status(404).json({ valid: false, reason: "data_not_found" });
       }
-      if (booking.status !== "completed") {
-        return res.status(403).json({ message: "Отзыв доступен после завершения визита" });
-      }
-      if ((booking as any).notCompletedAt) {
-        return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
-      }
-      if ((booking as any).paymentStatus === 'refunded') {
-        return res.status(403).json({ message: "Отзыв недоступен: платёж возвращён" });
-      }
+
       const specialist = await storage.getSpecialist(link.specialistId);
       if (!specialist) {
-        return res.status(404).json({ message: "Специалист не найден" });
+        return res.status(404).json({ valid: false, reason: "data_not_found" });
       }
+
+      if ((booking as any).paymentStatus === 'refunded') {
+        return res.status(403).json({ valid: false, reason: "refunded", message: "Оставление отзыва недоступно. Оплата по визиту была отменена." });
+      }
+
+      if (booking.hasReview) {
+        await storage.markMagicLinkUsed(link.id);
+        return res.status(410).json({ valid: false, reason: "review_exists" });
+      }
+
       if (!link.openedAt) {
         await storage.markMagicLinkOpened(link.id);
+        try { await upgradeFollowupOnLinkOpen(link.bookingId, new Date()); } catch (e) {}
       }
-      const hasReview = await storage.hasReviewForBooking(link.bookingId);
-      return res.json({
+
+      res.json({
+        valid: true,
+        magicLinkId: link.id,
+        userId: link.userId || null,
         bookingId: link.bookingId,
         specialistId: link.specialistId,
         specialistName: specialist.name,
-        specialistImageUrl: specialist.imageUrl,
-        specialistCategory: specialist.category,
+        specialistImageUrl: specialist.imageUrl || null,
+        customerName: booking.customerName,
+        isPhoneOnly: !link.userId && !!link.customerPhone,
+        tipsEnabled: specialist.tipsEnabled || false,
+        kaspiPhone: specialist.kaspiPhone || null,
+        sentAt: link.createdAt,
+        baseServicePrice: specialist.baseServicePrice || null,
         token: link.token,
-        hasReview,
-        tipsEnabled: specialist.tipsEnabled,
-        kaspiPhone: specialist.kaspiPhone,
       });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      console.error("Error validating short review link:", err);
+      res.status(500).json({ valid: false, reason: "error" });
     }
   });
 
