@@ -3682,22 +3682,32 @@ ${magicLink}`;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
       const daysParam = parseInt(req.query.days as string) || 7;
       let from: Date, to: Date, days: number;
+
+      const ALMATY_OFFSET_MS = 5 * 60 * 60 * 1000;
+      const nowUtc = Date.now();
+      const almatyNow = new Date(nowUtc + ALMATY_OFFSET_MS);
+      const almatyDateStr = almatyNow.toISOString().slice(0, 10);
+
       if (daysParam === -1) {
-        from = new Date();
-        from.setDate(from.getDate() - 1);
-        from.setHours(0, 0, 0, 0);
-        to = new Date();
-        to.setDate(to.getDate() - 1);
-        to.setHours(23, 59, 59, 999);
+        const yesterday = new Date(almatyNow);
+        yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+        const yStr = yesterday.toISOString().slice(0, 10);
+        from = new Date(`${yStr}T00:00:00+05:00`);
+        to = new Date(`${yStr}T23:59:59.999+05:00`);
         days = -1;
+      } else if (daysParam === 1) {
+        from = new Date(`${almatyDateStr}T00:00:00+05:00`);
+        to = new Date(`${almatyDateStr}T23:59:59.999+05:00`);
+        days = 1;
       } else {
         days = Math.min(daysParam, 90);
-        from = new Date();
-        from.setDate(from.getDate() - days);
-        from.setHours(0, 0, 0, 0);
-        to = new Date();
-        to.setHours(23, 59, 59, 999);
+        const pastDate = new Date(almatyNow);
+        pastDate.setUTCDate(pastDate.getUTCDate() - days);
+        const pastStr = pastDate.toISOString().slice(0, 10);
+        from = new Date(`${pastStr}T00:00:00+05:00`);
+        to = new Date(`${almatyDateStr}T23:59:59.999+05:00`);
       }
+
       const stats = await storage.getWaConversionStats(from, to);
       res.json({ ...stats, days });
     } catch (err: any) {
