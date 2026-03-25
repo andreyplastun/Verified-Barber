@@ -10,6 +10,7 @@ import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage
 import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig } from "./altegio";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { appConfig } from "@shared/schema";
 import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen } from "./whatsapp";
 
@@ -3641,7 +3642,35 @@ ${magicLink}`;
       const sentTodayByType = await storage.countWaMessagesSentTodayByType();
       const sentYesterdayByType = await storage.countWaMessagesSentYesterdayByType();
       const settings = await getWaSettings();
-      res.json({ sentToday, sentTodayByType, sentYesterdayByType, ...settings });
+      const queueDiag = await db.execute(sql`
+        SELECT status, count(*) as cnt FROM wa_messages GROUP BY status
+      `);
+      const readyNow = await db.execute(sql`
+        SELECT count(*) as cnt FROM wa_messages 
+        WHERE status = 'queued' AND scheduled_at <= NOW()
+      `);
+      const futureQueued = await db.execute(sql`
+        SELECT count(*) as cnt FROM wa_messages 
+        WHERE status = 'queued' AND scheduled_at > NOW()
+      `);
+      const nextScheduled = await db.execute(sql`
+        SELECT id, booking_id, message_type, priority, scheduled_at, customer_phone
+        FROM wa_messages WHERE status = 'queued' 
+        ORDER BY scheduled_at ASC LIMIT 3
+      `);
+      const recentFailed = await db.execute(sql`
+        SELECT id, booking_id, message_type, last_error, created_at
+        FROM wa_messages WHERE status = 'failed'
+        ORDER BY created_at DESC LIMIT 3
+      `);
+      const queueStatus = {
+        byStatus: Object.fromEntries((queueDiag.rows as any[]).map(r => [r.status, Number(r.cnt)])),
+        readyNow: Number((readyNow.rows[0] as any)?.cnt || 0),
+        futureQueued: Number((futureQueued.rows[0] as any)?.cnt || 0),
+        nextScheduled: nextScheduled.rows,
+        recentFailed: recentFailed.rows,
+      };
+      res.json({ sentToday, sentTodayByType, sentYesterdayByType, ...settings, queueStatus });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

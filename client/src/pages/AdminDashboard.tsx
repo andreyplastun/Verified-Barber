@@ -414,7 +414,8 @@ export default function AdminDashboard() {
     },
   });
 
-  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number; sentToday?: number; sentTodayByType?: { primary: number; reminder: number }; sentYesterdayByType?: { primary: number; reminder: number } };
+  type QueueStatusType = { byStatus: Record<string, number>; readyNow: number; futureQueued: number; nextScheduled: any[]; recentFailed: any[] };
+  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number; sentToday?: number; sentTodayByType?: { primary: number; reminder: number }; sentYesterdayByType?: { primary: number; reminder: number }; queueStatus?: QueueStatusType };
   type WaMessageType = {
     id: number; bookingId: number; customerPhone: string; customerName: string;
     specialistName: string; messageType: string; status: string; templateIndex: number;
