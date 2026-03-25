@@ -148,6 +148,9 @@ app.use((req, res, next) => {
         END IF;
       END $$;
       ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS customer_phone text;
+      ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS opened_at timestamp;
+      ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS review_submitted_at timestamp;
+      ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS is_followup boolean NOT NULL DEFAULT false;
       DO $$ BEGIN
         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='magic_links' AND column_name='user_id' AND is_nullable='NO') THEN
           ALTER TABLE magic_links ALTER COLUMN user_id DROP NOT NULL;
@@ -217,6 +220,7 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invalid_phone boolean DEFAULT false;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS price integer;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_email text;
 
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
