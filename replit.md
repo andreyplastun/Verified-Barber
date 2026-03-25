@@ -32,6 +32,23 @@ The backend is built with Node.js and Express in TypeScript, providing RESTful A
 - **WhatsApp Auto-Messaging System (event-based v90)**: Manages automated WhatsApp messages (primary and followup) for review requests. Includes comprehensive anti-spam measures, phone cooldowns, batch processing with priority ordering (priority DESC, type, scheduledAt), templates with declension, and quiet hour scheduling. Magic links are refreshed if expired before sending. Eligibility is based on client attempt statistics (30/90/180 day rules). Smart follow-up: if client opened link but didn't review → followup in 2-4h with priority=10 and "opened" templates; if not opened → 18-24h with priority=0. `upgradeFollowupOnLinkOpen()` upgrades queued followups when link is first opened. Metrics: `openedCount`, `conversionOpened`, `conversionNotOpened` in admin stats.
 - **Legal Pages & Consent System**: Includes `/terms`, `/offer`, and `/privacy` pages. Consent is logged in a `legal_consents` table for specialists and clients, with API endpoints for logging and version retrieval.
 
+## CRITICAL: Database Migration Rules (Railway Production)
+
+**EVERY new column added to `shared/schema.ts` MUST also be added to the auto-migration block in `server/index.ts`.**
+
+Railway production does NOT use `drizzle-kit push`. It relies solely on the `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` statements in the startup auto-migration block (~line 111 in `server/index.ts`). If a column exists in the Drizzle schema but not in the auto-migration, production will crash with `column "X" does not exist`.
+
+Checklist for every schema change:
+1. Add column to `shared/schema.ts`
+2. Add `ALTER TABLE <table> ADD COLUMN IF NOT EXISTS <column> <type> <defaults>;` to `server/index.ts` auto-migration block
+3. Verify by searching `server/index.ts` for the column name before committing
+
+**Incident 2026-03-25**: `priority` column was added to schema but not to auto-migration. Railway crashed repeatedly until the migration was added. This also affected `magic_links.opened_at`, `magic_links.review_submitted_at`, `magic_links.is_followup`, and `bookings.customer_email`.
+
+## Timezone Rule
+
+All "today" calculations must use `Asia/Almaty` (UTC+5), not server UTC time. Use SQL: `(now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'` for date boundaries.
+
 ## External Dependencies
 
 ### Database
