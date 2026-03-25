@@ -460,7 +460,7 @@ export async function enqueueReviewMessage(params: {
       scheduledAt = new Date(now.getTime() + 10 * 60 * 1000);
       console.log(`[WA_QUEUE] Evening visit booking=${params.bookingId}: scheduling in 10 min (ignoring quiet hours)`);
     } else {
-      const delayMs = params.delayMs || randomMinutes(45, 75);
+      const delayMs = params.delayMs || randomMinutes(10, 30);
       scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
     }
   } else {
