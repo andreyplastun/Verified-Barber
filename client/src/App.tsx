@@ -156,6 +156,7 @@ function Router() {
         </ProtectedRoute>
       </Route>
       <Route path="/r/:token" component={MagicReviewPage} />
+      <Route path="/review/:slug/:code" component={MagicReviewPage} />
       <Route path="/reviews" component={ReviewPage} />
       <Route path="/specialist/:id/reviews" component={SpecialistReviews} />
       <Route path="/specialists/:id/reviews" component={SpecialistReviews} />

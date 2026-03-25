@@ -9,6 +9,26 @@ import { syncUpcomingAppointments, isAltegioConfigured } from "./altegio";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
+const CYRILLIC_MAP: Record<string, string> = {
+  'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'yo','ж':'zh',
+  'з':'z','и':'i','й':'y','к':'k','л':'l','м':'m','н':'n','о':'o',
+  'п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'kh','ц':'ts',
+  'ч':'ch','ш':'sh','щ':'shch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu',
+  'я':'ya','ә':'a','і':'i','ң':'n','ғ':'g','ү':'u','ұ':'u','қ':'k',
+  'ө':'o','һ':'h','ґ':'g','є':'ye','ї':'yi',
+};
+
+function transliterate(text: string): string {
+  return text.toLowerCase().split('').map(c => CYRILLIC_MAP[c] ?? c).join('');
+}
+
+function generateSpecialistSlug(name: string, category: string): string {
+  const translitName = transliterate(name)
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 20);
+  return `${translitName}${category}`;
+}
+
 // Load runtime env vars baked during build
 try {
   console.log(`[STARTUP] __dirname=${__dirname}, cwd=${process.cwd()}`);
@@ -273,6 +293,24 @@ app.use((req, res, next) => {
         await pool.query(`UPDATE specialists SET is_active = false WHERE id = $1`, [dupeId]);
         console.log(`[STARTUP] Merged duplicate specialist id=${dupeId} (staff=${alias.dupeStaffId}) → primary id=${primaryId} (staff=${alias.primaryStaffId})`);
       }
+    }
+
+    await pool.query(`
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS slug text;
+      ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS short_code integer;
+    `);
+
+    // Generate slugs for specialists that don't have one
+    const specsWithoutSlug = await pool.query(`SELECT id, name, category FROM specialists WHERE slug IS NULL`);
+    for (const spec of specsWithoutSlug.rows) {
+      const slug = generateSpecialistSlug(spec.name, spec.category);
+      // Ensure uniqueness by appending id if needed
+      const existing = await pool.query(`SELECT id FROM specialists WHERE slug = $1 AND id != $2`, [slug, spec.id]);
+      const finalSlug = existing.rows.length > 0 ? `${slug}${spec.id}` : slug;
+      await pool.query(`UPDATE specialists SET slug = $1 WHERE id = $2`, [finalSlug, spec.id]);
+    }
+    if (specsWithoutSlug.rows.length > 0) {
+      console.log(`[STARTUP] Generated slugs for ${specsWithoutSlug.rows.length} specialists`);
     }
 
     console.log("[STARTUP] Auto-migrations complete");

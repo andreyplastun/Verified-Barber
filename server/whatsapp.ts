@@ -676,7 +676,17 @@ async function refreshLinkIfExpired(msg: typeof waMessages.$inferSelect): Promis
     link.customerPhone
   );
 
-  const newReviewLink = `${REVIEW_BASE_URL}/r/${newLink.token}`;
+  let newReviewLink: string;
+  if (newLink.shortCode) {
+    const spec = await storage.getSpecialist(newLink.specialistId);
+    if (spec?.slug) {
+      newReviewLink = `${REVIEW_BASE_URL}/review/${spec.slug}/${newLink.shortCode}`;
+    } else {
+      newReviewLink = `${REVIEW_BASE_URL}/r/${newLink.token}`;
+    }
+  } else {
+    newReviewLink = `${REVIEW_BASE_URL}/r/${newLink.token}`;
+  }
   const newMessageText = msg.messageText.replace(msg.reviewLink, newReviewLink);
 
   validateReviewLink(newReviewLink, `refreshLinkIfExpired_booking=${msg.bookingId}`);

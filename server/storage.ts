@@ -75,6 +75,7 @@ export interface IStorage {
   // Magic Links
   createMagicLink(userId: string | null, bookingId: number, specialistId: number, isFollowup?: boolean, customerPhone?: string | null): Promise<MagicLink>;
   getMagicLinkByToken(token: string): Promise<MagicLink | undefined>;
+  getMagicLinkByShortCodeAndSlug(shortCode: number, slug: string): Promise<MagicLink | undefined>;
   markMagicLinkOpened(id: number): Promise<void>;
   markMagicLinkUsed(id: number): Promise<void>;
   markMagicLinkReviewSubmitted(id: number): Promise<void>;
@@ -902,9 +903,12 @@ export class DatabaseStorage implements IStorage {
   async createMagicLink(userId: string | null, bookingId: number, specialistId: number, isFollowup: boolean = false, customerPhone: string | null = null): Promise<MagicLink> {
     const token = crypto.randomBytes(12).toString('base64url'); // 16 chars, URL-safe
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const shortCode = await this.getNextShortCode();
     
     const [link] = await db.insert(magicLinks).values({
       token,
+      shortCode,
       userId,
       bookingId,
       specialistId,
@@ -913,8 +917,26 @@ export class DatabaseStorage implements IStorage {
       isFollowup,
     }).returning();
     
-    console.log(`[MAGIC_LINK] Created ${isFollowup ? 'FOLLOWUP ' : ''}for booking ${bookingId}, ${userId ? `user ${userId}` : `phone ${customerPhone}`}, expires ${expiresAt.toISOString()}`);
+    console.log(`[MAGIC_LINK] Created ${isFollowup ? 'FOLLOWUP ' : ''}for booking ${bookingId}, ${userId ? `user ${userId}` : `phone ${customerPhone}`}, shortCode=${shortCode}, expires ${expiresAt.toISOString()}`);
     return link;
+  }
+
+  private async getNextShortCode(): Promise<number> {
+    const MAX_CODE = 9999;
+    const result = await db.select({ maxCode: sql<number>`COALESCE(MAX(short_code), 0)` })
+      .from(magicLinks);
+    const current = Number(result[0]?.maxCode || 0);
+    return current >= MAX_CODE ? 1 : current + 1;
+  }
+
+  async getMagicLinkByShortCodeAndSlug(shortCode: number, slug: string): Promise<MagicLink | undefined> {
+    const [link] = await db.select()
+      .from(magicLinks)
+      .innerJoin(specialists, eq(magicLinks.specialistId, specialists.id))
+      .where(and(eq(magicLinks.shortCode, shortCode), eq(specialists.slug, slug)))
+      .orderBy(desc(magicLinks.createdAt))
+      .limit(1);
+    return link?.magic_links;
   }
 
   async getMagicLinkByToken(token: string): Promise<MagicLink | undefined> {

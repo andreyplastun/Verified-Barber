@@ -24,6 +24,10 @@ function buildReviewLink(token: string): string {
   return link;
 }
 
+function buildShortReviewLink(slug: string, shortCode: number): string {
+  return `${REVIEW_BASE_URL}/review/${slug}/${shortCode}`;
+}
+
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1;
 
 async function checkAndAutoActivateSpecialist(specialistId: number): Promise<void> {
@@ -1188,7 +1192,10 @@ export async function registerRoutes(
       
       const customerPhone = booking.normalizedPhone || booking.customerPhone || null;
       const magicLink = await storage.createMagicLink(booking.clientId || null, bookingId, booking.specialistId, false, !booking.clientId ? customerPhone : null);
-      const fullLink = buildReviewLink(magicLink.token);
+      const spec = await storage.getSpecialist(booking.specialistId);
+      const fullLink = (spec?.slug && magicLink.shortCode)
+        ? buildShortReviewLink(spec.slug, magicLink.shortCode)
+        : buildReviewLink(magicLink.token);
       
       res.json({
         magicLink: fullLink,
@@ -1260,7 +1267,10 @@ export async function registerRoutes(
       
       const followupPhone = booking.normalizedPhone || booking.customerPhone || null;
       const magicLink = await storage.createMagicLink(booking.clientId || null, bookingId, booking.specialistId, true, !booking.clientId ? followupPhone : null);
-      const fullLink = buildReviewLink(magicLink.token);
+      const specFu = await storage.getSpecialist(booking.specialistId);
+      const fullLink = (specFu?.slug && magicLink.shortCode)
+        ? buildShortReviewLink(specFu.slug, magicLink.shortCode)
+        : buildReviewLink(magicLink.token);
       
       res.json({
         magicLink: fullLink,
@@ -1380,6 +1390,59 @@ export async function registerRoutes(
   });
 
   // Submit review via magic link (no auth required)
+  app.get("/api/review/:slug/:code", async (req, res) => {
+    try {
+      const { slug, code } = req.params;
+      const shortCode = parseInt(code, 10);
+      if (isNaN(shortCode)) return res.status(400).json({ message: "Неверный код" });
+      const link = await storage.getMagicLinkByShortCodeAndSlug(shortCode, slug);
+      if (!link) return res.status(404).json({ message: "Ссылка не найдена" });
+      req.params.token = link.token;
+      const token = link.token;
+      // fall through to same logic below
+      if (new Date(link.expiresAt) < new Date()) {
+        return res.status(410).json({ message: "Ссылка истекла" });
+      }
+      if (link.usedAt) {
+        return res.status(410).json({ message: "Ссылка уже использована" });
+      }
+      const booking = await storage.getBooking(link.bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Визит не найден" });
+      }
+      if (booking.status !== "completed") {
+        return res.status(403).json({ message: "Отзыв доступен после завершения визита" });
+      }
+      if ((booking as any).notCompletedAt) {
+        return res.status(403).json({ message: "Отзыв недоступен для этого визита" });
+      }
+      if ((booking as any).paymentStatus === 'refunded') {
+        return res.status(403).json({ message: "Отзыв недоступен: платёж возвращён" });
+      }
+      const specialist = await storage.getSpecialist(link.specialistId);
+      if (!specialist) {
+        return res.status(404).json({ message: "Специалист не найден" });
+      }
+      if (!link.openedAt) {
+        await storage.markMagicLinkOpened(link.id);
+      }
+      const hasReview = await storage.hasReviewForBooking(link.bookingId);
+      return res.json({
+        bookingId: link.bookingId,
+        specialistId: link.specialistId,
+        specialistName: specialist.name,
+        specialistImageUrl: specialist.imageUrl,
+        specialistCategory: specialist.category,
+        token: link.token,
+        hasReview,
+        tipsEnabled: specialist.tipsEnabled,
+        kaspiPhone: specialist.kaspiPhone,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/r/:token", async (req, res) => {
     try {
       const { token } = req.params;
@@ -2044,7 +2107,10 @@ ${magicLink}`;
       if (existingLink) {
         console.log(`[MAGIC_LINK] Existing link found for booking ${bookingId} (source=${source})`);
         if (specAction) {
-          const fullLink = buildReviewLink(existingLink.token);
+          const specEx = await storage.getSpecialist(booking.specialistId);
+          const fullLink = (specEx?.slug && existingLink.shortCode)
+            ? buildShortReviewLink(specEx.slug, existingLink.shortCode)
+            : buildReviewLink(existingLink.token);
           await sendReviewLinkDirect(booking, fullLink, source);
         }
         return false;
@@ -2065,7 +2131,10 @@ ${magicLink}`;
         false,
         hasClientId ? null : customerPhone
       );
-      const fullLink = buildReviewLink(magicLink.token);
+      const specForLink = await storage.getSpecialist(booking.specialistId);
+      const fullLink = (specForLink?.slug && magicLink.shortCode)
+        ? buildShortReviewLink(specForLink.slug, magicLink.shortCode)
+        : buildReviewLink(magicLink.token);
       console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
 
       if (customerPhone) {

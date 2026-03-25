@@ -96,6 +96,7 @@ export const specialists = pgTable("specialists", {
   altegioCompanyId: integer("altegio_company_id"), // Altegio location/company ID
   altegioConnectionStatus: text("altegio_connection_status").default("disconnected"), // 'connected' | 'error' | 'disconnected'
   firstReviewCelebrated: boolean("first_review_celebrated").default(false).notNull(),
+  slug: text("slug"), // URL-friendly identifier e.g. "andreybarber"
 });
 
 export const bookings = pgTable("bookings", {

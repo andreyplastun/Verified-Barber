@@ -58,23 +58,28 @@ interface MagicLinkData {
 }
 
 export default function MagicReviewPage() {
-  const [, params] = useRoute("/r/:token");
+  const [, tokenParams] = useRoute("/r/:token");
+  const [, reviewParams] = useRoute("/review/:slug/:code");
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const token = params?.token;
+  const token = tokenParams?.token;
+  const slug = reviewParams?.slug;
+  const code = reviewParams?.code;
+  const isShortLink = !!(slug && code);
 
   const { data: linkData, isLoading, error } = useQuery<MagicLinkData>({
-    queryKey: ['/api/magic-link', token],
+    queryKey: isShortLink ? ['/api/review', slug, code] : ['/api/magic-link', token],
     queryFn: async () => {
-      const res = await fetch(`/api/magic-link/${token}`);
+      const url = isShortLink ? `/api/review/${slug}/${code}` : `/api/magic-link/${token}`;
+      const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) {
         throw { status: res.status, ...data };
       }
       return data;
     },
-    enabled: !!token,
+    enabled: isShortLink ? !!(slug && code) : !!token,
     retry: false,
   });
 
@@ -176,9 +181,10 @@ export default function MagicReviewPage() {
     }
   };
 
+  const activeToken = linkData?.token || token;
   const submitMutation = useMutation({
     mutationFn: async (data: { rating: number; comment: string; triggers: string[]; showName: boolean; priceMismatch: boolean }) => {
-      const res = await fetch(`/api/r/${token}`, {
+      const res = await fetch(`/api/r/${activeToken}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
