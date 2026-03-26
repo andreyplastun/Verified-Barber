@@ -116,6 +116,12 @@ function getTemplates(type: "primary" | "reminder" | "reminder_opened"): string[
   return REMINDER_TEMPLATES;
 }
 
+const KAZAKH_SPECIFIC_LETTERS = /[ӘәҒғҚқҢңӨөҰұҮүІіҺһ]/;
+
+function isKazakhName(name: string): boolean {
+  return KAZAKH_SPECIFIC_LETTERS.test(name);
+}
+
 const NON_DECLINABLE_NAMES = new Set([
   "перизат", "айжан", "балжан", "гаухар", "жанар", "динар",
   "томирис", "жулдыз", "алтын", "жибек", "камшат", "куралай",
