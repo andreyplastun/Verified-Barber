@@ -1227,7 +1227,7 @@ export class DatabaseStorage implements IStorage {
       .from(waMessages)
       .where(and(
         eq(waMessages.status, "sent"),
-        sql`${waMessages.sentAt} >= (CURRENT_DATE AT TIME ZONE 'Asia/Almaty')`
+        sql`${waMessages.sentAt} >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'`
       ));
     return Number(result[0]?.count || 0);
   }
@@ -1240,7 +1240,7 @@ export class DatabaseStorage implements IStorage {
       .from(waMessages)
       .where(and(
         eq(waMessages.status, "sent"),
-        sql`${waMessages.sentAt} >= (CURRENT_DATE AT TIME ZONE 'Asia/Almaty')`
+        sql`${waMessages.sentAt} >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'`
       ))
       .groupBy(waMessages.messageType);
     const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);
@@ -1256,8 +1256,8 @@ export class DatabaseStorage implements IStorage {
       .from(waMessages)
       .where(and(
         eq(waMessages.status, "sent"),
-        sql`${waMessages.sentAt} >= ((CURRENT_DATE - INTERVAL '1 day') AT TIME ZONE 'Asia/Almaty')`,
-        sql`${waMessages.sentAt} < (CURRENT_DATE AT TIME ZONE 'Asia/Almaty')`
+        sql`${waMessages.sentAt} >= ((now() AT TIME ZONE 'Asia/Almaty')::date - INTERVAL '1 day') AT TIME ZONE 'Asia/Almaty'`,
+        sql`${waMessages.sentAt} < (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'`
       ))
       .groupBy(waMessages.messageType);
     const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);
