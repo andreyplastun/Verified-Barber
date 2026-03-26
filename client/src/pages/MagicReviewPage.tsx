@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useLocation, useRoute, Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Star, ChevronLeft, AlertCircle, Info, CheckCircle, Banknote, Heart } from "lucide-react";
@@ -8,6 +8,121 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TipPulse, TipBadge, SlideUp, InteractiveStarRating, TipConfirmPulse, TipIconFloat } from "@/components/ui/animations";
+
+type Lang = "ru" | "kz";
+
+const t = {
+  ru: {
+    pageTitle: "Оставить отзыв",
+    howWasVisit: (name: string) => `Как прошёл визит к ${name}?`,
+    shareImpressions: (name: string) => `${name}, поделитесь впечатлениями`,
+    commentLabel: "Комментарий",
+    commentOptional: "(необязательно)",
+    commentPlaceholder: "Добавьте детали...",
+    submitting: "Отправка...",
+    submitButton: "Оставить отзыв",
+    triggersPositive: ["Понравилась стрижка", "Аккуратно", "Вежливый", "Профессионал", "Хочу прийти ещё"],
+    triggersNegative: [
+      "Не понял запрос", "Неаккуратно", "Спешил", "Не услышал пожелания",
+      "Результат не устроил", "Долго ждал мастера", "Не понравилась стрижка",
+      "Слишком коротко", "Гигиена мастера", "Уровень салона",
+      "Итоговая цена отличалась от заявленной",
+    ],
+    triggerTitle5: "Что особенно запомнилось?",
+    triggerTitle4: "Что ухудшило впечатление?",
+    triggerTitleLow: "Что испортило опыт?",
+    anonLabel: "Показывать отзыв анонимно",
+    anonTooltip: "Мастер увидит отзыв, но без вашего имени",
+    successTitle: "Спасибо за отзыв!",
+    successText: (name: string) => `Ваш отзыв о барбере ${name} опубликован.`,
+    viewProfile: "Посмотреть профиль",
+    tipsTitle: "Хотите оставить чаевые?",
+    tipsDescription: "Это необязательно. Деньги поступят напрямую мастеру через Kaspi.",
+    tipsSkip: "Пропустить",
+    tipsTransfer: "Переведите в Kaspi:",
+    tipsAmount: "Сумма:",
+    tipsPhone: "Номер:",
+    tipsDone: "Я перевёл чаевые",
+    tipsBack: "Назад",
+    tipsCustom: "Другая сумма",
+    thanksTitle: "Спасибо!",
+    thanksText: "Если вы оставили чаевые — мастеру будет приятно",
+    thanksReturn: "Вернуться",
+    errorTitle: "Ссылка больше не активна",
+    errorExpired: "Срок действия ссылки истёк.",
+    errorUsed: "Эта ссылка уже была использована.",
+    errorReviewExists: "Отзыв уже оставлен для этого визита.",
+    errorDefault: "Вы можете оставить отзыв, войдя в приложение вручную.",
+    errorLogin: "Войти в приложение",
+    selectRating: "Выберите оценку",
+    selectRatingDesc: "Пожалуйста, выберите количество звёзд.",
+    loadingLink: "Проверка ссылки...",
+    trustLink: "Как формируется доверие в Rateus",
+    errorToast: "Ошибка",
+    newAccountTitle: "Почему этот отзыв может не влиять на рейтинг?",
+    newAccountP1: "Мы показываем все отзывы. Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.",
+    newAccountP2: "Ваш отзыв будет виден другим пользователям и поможет мастеру, а на рейтинг он начнёт влиять чуть позже.",
+    newAccountButton: "Понятно",
+  },
+  kz: {
+    pageTitle: "Пікір қалдыру",
+    howWasVisit: (name: string) => `${name} қабылдауы қалай өтті?`,
+    shareImpressions: (name: string) => `${name}, әсеріңізбен бөлісіңіз`,
+    commentLabel: "Пікір",
+    commentOptional: "(міндетті емес)",
+    commentPlaceholder: "Толығырақ жазыңыз...",
+    submitting: "Жіберу...",
+    submitButton: "Пікір қалдыру",
+    triggersPositive: ["Шаш қию ұнады", "Ұқыпты", "Сыпайы", "Кәсіби", "Тағы келгім келеді"],
+    triggersNegative: [
+      "Ұқыпсыз", "Асықты", "Тілектерімді ескермеді",
+      "Нәтиже көңілімнен шықпады", "Мастерді ұзақ күттім", "Шаш қию ұнамады",
+      "Тым қысқа", "Мастердің гигиенасы", "Салон деңгейі",
+      "Соңғы баға айтылғаннан өзгеше болды",
+    ],
+    triggerTitle5: "Ең ерекше не есте қалды?",
+    triggerTitle4: "Әсерді не нашарлатты?",
+    triggerTitleLow: "Тәжірибені не бұзды?",
+    anonLabel: "Пікірді анонимді түрде көрсету",
+    anonTooltip: "Мастер пікірді көреді, бірақ сіздің атыңызсыз",
+    successTitle: "Пікіріңіз үшін рақмет!",
+    successText: (name: string) => `${name} барбер туралы пікіріңіз жарияланды.`,
+    viewProfile: "Профильді көру",
+    tipsTitle: "Шайпұл қалдырғыңыз келе ме?",
+    tipsDescription: "Бұл міндетті емес. Ақша тікелей мастерге Kaspi арқылы түседі.",
+    tipsSkip: "Өткізіп жіберу",
+    tipsTransfer: "Kaspi арқылы аударыңыз:",
+    tipsAmount: "Сома:",
+    tipsPhone: "Нөмір:",
+    tipsDone: "Мен шайпұл аудардым",
+    tipsBack: "Артқа",
+    tipsCustom: "Басқа сома",
+    thanksTitle: "Рақмет!",
+    thanksText: "Егер сіз шайпұл қалдырсаңыз — мастерге жағымды болады",
+    thanksReturn: "Артқа",
+    errorTitle: "Сілтеме енді белсенді емес",
+    errorExpired: "Сілтеменің жарамдылық мерзімі аяқталды.",
+    errorUsed: "Бұл сілтеме бұрын қолданылған.",
+    errorReviewExists: "Пікір әлдеқашан қалдырылған.",
+    errorDefault: "Сілтеме енді белсенді емес.",
+    errorLogin: "Қосымшаға кіру",
+    selectRating: "Бағаны таңдаңыз",
+    selectRatingDesc: "Жұлдыздар санын таңдаңыз.",
+    loadingLink: "Сілтемені тексеру...",
+    trustLink: "Rateus-та сенім қалай қалыптасады",
+    errorToast: "Қате",
+    newAccountTitle: "Бұл пікір рейтингке неге әсер етпеуі мүмкін?",
+    newAccountP1: "Біз барлық пікірлерді көрсетеміз. Бірақ рейтингті есептеу үшін сервиспен танысқан пайдаланушылардың пікірлері ескеріледі.",
+    newAccountP2: "Сіздің пікіріңіз басқа пайдаланушыларға көрінеді және мастерге көмектеседі, ал рейтингке кейінірек әсер ете бастайды.",
+    newAccountButton: "Түсінікті",
+  },
+};
+
+function getLangFromUrl(): Lang {
+  const params = new URLSearchParams(window.location.search);
+  const lang = params.get("lang");
+  return lang === "kz" ? "kz" : "ru";
+}
 
 function toDativeCase(name: string): string {
   const n = name.trim();
@@ -67,6 +182,8 @@ export default function MagicReviewPage() {
   const slug = reviewParams?.slug;
   const code = reviewParams?.code;
   const isShortLink = !!(slug && code);
+  const lang = useMemo(getLangFromUrl, []);
+  const L = t[lang];
 
   const { data: linkData, isLoading, error } = useQuery<MagicLinkData>({
     queryKey: isShortLink ? ['/api/review', slug, code] : ['/api/magic-link', token],
@@ -138,26 +255,19 @@ export default function MagicReviewPage() {
     }
   }, [linkData, isLoading, error]);
 
-  const negativeTriggers = [
-    "Не понял запрос", "Неаккуратно", "Спешил", "Не услышал пожелания",
-    "Результат не устроил", "Долго ждал мастера", "Не понравилась стрижка",
-    "Слишком коротко", "Гигиена мастера", "Уровень салона",
-    "Итоговая цена отличалась от заявленной",
-  ];
-
   const triggersByRating: Record<number, string[]> = {
-    5: ["Понравилась стрижка", "Аккуратно", "Вежливый", "Профессионал", "Хочу прийти ещё"],
-    4: negativeTriggers,
-    3: negativeTriggers,
-    2: negativeTriggers,
-    1: negativeTriggers,
+    5: L.triggersPositive,
+    4: L.triggersNegative,
+    3: L.triggersNegative,
+    2: L.triggersNegative,
+    1: L.triggersNegative,
   };
 
   const triggerTitle = rating === 5
-    ? "Что особенно запомнилось?"
+    ? L.triggerTitle5
     : rating === 4
-      ? "Что ухудшило впечатление?"
-      : "Что испортило опыт?";
+      ? L.triggerTitle4
+      : L.triggerTitleLow;
 
   const availableTriggers = rating > 0 ? (triggersByRating[rating] || []) : [];
 
@@ -206,7 +316,7 @@ export default function MagicReviewPage() {
       }
     },
     onError: (err: Error) => {
-      toast({ variant: "destructive", title: "Ошибка", description: err.message });
+      toast({ variant: "destructive", title: L.errorToast, description: err.message });
     },
   });
 
@@ -215,12 +325,13 @@ export default function MagicReviewPage() {
     if (rating === 0) {
       toast({
         variant: "destructive",
-        title: "Выберите оценку",
-        description: "Пожалуйста, выберите количество звёзд.",
+        title: L.selectRating,
+        description: L.selectRatingDesc,
       });
       return;
     }
-    submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName, priceMismatch: triggers.includes("Итоговая цена отличалась от заявленной") });
+    const priceTrigger = L.triggersNegative[L.triggersNegative.length - 1];
+    submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName, priceMismatch: triggers.includes(priceTrigger) });
   };
 
   const [selectedTipAmount, setSelectedTipAmount] = useState<number | null>(null);
@@ -251,7 +362,7 @@ export default function MagicReviewPage() {
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-muted-foreground">Проверка ссылки...</p>
+          <p className="text-muted-foreground">{L.loadingLink}</p>
         </div>
       </div>
     );
@@ -266,19 +377,19 @@ export default function MagicReviewPage() {
         <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mb-6">
           <AlertCircle className="w-8 h-8 text-muted-foreground" />
         </div>
-        <h2 className="text-2xl font-bold mb-2">Ссылка больше не активна</h2>
+        <h2 className="text-2xl font-bold mb-2">{L.errorTitle}</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          {reason === 'expired' && 'Срок действия ссылки истёк.'}
-          {reason === 'used' && 'Эта ссылка уже была использована.'}
-          {reason === 'review_exists' && 'Отзыв уже оставлен для этого визита.'}
-          {!['expired', 'used', 'review_exists'].includes(reason) && 'Вы можете оставить отзыв, войдя в приложение вручную.'}
+          {reason === 'expired' && L.errorExpired}
+          {reason === 'used' && L.errorUsed}
+          {reason === 'review_exists' && L.errorReviewExists}
+          {!['expired', 'used', 'review_exists'].includes(reason) && L.errorDefault}
         </p>
         <button 
           onClick={() => setLocation("/login")}
           className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-opacity"
           data-testid="button-go-login"
         >
-          Войти в приложение
+          {L.errorLogin}
         </button>
       </div>
     );
@@ -291,16 +402,16 @@ export default function MagicReviewPage() {
           <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6 mx-auto">
             <Heart className="w-8 h-8 text-green-600" />
           </div>
-          <h2 className="text-2xl font-bold mb-2">Спасибо!</h2>
+          <h2 className="text-2xl font-bold mb-2">{L.thanksTitle}</h2>
           <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-            Если вы оставили чаевые — мастеру будет приятно
+            {L.thanksText}
           </p>
           <button 
             onClick={() => setLocation(`/specialist/${linkData?.specialistId}`)}
             className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-opacity"
             data-testid="button-return-after-tips"
           >
-            Вернуться
+            {L.thanksReturn}
           </button>
         </SlideUp>
       </div>
@@ -315,9 +426,9 @@ export default function MagicReviewPage() {
             <Banknote className="w-8 h-8 text-amber-600" />
           </div>
         </TipIconFloat>
-        <h2 className="text-2xl font-bold mb-2">Хотите оставить чаевые?</h2>
+        <h2 className="text-2xl font-bold mb-2">{L.tipsTitle}</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          Это необязательно. Деньги поступят напрямую мастеру через Kaspi.
+          {L.tipsDescription}
         </p>
         
         {!selectedTipAmount ? (
@@ -357,7 +468,7 @@ export default function MagicReviewPage() {
             <div className="flex items-center gap-2 mb-8 max-w-xs w-full">
               <Input
                 type="number"
-                placeholder="Другая сумма"
+                placeholder={L.tipsCustom}
                 value={customTipAmount}
                 onChange={(e) => setCustomTipAmount(e.target.value)}
                 className="text-center"
@@ -377,15 +488,15 @@ export default function MagicReviewPage() {
               className="text-muted-foreground text-sm hover:underline"
               data-testid="button-skip-tips"
             >
-              Пропустить
+              {L.tipsSkip}
             </button>
           </>
         ) : (
           <div className="space-y-4 w-full max-w-xs">
             <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2">
-              <p className="text-sm text-muted-foreground">Переведите в Kaspi:</p>
-              <p className="text-lg font-bold" data-testid="text-tip-amount">Сумма: {selectedTipAmount.toLocaleString('ru-KZ')} ₸</p>
-              <p className="text-lg font-mono" data-testid="text-tip-phone">Номер: {formatKaspiPhone(linkData.kaspiPhone!)}</p>
+              <p className="text-sm text-muted-foreground">{L.tipsTransfer}</p>
+              <p className="text-lg font-bold" data-testid="text-tip-amount">{L.tipsAmount} {selectedTipAmount.toLocaleString('ru-KZ')} ₸</p>
+              <p className="text-lg font-mono" data-testid="text-tip-phone">{L.tipsPhone} {formatKaspiPhone(linkData.kaspiPhone!)}</p>
             </div>
             <Button
               size="lg"
@@ -396,21 +507,21 @@ export default function MagicReviewPage() {
               className="w-full"
               data-testid="button-completed-payment"
             >
-              Я перевёл чаевые
+              {L.tipsDone}
             </Button>
             <button 
               onClick={() => setSelectedTipAmount(null)}
               className="text-muted-foreground text-sm hover:underline block mx-auto"
               data-testid="button-back-tips"
             >
-              Назад
+              {L.tipsBack}
             </button>
             <button 
               onClick={skipTips}
               className="text-muted-foreground text-sm hover:underline block mx-auto"
               data-testid="button-skip-after-select"
             >
-              Пропустить
+              {L.tipsSkip}
             </button>
           </div>
         )}
@@ -424,16 +535,16 @@ export default function MagicReviewPage() {
         <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6">
           <CheckCircle className="w-8 h-8 text-green-600" />
         </div>
-        <h2 className="text-2xl font-bold mb-2">Спасибо за отзыв!</h2>
+        <h2 className="text-2xl font-bold mb-2">{L.successTitle}</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          Ваш отзыв о барбере {linkData?.specialistName} опубликован.
+          {L.successText(linkData?.specialistName || '')}
         </p>
         <button 
           onClick={() => setLocation(`/specialist/${linkData?.specialistId}`)}
           className="px-6 py-3 bg-primary text-primary-foreground rounded-xl font-medium hover:opacity-90 transition-opacity"
           data-testid="button-view-specialist"
         >
-          Посмотреть профиль
+          {L.viewProfile}
         </button>
       </div>
     );
@@ -443,7 +554,7 @@ export default function MagicReviewPage() {
     <div className="min-h-screen bg-background p-6 pb-48">
       <header className="flex items-center gap-4 mb-8">
         <div className="w-10 h-10" />
-        <h1 className="text-xl font-bold">Оставить отзыв</h1>
+        <h1 className="text-xl font-bold">{L.pageTitle}</h1>
       </header>
 
       <div className="mb-8 text-center">
@@ -457,9 +568,9 @@ export default function MagicReviewPage() {
             />
           </div>
         )}
-        <h2 className="text-lg font-medium">Как прошёл визит к {toDativeCase(linkData.specialistName)}?</h2>
+        <h2 className="text-lg font-medium">{L.howWasVisit(lang === 'ru' ? toDativeCase(linkData.specialistName) : linkData.specialistName)}</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          {linkData.customerName}, поделитесь впечатлениями
+          {L.shareImpressions(linkData.customerName)}
         </p>
       </div>
 
@@ -499,7 +610,7 @@ export default function MagicReviewPage() {
         <div className="flex items-center justify-center gap-3 py-2">
           <div className="flex items-center gap-2">
             <label htmlFor="hidden-name-toggle" className="text-sm font-medium cursor-pointer">
-              Показывать отзыв анонимно
+              {L.anonLabel}
             </label>
             <Popover>
               <PopoverTrigger asChild>
@@ -512,7 +623,7 @@ export default function MagicReviewPage() {
                 </button>
               </PopoverTrigger>
               <PopoverContent side="top" className="max-w-xs text-sm p-3">
-                <p>Мастер увидит отзыв, но без вашего имени</p>
+                <p>{L.anonTooltip}</p>
               </PopoverContent>
             </Popover>
           </div>
@@ -525,11 +636,11 @@ export default function MagicReviewPage() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium ml-1">Комментарий <span className="text-muted-foreground">(необязательно)</span></label>
+          <label className="text-sm font-medium ml-1">{L.commentLabel} <span className="text-muted-foreground">{L.commentOptional}</span></label>
           <textarea
             rows={3}
             className="w-full bg-card border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
-            placeholder="Добавьте детали..."
+            placeholder={L.commentPlaceholder}
             value={comment}
             onChange={e => setComment(e.target.value)}
             data-testid="textarea-comment"
@@ -538,7 +649,7 @@ export default function MagicReviewPage() {
 
         <div className="text-center pt-2">
           <Link href="/how-trust-works" className="text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-how-trust-works-magic">
-            Как формируется доверие в Rateus
+            {L.trustLink}
           </Link>
         </div>
       </form>
@@ -551,7 +662,7 @@ export default function MagicReviewPage() {
           className="w-full max-w-md mx-auto block py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
           data-testid="button-submit-review"
         >
-          {submitMutation.isPending ? "Отправка..." : "Оставить отзыв"}
+          {submitMutation.isPending ? L.submitting : L.submitButton}
         </button>
       </div>
 
@@ -569,17 +680,11 @@ export default function MagicReviewPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-base font-semibold text-foreground mb-4">
-              Почему этот отзыв может не влиять на рейтинг?
+              {L.newAccountTitle}
             </h3>
             <div className="text-sm text-muted-foreground space-y-3">
-              <p>
-                Мы показываем все отзывы.
-                Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.
-              </p>
-              <p>
-                Ваш отзыв будет виден другим пользователям и поможет мастеру,
-                а на рейтинг он начнёт влиять чуть позже.
-              </p>
+              <p>{L.newAccountP1}</p>
+              <p>{L.newAccountP2}</p>
             </div>
             <div className="mt-4">
               <Button 
@@ -590,7 +695,7 @@ export default function MagicReviewPage() {
                 className="w-full"
                 data-testid="button-popup-understand"
               >
-                Понятно
+                {L.newAccountButton}
               </Button>
             </div>
           </div>

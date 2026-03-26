@@ -462,15 +462,18 @@ export async function enqueueReviewMessage(params: {
   }
 
   const kz = isKazakhName(params.customerName);
+  const reviewLinkWithLang = kz && !params.reviewLink.includes('lang=') 
+    ? params.reviewLink + (params.reviewLink.includes('?') ? '&' : '?') + 'lang=kz'
+    : params.reviewLink;
   const lastIndex = await storage.getLastSentTemplateIndex(params.messageType);
   const templateIndex = pickTemplateIndex(params.messageType, lastIndex);
   const templates = getTemplates(params.messageType, kz);
   const messageText = renderTemplate(templates[templateIndex], {
     clientName: params.customerName,
     specialistName: params.specialistName,
-    reviewLink: params.reviewLink,
+    reviewLink: reviewLinkWithLang,
   });
-  if (kz) console.log(`[WA_KZ] booking=${params.bookingId} clientName="${params.customerName}" → Kazakh template`);
+  if (kz) console.log(`[WA_KZ] booking=${params.bookingId} clientName="${params.customerName}" → Kazakh template, link=${reviewLinkWithLang}`);
 
   validateMessageText(messageText, `enqueue_${params.messageType}_booking=${params.bookingId}`);
 
@@ -578,13 +581,16 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
   validateReviewLink(reviewLink, `createFollowup_booking=${msg.bookingId}`);
 
   const kzFollowup = isKazakhName(msg.customerName);
+  const followupLink = kzFollowup && !reviewLink.includes('lang=')
+    ? reviewLink + (reviewLink.includes('?') ? '&' : '?') + 'lang=kz'
+    : reviewLink;
   const lastIndex = await storage.getLastSentTemplateIndex("reminder");
   const templateIndex = pickTemplateIndex(templateType, lastIndex);
   const templates = getTemplates(templateType, kzFollowup);
   const messageText = renderTemplate(templates[templateIndex], {
     clientName: msg.customerName,
     specialistName: msg.specialistName,
-    reviewLink: reviewLink,
+    reviewLink: followupLink,
   });
 
   validateMessageText(messageText, `createFollowup_booking=${msg.bookingId}`);
