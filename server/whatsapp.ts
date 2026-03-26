@@ -650,11 +650,17 @@ const REVIEW_BASE_URL = 'https://www.rateus.kz';
 async function refreshLinkIfExpired(msg: typeof waMessages.$inferSelect): Promise<typeof waMessages.$inferSelect> {
   if (!msg.reviewLink) return msg;
 
+  let link: any;
   const tokenMatch = msg.reviewLink.match(/\/r\/([^\/\s]+)$/);
-  if (!tokenMatch) return msg;
+  const shortMatch = msg.reviewLink.match(/\/review\/([^\/]+)\/(\d+)$/);
 
-  const token = tokenMatch[1];
-  const link = await storage.getMagicLinkByToken(token);
+  if (tokenMatch) {
+    link = await storage.getMagicLinkByToken(tokenMatch[1]);
+  } else if (shortMatch) {
+    link = await storage.getMagicLinkByShortCodeAndSlug(parseInt(shortMatch[2], 10), shortMatch[1]);
+  } else {
+    return msg;
+  }
 
   if (!link) {
     console.log(`[WA_LINK_REFRESH] msg=${msg.id} booking=${msg.bookingId}: link token not found, keeping as-is`);
