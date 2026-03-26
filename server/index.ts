@@ -63,7 +63,7 @@ try {
 }
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-03-26-v94-fix-name-declension";
+const BUILD_VERSION = "2026-03-26-v95-limit25-declension-fix";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 const envKeys = Object.keys(process.env).sort();
 console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);
@@ -244,7 +244,8 @@ app.use((req, res, next) => {
 
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
-      INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '20') ON CONFLICT (key) DO NOTHING;
+      INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '25') ON CONFLICT (key) DO NOTHING;
+      UPDATE app_config SET value = '25' WHERE key = 'WA_DAILY_LIMIT' AND value::int < 25;
     `);
 
     // Backfill dedupe_key for existing wa_messages and create unique index
