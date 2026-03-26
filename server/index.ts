@@ -63,7 +63,7 @@ try {
 }
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-03-26-v95-limit25-declension-fix";
+const BUILD_VERSION = "2026-03-26-v96-antifraud-manual-altegio";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 const envKeys = Object.keys(process.env).sort();
 console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);
@@ -265,6 +265,20 @@ app.use((req, res, next) => {
       UPDATE bookings SET visit_trust_weight = 0 WHERE visit_trust_weight IS NULL AND not_completed_at IS NOT NULL;
       UPDATE bookings SET visit_trust_weight = 0.65 WHERE visit_trust_weight IS NULL AND status = 'completed' AND payment_status = 'unpaid';
     `);
+
+    const antifraudResult = await pool.query(`
+      UPDATE bookings b SET visit_trust_weight = 0
+      FROM specialists s
+      WHERE b.specialist_id = s.id
+        AND b.booking_source = 'specialist_manual'
+        AND s.altegio_staff_id IS NOT NULL
+        AND b.visit_trust_weight > 0
+      RETURNING b.specialist_id
+    `);
+    if (antifraudResult.rowCount && antifraudResult.rowCount > 0) {
+      const affectedSpecIds = [...new Set(antifraudResult.rows.map((r: any) => r.specialist_id))];
+      console.log(`[ANTIFRAUD] Zeroed trustWeight for ${antifraudResult.rowCount} manual bookings across ${affectedSpecIds.length} specialists: ${affectedSpecIds.join(',')}`);
+    }
 
     await pool.query(`
       UPDATE specialists SET city = 'Астана' WHERE altegio_company_id IN (28196, 86692) AND city = 'Алматы';

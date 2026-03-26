@@ -1796,7 +1796,8 @@ ${magicLink}`;
 
       const specialist = await storage.getSpecialist(booking.specialistId);
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";
-      const trustWeight = isManualBooking ? 0.6 : 1.05;
+      const hasAltegio = !!(specialist as any)?.altegioStaffId;
+      const trustWeight = isManualBooking ? (hasAltegio ? 0 : 0.6) : 1.05;
 
       const finalBooking = await storage.updateBooking(bookingId, {
         status: "completed",
@@ -1804,6 +1805,10 @@ ${magicLink}`;
         paymentReceivedAt: new Date(),
         visitTrustWeight: trustWeight,
       } as any);
+
+      if (isManualBooking && hasAltegio) {
+        console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking with Altegio connected, trustWeight=0`);
+      }
 
       await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
 
@@ -1861,7 +1866,9 @@ ${magicLink}`;
       }
 
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";
-      const trustWeight = isManualBooking ? 0.6 : 1.0;
+      const specialist = await storage.getSpecialist(booking.specialistId);
+      const hasAltegio = !!(specialist as any)?.altegioStaffId;
+      const trustWeight = isManualBooking ? (hasAltegio ? 0 : 0.6) : 1.0;
 
       const updated = await storage.updateBooking(bookingId, {
         status: "completed",
@@ -1869,9 +1876,11 @@ ${magicLink}`;
         visitTrustWeight: trustWeight,
       } as any);
 
-      await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
+      if (isManualBooking && hasAltegio) {
+        console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking with Altegio connected, trustWeight=0`);
+      }
 
-      const specialist = await storage.getSpecialist(booking.specialistId);
+      await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
 
       if (isAltegioConfigured() && booking.updatedFrom !== "altegio" && !isManualBooking) {
         await storage.updateBooking(bookingId, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
