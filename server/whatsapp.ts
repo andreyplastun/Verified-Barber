@@ -102,6 +102,22 @@ const REMINDER_TEMPLATES = [
   "{clientName}, последняя возможность оценить визит к вашему барберу {specialistNameDative}:\n{reviewLink}\nБудем благодарны за честный отзыв — он действительно влияет на качество. Можно анонимно.",
 ];
 
+const PRIMARY_TEMPLATES_KZ = [
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына келгеніңіз үшін рақмет.\nПікір қалдырыңыз, оны анонимді түрде де жасауға болады:\n{reviewLink}\nБіз үшін шынайы баға маңызды — егер бір нәрсе ұнамаса да.",
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына келгеніңіз үшін алғыс білдіреміз.\nҚалдырылған пікір үшін ризамыз, соның ішінде анонимді түрде де:\n{reviewLink}\nКез келген пікір маңызды, анонимді түрде де болады — бұл бізге жақсаруға көмектеседі.",
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына визит қалай өтті?\nПікір қалдырыңыз:\n{reviewLink}\nҚалай болса солай жазыңыз — бұл біз үшін шынымен маңызды. Анонимді түрде қалдыру мүмкіндігі бар.",
+  "{clientName}, сіз барбер {specialistNameGenitive} таңдағаныңыз үшін рақмет.\nӘсеріңізбен бөлісіңіз:\n{reviewLink}\nШынайы пікір үшін алғыс білдіреміз, анонимді түрде қалдыруға болады.",
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына визит аяқталды.\nМаманды бағалаңыз:\n{reviewLink}\nСіздің нақты пікіріңіз маңызды — бұл қателерді түзетуге көмектеседі. Анонимді түрде қалдыруға болады.",
+];
+
+const REMINDER_TEMPLATES_KZ = [
+  "{clientName}, барбер {specialistNameDative} қабылдауына қатысты пікір әлі қалдырылмаған:\n{reviewLink}\nҚалай болса солай жазыңыз — егер бір нәрсе ұнамаса да. Анонимді түрде қалдыруға болады.",
+  "{clientName}, барбер {specialistNameGenitive} үшін пікір туралы еске саламыз.\nБұл небәрі бірнеше секунд алады:\n{reviewLink}\nБіз үшін объективті баға маңызды, тек оң ғана емес, анонимді түрде де қалдыруға болады.",
+  "{clientName}, егер ыңғайлы болса — сіздің барберіңіз {specialistNameDative} қабылдауына қатысты пікір қалдырыңыз:\n{reviewLink}\nКез келген пікір маңызды — бұл сервисті жақсартуға көмектеседі.",
+  "{clientName}, барбер {specialistNameDative} қабылдауына бағалау әлі аяқталмаған. Аяқтау немесе өткізіп жіберу: {reviewLink}\nҚалай болса солай бағалауға болады — тәжірибе мінсіз болмаған жағдайда да.",
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына баға берудің соңғы мүмкіндігі:\n{reviewLink}\nШынайы пікір үшін алғыс білдіреміз — ол сапаға тікелей әсер етеді. Анонимді түрде қалдыруға болады.",
+];
+
 const REMINDER_OPENED_TEMPLATES = [
   "{clientName}, вы уже заходили по ссылке — можно быстро завершить оценку визита к барберу {specialistNameDative}: {reviewLink}",
   "{clientName}, осталось совсем немного — завершите отзыв о визите к вашему барберу {specialistNameDative}: {reviewLink}",
@@ -110,9 +126,10 @@ const REMINDER_OPENED_TEMPLATES = [
   "{clientName}, отзыв о визите к вашему барберу {specialistNameDative} почти готов, осталось только оценить: {reviewLink}",
 ];
 
-function getTemplates(type: "primary" | "reminder" | "reminder_opened"): string[] {
-  if (type === "primary") return PRIMARY_TEMPLATES;
+function getTemplates(type: "primary" | "reminder" | "reminder_opened", kz: boolean = false): string[] {
+  if (type === "primary") return kz ? PRIMARY_TEMPLATES_KZ : PRIMARY_TEMPLATES;
   if (type === "reminder_opened") return REMINDER_OPENED_TEMPLATES;
+  if (type === "reminder") return kz ? REMINDER_TEMPLATES_KZ : REMINDER_TEMPLATES;
   return REMINDER_TEMPLATES;
 }
 
@@ -444,14 +461,16 @@ export async function enqueueReviewMessage(params: {
     }
   }
 
+  const kz = isKazakhName(params.customerName);
   const lastIndex = await storage.getLastSentTemplateIndex(params.messageType);
   const templateIndex = pickTemplateIndex(params.messageType, lastIndex);
-  const templates = getTemplates(params.messageType);
+  const templates = getTemplates(params.messageType, kz);
   const messageText = renderTemplate(templates[templateIndex], {
     clientName: params.customerName,
     specialistName: params.specialistName,
     reviewLink: params.reviewLink,
   });
+  if (kz) console.log(`[WA_KZ] booking=${params.bookingId} clientName="${params.customerName}" → Kazakh template`);
 
   validateMessageText(messageText, `enqueue_${params.messageType}_booking=${params.bookingId}`);
 
@@ -558,9 +577,10 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
   const reviewLink = msg.reviewLink;
   validateReviewLink(reviewLink, `createFollowup_booking=${msg.bookingId}`);
 
+  const kzFollowup = isKazakhName(msg.customerName);
   const lastIndex = await storage.getLastSentTemplateIndex("reminder");
   const templateIndex = pickTemplateIndex(templateType, lastIndex);
-  const templates = getTemplates(templateType);
+  const templates = getTemplates(templateType, kzFollowup);
   const messageText = renderTemplate(templates[templateIndex], {
     clientName: msg.customerName,
     specialistName: msg.specialistName,
