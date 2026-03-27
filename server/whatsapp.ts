@@ -488,8 +488,10 @@ export async function enqueueReviewMessage(params: {
       scheduledAt = new Date(now.getTime() + 10 * 60 * 1000);
       console.log(`[WA_QUEUE] Evening visit booking=${params.bookingId}: scheduling in 10 min (ignoring quiet hours)`);
     } else {
-      const delayMs = params.delayMs || randomMinutes(10, 30);
-      scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
+      const baseDelayMs = params.delayMs || randomMinutes(10, 30);
+      const spreadMs = randomMinutes(0, 6 * 60);
+      scheduledAt = adjustForQuietHours(new Date(now.getTime() + baseDelayMs + spreadMs));
+      console.log(`[WA_SPREAD] booking=${params.bookingId} baseDelay=${Math.round(baseDelayMs / 60000)}min spread=${Math.round(spreadMs / 60000)}min scheduledAt=${scheduledAt.toISOString()}`);
     }
   } else {
     const delayMs = params.delayMs || randomMinutes(21 * 60, 24 * 60);
