@@ -988,33 +988,47 @@ async function deduplicateQueueByPhone(): Promise<number> {
   return superseded;
 }
 
+let isWorkerRunning = false;
+let workerSentCount = 0;
+let workerConsecutiveFailures = 0;
+let workerBreathingTarget = 3 + Math.floor(Math.random() * 5);
 let heartbeatCounter = 0;
 const HEARTBEAT_EVERY_N = 10;
-let isProcessingQueue = false;
+
+function humanDelay(): number {
+  let delay = 25000 + Math.floor(Math.random() * 65000);
+
+  workerSentCount++;
+  if (workerSentCount >= workerBreathingTarget) {
+    delay += 120000 + Math.floor(Math.random() * 240000);
+    workerBreathingTarget = workerSentCount + 3 + Math.floor(Math.random() * 5);
+    console.log(`[WA_HUMAN] Breathing pause, next breath after ${workerBreathingTarget} sends`);
+  }
+
+  if (Math.random() < 0.12) {
+    delay += 300000 + Math.floor(Math.random() * 600000);
+    console.log(`[WA_HUMAN] Random long pause triggered`);
+  }
+
+  return delay;
+}
 
 export async function processWaQueue(): Promise<void> {
-  if (isProcessingQueue) {
-    return;
-  }
-  isProcessingQueue = true;
+  if (isWorkerRunning) return;
+  isWorkerRunning = true;
   try {
-    await _processWaQueueInner();
+    await _processOneMessageCycle();
   } finally {
-    isProcessingQueue = false;
+    isWorkerRunning = false;
   }
 }
 
-async function _processWaQueueInner(): Promise<void> {
+async function _processOneMessageCycle(): Promise<void> {
   const settings = await getWaSettings();
-
-  if (!settings.enabled) {
-    return;
-  }
+  if (!settings.enabled) return;
 
   const effectiveLimit = getWarmupDailyLimit(settings.warmupStartDate, settings.dailyLimit);
-  if (effectiveLimit <= 0) {
-    return;
-  }
+  if (effectiveLimit <= 0) return;
 
   const now = new Date();
 
@@ -1037,106 +1051,80 @@ async function _processWaQueueInner(): Promise<void> {
   }
 
   const sentToday = await storage.countWaMessagesSentToday();
-  let available = effectiveLimit - sentToday;
+  if (sentToday >= effectiveLimit) return;
 
-  if (available <= 0) {
+  if (workerConsecutiveFailures >= 5) {
+    const cooldownMs = 300000 + Math.floor(Math.random() * 300000);
+    console.log(`[WA_SAFEGUARD] ${workerConsecutiveFailures} consecutive failures, pausing ${Math.round(cooldownMs / 1000)}s`);
+    workerConsecutiveFailures = 0;
+    scheduleNextSend(cooldownMs);
     return;
   }
 
-  let totalSent = 0;
-  let totalSkipped = 0;
-  let totalDeferred = 0;
-  let totalCandidates = 0;
-  const sentPhonesThisBatch = new Set<string>();
-  const processedIds = new Set<number>();
-  const MAX_ROUNDS = 5;
-  const MAX_SENDS_PER_CYCLE = 5;
-  const THROTTLE_MIN_MS = 8000;
-  const THROTTLE_MAX_MS = 15000;
-
-  for (let round = 0; round < MAX_ROUNDS && available > 0; round++) {
-    const fetchLimit = available * 3;
-
-    const candidates = await db.select()
-      .from(waMessages)
-      .where(
-        and(
-          eq(waMessages.status, "queued"),
-          sql`${waMessages.scheduledAt} <= ${now}`
-        )
+  const [msg] = await db.select()
+    .from(waMessages)
+    .where(
+      and(
+        eq(waMessages.status, "queued"),
+        sql`${waMessages.scheduledAt} <= ${now}`
       )
-      .orderBy(
-        sql`${waMessages.priority} DESC`,
-        sql`CASE ${waMessages.messageType} WHEN 'reminder' THEN 0 WHEN 'primary' THEN 1 END`,
-        waMessages.scheduledAt
-      )
-      .limit(fetchLimit);
+    )
+    .orderBy(
+      sql`${waMessages.priority} DESC`,
+      sql`CASE ${waMessages.messageType} WHEN 'reminder' THEN 0 WHEN 'primary' THEN 1 END`,
+      waMessages.scheduledAt
+    )
+    .limit(1);
 
-    const newCandidates = candidates.filter(c => !processedIds.has(c.id));
-    if (newCandidates.length === 0) break;
-
-    totalCandidates += newCandidates.length;
-    let roundSent = 0;
-
-    for (const msg of newCandidates) {
-      if (available <= 0 || totalSent >= MAX_SENDS_PER_CYCLE) break;
-      processedIds.add(msg.id);
-
-      if (sentPhonesThisBatch.has(msg.customerPhone)) {
-        const deferTo = new Date(Date.now() + 20 * 60 * 60 * 1000);
-        await db.update(waMessages)
-          .set({ scheduledAt: deferTo } as any)
-          .where(eq(waMessages.id, msg.id));
-        console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=batch_phone_dedup defer_to=${deferTo.toISOString()}`);
-        totalDeferred++;
-        continue;
-      }
-
-      await db.update(waMessages)
-        .set({ status: "sending" } as any)
-        .where(eq(waMessages.id, msg.id));
-
-      const result = await processOneMessage({ ...msg, status: "sending" as any });
-      if (result) {
-        totalSent++;
-        roundSent++;
-        sentPhonesThisBatch.add(msg.customerPhone);
-        available--;
-        if (available > 0 && totalSent < MAX_SENDS_PER_CYCLE) {
-          const delay = THROTTLE_MIN_MS + Math.floor(Math.random() * (THROTTLE_MAX_MS - THROTTLE_MIN_MS));
-          await new Promise(r => setTimeout(r, delay));
-        }
-      } else {
-        const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
-        if (refreshed?.status === "sending") {
-          await db.update(waMessages)
-            .set({ status: "queued" } as any)
-            .where(eq(waMessages.id, msg.id));
-          totalDeferred++;
-        } else {
-          totalSkipped++;
-        }
-      }
-    }
-
-    if (roundSent === 0) break;
-  }
-
-  if (totalCandidates > 0) {
-    console.log(`[WA_PROCESSOR] Complete: ${totalSent} sent, ${totalSkipped} skipped, ${totalDeferred} deferred out of ${totalCandidates} candidates (limit=${effectiveLimit}, sentToday=${sentToday + totalSent})`);
-  } else {
+  if (!msg) {
     heartbeatCounter++;
     if (heartbeatCounter >= HEARTBEAT_EVERY_N) {
       heartbeatCounter = 0;
       const queuedCount = await db.select({ count: sql<number>`count(*)` })
         .from(waMessages)
         .where(eq(waMessages.status, "queued"));
-      const sendingCount = await db.select({ count: sql<number>`count(*)` })
-        .from(waMessages)
-        .where(eq(waMessages.status, "sending"));
       const totalQueued = Number(queuedCount[0]?.count || 0);
-      const totalSending = Number(sendingCount[0]?.count || 0);
-      console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sending=${totalSending} sentToday=${sentToday} limit=${effectiveLimit} time=${now.toISOString()}`);
+      console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sentToday=${sentToday} limit=${effectiveLimit} time=${now.toISOString()}`);
     }
+    return;
   }
+
+  heartbeatCounter = 0;
+
+  await db.update(waMessages)
+    .set({ status: "sending" } as any)
+    .where(eq(waMessages.id, msg.id));
+
+  const result = await processOneMessage({ ...msg, status: "sending" as any });
+
+  if (result) {
+    workerConsecutiveFailures = 0;
+    const delay = humanDelay();
+    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(delay / 1000)}s`);
+    scheduleNextSend(delay);
+  } else {
+    const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
+    if (refreshed?.status === "sending") {
+      await db.update(waMessages)
+        .set({ status: "queued" } as any)
+        .where(eq(waMessages.id, msg.id));
+    }
+    workerConsecutiveFailures++;
+    scheduleNextSend(30000 + Math.floor(Math.random() * 30000));
+  }
+}
+
+let nextSendTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleNextSend(delayMs: number): void {
+  if (nextSendTimer) clearTimeout(nextSendTimer);
+  nextSendTimer = setTimeout(async () => {
+    nextSendTimer = null;
+    try {
+      await processWaQueue();
+    } catch (err) {
+      console.error("[WA_WORKER] Error in scheduled send:", err);
+      scheduleNextSend(60000);
+    }
+  }, delayMs);
 }
