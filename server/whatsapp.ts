@@ -1050,6 +1050,9 @@ async function _processWaQueueInner(): Promise<void> {
   const sentPhonesThisBatch = new Set<string>();
   const processedIds = new Set<number>();
   const MAX_ROUNDS = 5;
+  const MAX_SENDS_PER_CYCLE = 5;
+  const THROTTLE_MIN_MS = 8000;
+  const THROTTLE_MAX_MS = 15000;
 
   for (let round = 0; round < MAX_ROUNDS && available > 0; round++) {
     const fetchLimit = available * 3;
@@ -1076,7 +1079,7 @@ async function _processWaQueueInner(): Promise<void> {
     let roundSent = 0;
 
     for (const msg of newCandidates) {
-      if (available <= 0) break;
+      if (available <= 0 || totalSent >= MAX_SENDS_PER_CYCLE) break;
       processedIds.add(msg.id);
 
       if (sentPhonesThisBatch.has(msg.customerPhone)) {
@@ -1099,6 +1102,10 @@ async function _processWaQueueInner(): Promise<void> {
         roundSent++;
         sentPhonesThisBatch.add(msg.customerPhone);
         available--;
+        if (available > 0 && totalSent < MAX_SENDS_PER_CYCLE) {
+          const delay = THROTTLE_MIN_MS + Math.floor(Math.random() * (THROTTLE_MAX_MS - THROTTLE_MIN_MS));
+          await new Promise(r => setTimeout(r, delay));
+        }
       } else {
         const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
         if (refreshed?.status === "sending") {
