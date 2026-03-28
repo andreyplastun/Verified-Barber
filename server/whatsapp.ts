@@ -1043,6 +1043,27 @@ async function deduplicateQueueByPhone(): Promise<number> {
   return superseded;
 }
 
+const MIN_SEND_DELAY_MS = 5 * 60000;
+const MAX_SEND_DELAY_MS = 60 * 60000;
+
+function calcEvenDelay(sentToday: number, dailyLimit: number): number {
+  const remaining = dailyLimit - sentToday;
+  if (remaining <= 0) return MAX_SEND_DELAY_MS;
+
+  const almatyNowMs = Date.now() + ALMATY_UTC_OFFSET * 3600000;
+  const almatyNow = new Date(almatyNowMs);
+  const endOfWindowMs = Date.UTC(
+    almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(),
+    QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0
+  );
+  const remainingMs = endOfWindowMs - Date.now();
+  if (remainingMs <= 0) return MIN_SEND_DELAY_MS;
+
+  const raw = remainingMs / remaining;
+  const delay = Math.min(Math.max(raw, MIN_SEND_DELAY_MS), MAX_SEND_DELAY_MS);
+  return delay;
+}
+
 let isWorkerRunning = false;
 let workerConsecutiveFailures = 0;
 let heartbeatCounter = 0;
@@ -1135,22 +1156,8 @@ async function _processOneMessageCycle(): Promise<void> {
 
   if (result) {
     workerConsecutiveFailures = 0;
-    const newSentToday = sentToday + 1;
-    const remainingToSend = effectiveLimit - newSentToday;
-    const almatyNowMs = Date.now() + ALMATY_UTC_OFFSET * 3600000;
-    const almatyNow = new Date(almatyNowMs);
-    const endOfWindowMs = Date.UTC(almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(), QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0);
-    const remainingMs = endOfWindowMs - Date.now();
-    let delay: number;
-    if (remainingToSend > 0 && remainingMs > 60000) {
-      delay = remainingMs / (remainingToSend + 1);
-    } else {
-      delay = 5 * 60000;
-    }
-    const jitterMs = Math.floor(delay * 0.15 * (Math.random() * 2 - 1));
-    delay = delay + jitterMs;
-    if (delay < 60000) delay = 60000;
-    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${newSentToday}/${effectiveLimit} nextIn=${Math.round(delay / 60000)}min remaining=${remainingToSend} windowLeft=${Math.round(remainingMs / 60000)}min`);
+    const delay = calcEvenDelay(sentToday + 1, effectiveLimit);
+    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(delay / 60000)}min`);
     scheduleNextSend(delay);
   } else {
     const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
@@ -1166,7 +1173,7 @@ async function _processOneMessageCycle(): Promise<void> {
     } else {
       workerConsecutiveFailures++;
     }
-    scheduleNextSend(5000 + Math.floor(Math.random() * 10000));
+    scheduleNextSend(calcEvenDelay(sentToday, effectiveLimit));
   }
 }
 
