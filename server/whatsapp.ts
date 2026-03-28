@@ -262,12 +262,40 @@ const SEND_WINDOW_MINUTES = 570;
 let dailyPrimaryIndex = 0;
 let dailyPrimaryDate = "";
 let nextSlotTime: number = 0;
+let slotIndexInitialized = false;
 
 function getAlmatyDateStr(): string {
   const now = new Date();
   const almatyMs = now.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000;
   const almaty = new Date(almatyMs);
   return almaty.toISOString().slice(0, 10);
+}
+
+async function initSlotIndexFromDb(): Promise<void> {
+  if (slotIndexInitialized) return;
+  slotIndexInitialized = true;
+  try {
+    const todayPrimaries = await db.execute(sql`
+      SELECT COUNT(*) as cnt, MAX(scheduled_at) as last_scheduled
+      FROM wa_messages
+      WHERE message_type = 'primary'
+      AND created_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+    `);
+    const cnt = Number((todayPrimaries.rows[0] as any)?.cnt || 0);
+    const lastScheduled = (todayPrimaries.rows[0] as any)?.last_scheduled;
+    if (cnt > 0) {
+      dailyPrimaryIndex = cnt;
+      dailyPrimaryDate = getAlmatyDateStr();
+      if (lastScheduled) {
+        const lastMs = new Date(lastScheduled).getTime();
+        const intervalMs = (SEND_WINDOW_MINUTES / 25) * 60000;
+        nextSlotTime = lastMs + intervalMs;
+      }
+      console.log(`[WA_SLOT] Restored from DB: dailyPrimaryIndex=${dailyPrimaryIndex} nextSlotTime=${nextSlotTime ? new Date(nextSlotTime).toISOString() : 'none'}`);
+    }
+  } catch (err: any) {
+    console.error(`[WA_SLOT] Failed to init from DB: ${err.message}`);
+  }
 }
 
 function resetDailyIndexIfNeeded(): void {
@@ -280,7 +308,8 @@ function resetDailyIndexIfNeeded(): void {
   }
 }
 
-function getSlotScheduledAt(dailyLimit: number): Date {
+async function getSlotScheduledAt(dailyLimit: number): Promise<Date> {
+  await initSlotIndexFromDb();
   resetDailyIndexIfNeeded();
 
   const nowMs = Date.now();
@@ -542,7 +571,7 @@ export async function enqueueReviewMessage(params: {
     } else {
       const settings = await getWaSettings();
       const effectiveLimit = getWarmupDailyLimit(settings.warmupStartDate, settings.dailyLimit);
-      scheduledAt = getSlotScheduledAt(effectiveLimit);
+      scheduledAt = await getSlotScheduledAt(effectiveLimit);
       const almatyTime = new Date(scheduledAt.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000);
       console.log(`[WA_SLOT] booking=${params.bookingId} slot=${dailyPrimaryIndex - 1}/${effectiveLimit} scheduledAt=${scheduledAt.toISOString()} (Almaty ~${almatyTime.getUTCHours()}:${String(almatyTime.getUTCMinutes()).padStart(2, '0')})`);
     }
@@ -1142,7 +1171,7 @@ async function _processOneMessageCycle(): Promise<void> {
       const totalQueued = Number(queuedCount[0]?.count || 0);
       console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sentToday=${sentToday} limit=${effectiveLimit} time=${now.toISOString()}`);
     }
-    scheduleNextSend(30000 + Math.floor(Math.random() * 30000));
+    scheduleNextSend(calcEvenDelay(sentToday, effectiveLimit));
     return;
   }
 
@@ -1170,10 +1199,11 @@ async function _processOneMessageCycle(): Promise<void> {
     }
     if (wasDeferred || wasSkipped) {
       workerConsecutiveFailures = 0;
+      scheduleNextSend(60000);
     } else {
       workerConsecutiveFailures++;
+      scheduleNextSend(calcEvenDelay(sentToday, effectiveLimit));
     }
-    scheduleNextSend(calcEvenDelay(sentToday, effectiveLimit));
   }
 }
 
