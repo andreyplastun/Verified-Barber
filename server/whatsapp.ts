@@ -1088,6 +1088,7 @@ async function _processOneMessageCycle(): Promise<void> {
       const totalQueued = Number(queuedCount[0]?.count || 0);
       console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sentToday=${sentToday} limit=${effectiveLimit} time=${now.toISOString()}`);
     }
+    scheduleNextSend(30000 + Math.floor(Math.random() * 30000));
     return;
   }
 
@@ -1106,13 +1107,19 @@ async function _processOneMessageCycle(): Promise<void> {
     scheduleNextSend(delay);
   } else {
     const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
+    const wasDeferred = refreshed && refreshed.status === "queued";
+    const wasSkipped = refreshed && (refreshed.status === "skipped" || refreshed.status === "failed" || (refreshed as any).status === "expired");
     if (refreshed?.status === "sending") {
       await db.update(waMessages)
         .set({ status: "queued" } as any)
         .where(eq(waMessages.id, msg.id));
     }
-    workerConsecutiveFailures++;
-    scheduleNextSend(30000 + Math.floor(Math.random() * 30000));
+    if (wasDeferred || wasSkipped) {
+      workerConsecutiveFailures = 0;
+    } else {
+      workerConsecutiveFailures++;
+    }
+    scheduleNextSend(5000 + Math.floor(Math.random() * 10000));
   }
 }
 

@@ -488,15 +488,14 @@ app.use((req, res, next) => {
     }
   }, TRANSITION_INTERVAL_MS);
 
-  const WA_QUEUE_INTERVAL_MS = 60 * 1000;
-  setInterval(async () => {
+  setTimeout(async () => {
     try {
       await processWaQueue();
     } catch (err) {
-      console.error("[WA_PROCESSOR] Error processing WhatsApp queue:", err);
+      console.error("[WA_PROCESSOR] Error starting WhatsApp worker:", err);
     }
-  }, WA_QUEUE_INTERVAL_MS);
-  console.log(`[STARTUP] Background jobs started (transitions every ${TRANSITION_INTERVAL_MS / 60000} min, wa_queue every ${WA_QUEUE_INTERVAL_MS / 1000}s, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, altegio_sync=every ${ALTEGIO_SYNC_EVERY_N * TRANSITION_INTERVAL_MS / 60000} min)`);
+  }, 5000);
+  console.log(`[STARTUP] Background jobs started (transitions every ${TRANSITION_INTERVAL_MS / 60000} min, wa_worker=continuous, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, altegio_sync=every ${ALTEGIO_SYNC_EVERY_N * TRANSITION_INTERVAL_MS / 60000} min)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
