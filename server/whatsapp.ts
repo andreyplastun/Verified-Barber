@@ -1135,8 +1135,22 @@ async function _processOneMessageCycle(): Promise<void> {
 
   if (result) {
     workerConsecutiveFailures = 0;
-    const delay = 25000 + Math.floor(Math.random() * 20000);
-    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(delay / 1000)}s`);
+    const newSentToday = sentToday + 1;
+    const remainingToSend = effectiveLimit - newSentToday;
+    const almatyNowMs = Date.now() + ALMATY_UTC_OFFSET * 3600000;
+    const almatyNow = new Date(almatyNowMs);
+    const endOfWindowMs = Date.UTC(almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(), QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0);
+    const remainingMs = endOfWindowMs - Date.now();
+    let delay: number;
+    if (remainingToSend > 0 && remainingMs > 0) {
+      const intervalMs = remainingMs / (remainingToSend + 1);
+      delay = Math.max(intervalMs, 60000);
+    } else {
+      delay = 60000;
+    }
+    const jitter = -30000 + Math.floor(Math.random() * 60000);
+    delay = Math.max(delay + jitter, 30000);
+    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${newSentToday}/${effectiveLimit} nextIn=${Math.round(delay / 1000)}s remaining=${remainingToSend}`);
     scheduleNextSend(delay);
   } else {
     const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
