@@ -605,17 +605,7 @@ export async function enqueueReviewMessage(params: {
   console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
 
   if (params.immediate && params.messageType === "primary") {
-    const claimed = await db.update(waMessages)
-      .set({ status: "sending" } as any)
-      .where(and(
-        eq(waMessages.dedupeKey, dedupeKey),
-        eq(waMessages.status, "queued")
-      ))
-      .returning();
-    if (claimed.length > 0) {
-      const sendResult = await doSend(claimed[0], "immediate");
-      console.log(`[WA_IMMEDIATE] Send result for booking=${params.bookingId}: success=${sendResult}`);
-    }
+    console.log(`[WA_IMMEDIATE] Immediate flag ignored — rate limit enforced. booking=${params.bookingId} will be sent by worker`);
   }
 }
 
@@ -1072,25 +1062,21 @@ async function deduplicateQueueByPhone(): Promise<number> {
   return superseded;
 }
 
-const MIN_SEND_DELAY_MS = 5 * 60000;
-const MAX_SEND_DELAY_MS = 60 * 60000;
+function getMinIntervalMs(dailyLimit: number): number {
+  const windowMs = SEND_WINDOW_MINUTES * 60000;
+  return windowMs / dailyLimit;
+}
 
-function calcEvenDelay(sentToday: number, dailyLimit: number): number {
-  const remaining = dailyLimit - sentToday;
-  if (remaining <= 0) return MAX_SEND_DELAY_MS;
-
-  const almatyNowMs = Date.now() + ALMATY_UTC_OFFSET * 3600000;
-  const almatyNow = new Date(almatyNowMs);
-  const endOfWindowMs = Date.UTC(
-    almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(),
-    QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0
-  );
-  const remainingMs = endOfWindowMs - Date.now();
-  if (remainingMs <= 0) return MIN_SEND_DELAY_MS;
-
-  const raw = remainingMs / remaining;
-  const delay = Math.min(Math.max(raw, MIN_SEND_DELAY_MS), MAX_SEND_DELAY_MS);
-  return delay;
+async function getLastSentAt(): Promise<number> {
+  const result = await db.execute(sql`
+    SELECT MAX(sent_at) as last_sent
+    FROM wa_messages
+    WHERE status = 'sent'
+    AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+  `);
+  const lastSent = (result.rows[0] as any)?.last_sent;
+  if (!lastSent) return 0;
+  return new Date(lastSent).getTime();
 }
 
 let isWorkerRunning = false;
@@ -1116,6 +1102,7 @@ async function _processOneMessageCycle(): Promise<void> {
   if (effectiveLimit <= 0) return;
 
   const now = new Date();
+  const nowMs = Date.now();
 
   const stuckResult = await db.update(waMessages)
     .set({ status: "queued" } as any)
@@ -1136,7 +1123,23 @@ async function _processOneMessageCycle(): Promise<void> {
   }
 
   const sentToday = await storage.countWaMessagesSentToday();
-  if (sentToday >= effectiveLimit) return;
+  if (sentToday >= effectiveLimit) {
+    console.log(`[WA_PROCESSOR] Daily limit reached: ${sentToday}/${effectiveLimit}`);
+    scheduleNextSend(getMinIntervalMs(effectiveLimit));
+    return;
+  }
+
+  const minInterval = getMinIntervalMs(effectiveLimit);
+  const lastSentMs = await getLastSentAt();
+  if (lastSentMs > 0) {
+    const elapsed = nowMs - lastSentMs;
+    if (elapsed < minInterval) {
+      const waitMs = minInterval - elapsed;
+      console.log(`[WA_RATE_LIMIT] Too soon. lastSent=${Math.round(elapsed / 1000)}s ago, minInterval=${Math.round(minInterval / 60000)}min, waiting ${Math.round(waitMs / 60000)}min`);
+      scheduleNextSend(waitMs);
+      return;
+    }
+  }
 
   if (workerConsecutiveFailures >= 5) {
     const cooldownMs = 300000 + Math.floor(Math.random() * 300000);
@@ -1171,7 +1174,7 @@ async function _processOneMessageCycle(): Promise<void> {
       const totalQueued = Number(queuedCount[0]?.count || 0);
       console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sentToday=${sentToday} limit=${effectiveLimit} time=${now.toISOString()}`);
     }
-    scheduleNextSend(calcEvenDelay(sentToday, effectiveLimit));
+    scheduleNextSend(minInterval);
     return;
   }
 
@@ -1185,9 +1188,8 @@ async function _processOneMessageCycle(): Promise<void> {
 
   if (result) {
     workerConsecutiveFailures = 0;
-    const delay = calcEvenDelay(sentToday + 1, effectiveLimit);
-    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(delay / 60000)}min`);
-    scheduleNextSend(delay);
+    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(minInterval / 60000)}min`);
+    scheduleNextSend(minInterval);
   } else {
     const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
     const wasDeferred = refreshed && refreshed.status === "queued";
@@ -1202,7 +1204,7 @@ async function _processOneMessageCycle(): Promise<void> {
       scheduleNextSend(60000);
     } else {
       workerConsecutiveFailures++;
-      scheduleNextSend(calcEvenDelay(sentToday, effectiveLimit));
+      scheduleNextSend(minInterval);
     }
   }
 }
