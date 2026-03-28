@@ -1044,29 +1044,9 @@ async function deduplicateQueueByPhone(): Promise<number> {
 }
 
 let isWorkerRunning = false;
-let workerSentCount = 0;
 let workerConsecutiveFailures = 0;
-let workerBreathingTarget = 3 + Math.floor(Math.random() * 5);
 let heartbeatCounter = 0;
 const HEARTBEAT_EVERY_N = 10;
-
-function humanDelay(): number {
-  let delay = 25000 + Math.floor(Math.random() * 65000);
-
-  workerSentCount++;
-  if (workerSentCount >= workerBreathingTarget) {
-    delay += 120000 + Math.floor(Math.random() * 240000);
-    workerBreathingTarget = workerSentCount + 3 + Math.floor(Math.random() * 5);
-    console.log(`[WA_HUMAN] Breathing pause, next breath after ${workerBreathingTarget} sends`);
-  }
-
-  if (Math.random() < 0.12) {
-    delay += 300000 + Math.floor(Math.random() * 600000);
-    console.log(`[WA_HUMAN] Random long pause triggered`);
-  }
-
-  return delay;
-}
 
 export async function processWaQueue(): Promise<void> {
   if (isWorkerRunning) return;
@@ -1124,11 +1104,7 @@ async function _processOneMessageCycle(): Promise<void> {
         sql`${waMessages.scheduledAt} <= ${now}`
       )
     )
-    .orderBy(
-      sql`${waMessages.priority} DESC`,
-      sql`CASE ${waMessages.messageType} WHEN 'reminder' THEN 0 WHEN 'primary' THEN 1 END`,
-      waMessages.scheduledAt
-    )
+    .orderBy(waMessages.scheduledAt)
     .limit(1);
 
   if (!msg) {
@@ -1155,7 +1131,7 @@ async function _processOneMessageCycle(): Promise<void> {
 
   if (result) {
     workerConsecutiveFailures = 0;
-    const delay = humanDelay();
+    const delay = 25000 + Math.floor(Math.random() * 20000);
     console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(delay / 1000)}s`);
     scheduleNextSend(delay);
   } else {
