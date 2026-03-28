@@ -1142,15 +1142,15 @@ async function _processOneMessageCycle(): Promise<void> {
     const endOfWindowMs = Date.UTC(almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(), QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0);
     const remainingMs = endOfWindowMs - Date.now();
     let delay: number;
-    if (remainingToSend > 0 && remainingMs > 0) {
-      const intervalMs = remainingMs / (remainingToSend + 1);
-      delay = Math.max(intervalMs, 60000);
+    if (remainingToSend > 0 && remainingMs > 60000) {
+      delay = remainingMs / (remainingToSend + 1);
     } else {
-      delay = 60000;
+      delay = 5 * 60000;
     }
-    const jitter = -30000 + Math.floor(Math.random() * 60000);
-    delay = Math.max(delay + jitter, 30000);
-    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${newSentToday}/${effectiveLimit} nextIn=${Math.round(delay / 1000)}s remaining=${remainingToSend}`);
+    const jitterMs = Math.floor(delay * 0.15 * (Math.random() * 2 - 1));
+    delay = delay + jitterMs;
+    if (delay < 60000) delay = 60000;
+    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${newSentToday}/${effectiveLimit} nextIn=${Math.round(delay / 60000)}min remaining=${remainingToSend} windowLeft=${Math.round(remainingMs / 60000)}min`);
     scheduleNextSend(delay);
   } else {
     const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
