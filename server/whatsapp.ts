@@ -1104,7 +1104,11 @@ async function _processOneMessageCycle(): Promise<void> {
         sql`${waMessages.scheduledAt} <= ${now}`
       )
     )
-    .orderBy(waMessages.scheduledAt)
+    .orderBy(
+      sql`${waMessages.priority} DESC`,
+      sql`${waMessages.messageType} DESC`,
+      waMessages.scheduledAt
+    )
     .limit(1);
 
   if (!msg) {
