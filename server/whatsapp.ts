@@ -261,6 +261,7 @@ const SEND_WINDOW_MINUTES = 570;
 
 let dailyPrimaryIndex = 0;
 let dailyPrimaryDate = "";
+let nextSlotTime: number = 0;
 
 function getAlmatyDateStr(): string {
   const now = new Date();
@@ -274,33 +275,39 @@ function resetDailyIndexIfNeeded(): void {
   if (dailyPrimaryDate !== today) {
     dailyPrimaryIndex = 0;
     dailyPrimaryDate = today;
+    nextSlotTime = 0;
     console.log(`[WA_SLOT] New day detected (${today}), reset dailyPrimaryIndex=0`);
   }
 }
 
 function getSlotScheduledAt(dailyLimit: number): Date {
   resetDailyIndexIfNeeded();
-  const interval = SEND_WINDOW_MINUTES / dailyLimit;
-  const slotMinutes = dailyPrimaryIndex * interval;
-  const jitterMinutes = -5 + Math.random() * 10;
-  const totalMinutes = Math.max(0, slotMinutes + jitterMinutes);
 
-  const now = new Date();
-  const almatyMs = now.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  const almatyMs = nowMs + ALMATY_UTC_OFFSET * 3600000;
   const almaty = new Date(almatyMs);
-  const todayBase = new Date(Date.UTC(almaty.getUTCFullYear(), almaty.getUTCMonth(), almaty.getUTCDate(), QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0));
+  const todayBaseMs = Date.UTC(almaty.getUTCFullYear(), almaty.getUTCMonth(), almaty.getUTCDate(), QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
+  const endOfWindowMs = todayBaseMs + SEND_WINDOW_MINUTES * 60000;
 
-  const scheduled = new Date(todayBase.getTime() + totalMinutes * 60 * 1000);
+  const intervalMs = (SEND_WINDOW_MINUTES / dailyLimit) * 60000;
+  const idealSlotMs = todayBaseMs + dailyPrimaryIndex * intervalMs;
+  const earliestMs = Math.max(idealSlotMs, nowMs, nextSlotTime);
 
-  if (scheduled.getTime() < now.getTime()) {
-    const fallback = new Date(now.getTime() + randomMinutes(1, 5));
-    console.log(`[WA_SLOT] Slot ${dailyPrimaryIndex} in past, using fallback +1-5min`);
+  if (earliestMs >= endOfWindowMs) {
+    const fallback = nowMs + 60000 + Math.floor(Math.random() * 240000);
     dailyPrimaryIndex++;
-    return fallback;
+    nextSlotTime = fallback + intervalMs;
+    return new Date(fallback);
   }
 
+  const jitterMs = (-5 + Math.random() * 10) * 60000;
+  let scheduledMs = earliestMs + jitterMs;
+  if (scheduledMs < nowMs + 30000) scheduledMs = nowMs + 30000 + Math.floor(Math.random() * 60000);
+
   dailyPrimaryIndex++;
-  return scheduled;
+  nextSlotTime = scheduledMs + intervalMs;
+
+  return new Date(scheduledMs);
 }
 
 function isInQuietHours(date: Date): boolean {
