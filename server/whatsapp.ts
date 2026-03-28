@@ -257,6 +257,51 @@ const ALMATY_UTC_OFFSET = 5;
 const QUIET_START_HOUR = 20;
 const QUIET_END_HOUR = 10;
 const QUIET_END_MINUTE = 30;
+const SEND_WINDOW_MINUTES = 570;
+
+let dailyPrimaryIndex = 0;
+let dailyPrimaryDate = "";
+
+function getAlmatyDateStr(): string {
+  const now = new Date();
+  const almatyMs = now.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000;
+  const almaty = new Date(almatyMs);
+  return almaty.toISOString().slice(0, 10);
+}
+
+function resetDailyIndexIfNeeded(): void {
+  const today = getAlmatyDateStr();
+  if (dailyPrimaryDate !== today) {
+    dailyPrimaryIndex = 0;
+    dailyPrimaryDate = today;
+    console.log(`[WA_SLOT] New day detected (${today}), reset dailyPrimaryIndex=0`);
+  }
+}
+
+function getSlotScheduledAt(dailyLimit: number): Date {
+  resetDailyIndexIfNeeded();
+  const interval = SEND_WINDOW_MINUTES / dailyLimit;
+  const slotMinutes = dailyPrimaryIndex * interval;
+  const jitterMinutes = -5 + Math.random() * 10;
+  const totalMinutes = Math.max(0, slotMinutes + jitterMinutes);
+
+  const now = new Date();
+  const almatyMs = now.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000;
+  const almaty = new Date(almatyMs);
+  const todayBase = new Date(Date.UTC(almaty.getUTCFullYear(), almaty.getUTCMonth(), almaty.getUTCDate(), QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0));
+
+  const scheduled = new Date(todayBase.getTime() + totalMinutes * 60 * 1000);
+
+  if (scheduled.getTime() < now.getTime()) {
+    const fallback = new Date(now.getTime() + randomMinutes(1, 5));
+    console.log(`[WA_SLOT] Slot ${dailyPrimaryIndex} in past, using fallback +1-5min`);
+    dailyPrimaryIndex++;
+    return fallback;
+  }
+
+  dailyPrimaryIndex++;
+  return scheduled;
+}
 
 function isInQuietHours(date: Date): boolean {
   const almatyHour = (date.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
@@ -488,10 +533,11 @@ export async function enqueueReviewMessage(params: {
       scheduledAt = new Date(now.getTime() + 10 * 60 * 1000);
       console.log(`[WA_QUEUE] Evening visit booking=${params.bookingId}: scheduling in 10 min (ignoring quiet hours)`);
     } else {
-      const baseDelayMs = params.delayMs || randomMinutes(10, 30);
-      const spreadMs = randomMinutes(0, 6 * 60);
-      scheduledAt = adjustForQuietHours(new Date(now.getTime() + baseDelayMs + spreadMs));
-      console.log(`[WA_SPREAD] booking=${params.bookingId} baseDelay=${Math.round(baseDelayMs / 60000)}min spread=${Math.round(spreadMs / 60000)}min scheduledAt=${scheduledAt.toISOString()}`);
+      const settings = await getWaSettings();
+      const effectiveLimit = getWarmupDailyLimit(settings.warmupStartDate, settings.dailyLimit);
+      scheduledAt = getSlotScheduledAt(effectiveLimit);
+      const almatyTime = new Date(scheduledAt.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000);
+      console.log(`[WA_SLOT] booking=${params.bookingId} slot=${dailyPrimaryIndex - 1}/${effectiveLimit} scheduledAt=${scheduledAt.toISOString()} (Almaty ~${almatyTime.getUTCHours()}:${String(almatyTime.getUTCMinutes()).padStart(2, '0')})`);
     }
   } else {
     const delayMs = params.delayMs || randomMinutes(21 * 60, 24 * 60);
