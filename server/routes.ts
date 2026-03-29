@@ -362,7 +362,9 @@ export async function registerRoutes(
       const allSpecialists = await storage.getSpecialists();
       const cities = Array.from(new Set(allSpecialists.map(s => s.city).filter(Boolean)));
       const districts = Array.from(new Set(allSpecialists.map(s => s.district).filter((d): d is string => d !== null)));
-      const categories = Array.from(new Set(allSpecialists.map(s => s.category).filter(Boolean)));
+      const fixedCategories = ["barber", "doctor", "trainer", "manicure", "cosmetology", "auto_service"];
+      const dbCategories = allSpecialists.map(s => s.category).filter(Boolean);
+      const categories = Array.from(new Set([...fixedCategories, ...dbCategories]));
       res.json({ cities, districts, categories });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -2404,7 +2406,7 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       const specialistId = Number(req.params.id);
-      const { bio, city } = req.body;
+      const { bio, city, subcategory } = req.body;
 
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -2429,8 +2431,11 @@ ${magicLink}`;
       }
 
       await storage.updateSpecialistBio(specialistId, bio);
-      if (city) {
-        await storage.updateSpecialist(specialistId, { city } as any);
+      const updates: any = {};
+      if (city) updates.city = city;
+      if (subcategory !== undefined) updates.subcategory = subcategory || null;
+      if (Object.keys(updates).length > 0) {
+        await storage.updateSpecialist(specialistId, updates);
       }
       res.json({ success: true });
     } catch (err: any) {

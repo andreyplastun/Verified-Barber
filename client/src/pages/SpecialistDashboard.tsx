@@ -32,6 +32,7 @@ export default function SpecialistDashboard() {
   const workInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState<'avatar' | 'work' | null>(null);
   const [bio, setBio] = useState('');
+  const [subcategory, setSubcategory] = useState('');
   const [city, setCity] = useState('Алматы');
   const [savingBio, setSavingBio] = useState(false);
   const [kaspiPhone, setKaspiPhone] = useState('');
@@ -606,7 +607,10 @@ export default function SpecialistDashboard() {
     if (specialist?.city) {
       setCity(specialist.city);
     }
-  }, [specialist?.bio, specialist?.city]);
+    if ((specialist as any)?.subcategory) {
+      setSubcategory((specialist as any).subcategory);
+    }
+  }, [specialist?.bio, specialist?.city, (specialist as any)?.subcategory]);
 
   useEffect(() => {
     if (specialist) {
@@ -627,7 +631,7 @@ export default function SpecialistDashboard() {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio, city }),
+        body: JSON.stringify({ bio, city, subcategory }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -773,6 +777,16 @@ export default function SpecialistDashboard() {
             </Select>
           </div>
           <div className="space-y-2">
+            <Label htmlFor="subcategory">Специализация</Label>
+            <Input
+              id="subcategory"
+              value={subcategory}
+              onChange={(e) => setSubcategory(e.target.value)}
+              placeholder="Например: тренер по плаванию, стоматолог"
+              data-testid="input-specialist-subcategory"
+            />
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="bio">Краткое описание</Label>
             <Textarea
               id="bio"
@@ -790,7 +804,7 @@ export default function SpecialistDashboard() {
               <Button
                 size="sm"
                 onClick={handleSaveBio}
-                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы'))}
+                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || ''))}
                 data-testid="button-save-bio"
               >
                 {savingBio ? 'Сохранение...' : 'Сохранить'}
