@@ -1062,9 +1062,21 @@ async function deduplicateQueueByPhone(): Promise<number> {
   return superseded;
 }
 
-function getMinIntervalMs(dailyLimit: number): number {
-  const windowMs = SEND_WINDOW_MINUTES * 60000;
-  return windowMs / dailyLimit;
+function getMinIntervalMs(dailyLimit: number, sentToday: number = 0): number {
+  const remaining = dailyLimit - sentToday;
+  if (remaining <= 0) return 60 * 60000;
+
+  const almatyNowMs = Date.now() + ALMATY_UTC_OFFSET * 3600000;
+  const almatyNow = new Date(almatyNowMs);
+  const endOfWindowMs = Date.UTC(
+    almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(),
+    QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0
+  );
+  const remainingMs = endOfWindowMs - Date.now();
+  if (remainingMs <= 0) return 5 * 60000;
+
+  const interval = remainingMs / remaining;
+  return Math.max(interval, 5 * 60000);
 }
 
 async function getLastSentAt(): Promise<number> {
@@ -1125,11 +1137,11 @@ async function _processOneMessageCycle(): Promise<void> {
   const sentToday = await storage.countWaMessagesSentToday();
   if (sentToday >= effectiveLimit) {
     console.log(`[WA_PROCESSOR] Daily limit reached: ${sentToday}/${effectiveLimit}`);
-    scheduleNextSend(getMinIntervalMs(effectiveLimit));
+    scheduleNextSend(getMinIntervalMs(effectiveLimit, sentToday));
     return;
   }
 
-  const minInterval = getMinIntervalMs(effectiveLimit);
+  const minInterval = getMinIntervalMs(effectiveLimit, sentToday);
   const lastSentMs = await getLastSentAt();
   if (lastSentMs > 0) {
     const elapsed = nowMs - lastSentMs;

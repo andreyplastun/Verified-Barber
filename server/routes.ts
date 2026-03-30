@@ -1173,15 +1173,14 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Booking not found" });
       }
       
-      if (!booking.clientId) {
-        return res.status(400).json({ message: "Booking has no associated client" });
+      const customerPhone = booking.normalizedPhone || booking.customerPhone || null;
+      if (!booking.clientId && !customerPhone) {
+        return res.status(400).json({ message: "У записи нет ни клиента, ни телефона" });
       }
       
-      // Get specialist name for the message
       const specialist = await storage.getSpecialist(booking.specialistId);
       const barberName = specialist?.name || 'барберу';
       
-      // Check if magic link already exists
       const existingLink = await storage.getMagicLinkByBookingId(bookingId);
       if (existingLink && !existingLink.usedAt && new Date(existingLink.expiresAt) > new Date()) {
         const existingFullLink = buildReviewLink(existingLink.token);
@@ -1192,7 +1191,6 @@ export async function registerRoutes(
         });
       }
       
-      const customerPhone = booking.normalizedPhone || booking.customerPhone || null;
       const magicLink = await storage.createMagicLink(booking.clientId || null, bookingId, booking.specialistId, false, !booking.clientId ? customerPhone : null);
       const spec = await storage.getSpecialist(booking.specialistId);
       const fullLink = (spec?.slug && magicLink.shortCode)
@@ -1223,8 +1221,9 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Booking not found" });
       }
       
-      if (!booking.clientId) {
-        return res.status(400).json({ message: "Booking has no associated client" });
+      const customerPhone = booking.normalizedPhone || booking.customerPhone || null;
+      if (!booking.clientId && !customerPhone) {
+        return res.status(400).json({ message: "У записи нет ни клиента, ни телефона" });
       }
       
       // Check if review already exists for this booking
