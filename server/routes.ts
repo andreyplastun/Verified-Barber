@@ -3765,6 +3765,79 @@ ${magicLink}`;
     }
   });
 
+  app.get("/api/admin/whatsapp/daily-breakdown", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+
+      const daysBack = parseInt(req.query.days as string) || 0;
+      const dateOffset = daysBack > 0
+        ? sql`((now() AT TIME ZONE 'Asia/Almaty') - interval '${sql.raw(String(daysBack))} days')::date`
+        : sql`(now() AT TIME ZONE 'Asia/Almaty')::date`;
+
+      const completedVisits = await db.execute(sql`
+        SELECT COUNT(*) as cnt FROM bookings
+        WHERE status = 'completed'
+          AND (appointment_time AT TIME ZONE 'Asia/Almaty')::date = ${dateOffset}
+      `);
+
+      const primaryCreated = await db.execute(sql`
+        SELECT COUNT(*) as cnt FROM wa_messages
+        WHERE message_type = 'primary'
+          AND (created_at AT TIME ZONE 'Asia/Almaty')::date = ${dateOffset}
+      `);
+
+      const primaryByStatus = await db.execute(sql`
+        SELECT status, COUNT(*) as cnt FROM wa_messages
+        WHERE message_type = 'primary'
+          AND (created_at AT TIME ZONE 'Asia/Almaty')::date = ${dateOffset}
+        GROUP BY status
+      `);
+
+      const skipReasons = await db.execute(sql`
+        SELECT skip_reason, COUNT(*) as cnt FROM wa_messages
+        WHERE message_type = 'primary'
+          AND status = 'skipped'
+          AND (created_at AT TIME ZONE 'Asia/Almaty')::date = ${dateOffset}
+        GROUP BY skip_reason
+        ORDER BY cnt DESC
+      `);
+
+      const eligibilityReasons = await db.execute(sql`
+        SELECT review_eligibility_reason as reason, review_eligibility as eligible, COUNT(*) as cnt
+        FROM bookings
+        WHERE status = 'completed'
+          AND (appointment_time AT TIME ZONE 'Asia/Almaty')::date = ${dateOffset}
+          AND review_eligibility_reason IS NOT NULL
+        GROUP BY review_eligibility_reason, review_eligibility
+        ORDER BY cnt DESC
+      `);
+
+      const noMagicLink = await db.execute(sql`
+        SELECT COUNT(*) as cnt FROM bookings b
+        WHERE b.status = 'completed'
+          AND (b.appointment_time AT TIME ZONE 'Asia/Almaty')::date = ${dateOffset}
+          AND NOT EXISTS (SELECT 1 FROM magic_links ml WHERE ml.booking_id = b.id)
+      `);
+
+      res.json({
+        date: daysBack > 0 ? `${daysBack} days ago` : 'today',
+        completedVisits: Number((completedVisits.rows[0] as any)?.cnt || 0),
+        primaryCreated: Number((primaryCreated.rows[0] as any)?.cnt || 0),
+        primaryByStatus: Object.fromEntries((primaryByStatus.rows as any[]).map(r => [r.status, Number(r.cnt)])),
+        skipReasons: Object.fromEntries((skipReasons.rows as any[]).map(r => [r.skip_reason || 'unknown', Number(r.cnt)])),
+        eligibilityReasons: (eligibilityReasons.rows as any[]).map(r => ({
+          reason: r.reason,
+          eligible: r.eligible,
+          count: Number(r.cnt)
+        })),
+        visitsWithoutMagicLink: Number((noMagicLink.rows[0] as any)?.cnt || 0),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/admin/whatsapp/conversion", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
