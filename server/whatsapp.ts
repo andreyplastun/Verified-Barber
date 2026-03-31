@@ -323,10 +323,12 @@ async function getSlotScheduledAt(dailyLimit: number): Promise<Date> {
   const earliestMs = Math.max(idealSlotMs, nowMs, nextSlotTime);
 
   if (earliestMs >= endOfWindowMs) {
-    const fallback = nowMs + 60000 + Math.floor(Math.random() * 240000);
+    const fallback = Math.min(nowMs + 60000 + Math.floor(Math.random() * 240000), endOfWindowMs - 5 * 60000);
+    const scheduledMs = Math.max(fallback, nowMs + 30000);
     dailyPrimaryIndex++;
-    nextSlotTime = fallback + intervalMs;
-    return new Date(fallback);
+    nextSlotTime = scheduledMs + 5 * 60000;
+    console.log(`[WA_SLOT] Over window limit, scheduling ASAP: slot=${dailyPrimaryIndex - 1} scheduledAt=${new Date(scheduledMs).toISOString()}`);
+    return new Date(scheduledMs);
   }
 
   const jitterMs = (-5 + Math.random() * 10) * 60000;
@@ -500,9 +502,12 @@ export async function enqueueReviewMessage(params: {
 
   if (params.messageType === "primary") {
     const booking = await storage.getBooking(params.bookingId);
-    if (booking && !isVisitToday(booking.appointmentTime)) {
-      console.log(`[WA_QUEUE] Skipping primary for booking=${params.bookingId}: visit not today (appt=${booking.appointmentTime})`);
-      return;
+    if (booking && booking.appointmentTime) {
+      const hoursSinceAppt = (Date.now() - new Date(booking.appointmentTime).getTime()) / (1000 * 60 * 60);
+      if (hoursSinceAppt > 48) {
+        console.log(`[WA_QUEUE] Skipping primary for booking=${params.bookingId}: expired >48h (appt=${booking.appointmentTime})`);
+        return;
+      }
     }
   }
 
@@ -906,10 +911,14 @@ async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<b
     console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_cancelled`);
     return false;
   }
-  if (msg.messageType === "primary" && !isVisitToday(booking.appointmentTime)) {
-    await storage.markWaMessageSkipped(msg.id, "expired_not_today");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=primary reason=expired_not_today appt=${booking.appointmentTime}`);
-    return false;
+  if (msg.messageType === "primary" && booking.appointmentTime) {
+    const apptMs = new Date(booking.appointmentTime).getTime();
+    const hoursSinceAppt = (Date.now() - apptMs) / (1000 * 60 * 60);
+    if (hoursSinceAppt > 48) {
+      await storage.markWaMessageSkipped(msg.id, "expired_48h");
+      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=primary reason=expired_48h appt=${booking.appointmentTime} hours=${hoursSinceAppt.toFixed(1)}`);
+      return false;
+    }
   }
 
   if (isInQuietHours(new Date()) && !isEveningVisit(booking.appointmentTime)) {
