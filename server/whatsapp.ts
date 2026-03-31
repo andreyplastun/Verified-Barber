@@ -1213,7 +1213,7 @@ async function _processOneMessageCycle(): Promise<void> {
     }
     if (wasDeferred || wasSkipped) {
       workerConsecutiveFailures = 0;
-      scheduleNextSend(60000);
+      scheduleNextSend(10000);
     } else {
       workerConsecutiveFailures++;
       scheduleNextSend(minInterval);
