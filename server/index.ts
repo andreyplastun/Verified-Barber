@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import { startWaWorkerLoop, getWaSettings } from "./whatsapp";
 import { syncUpcomingAppointments, isAltegioConfigured } from "./altegio";
+import { tryCreateMagicLinkForCompletedVisit } from "./routes";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
 
@@ -478,7 +479,9 @@ app.use((req, res, next) => {
       altegioSyncCounter = 0;
       try {
         if (await isAltegioConfigured()) {
-          const result = await syncUpcomingAppointments();
+          const result = await syncUpcomingAppointments({
+            onCompleted: (bookingId) => tryCreateMagicLinkForCompletedVisit(bookingId, 'altegio_sync_periodic'),
+          });
           if (result.updated > 0 || result.imported > 0) {
             console.log(`[PERIODIC_SYNC] Altegio sync: ${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped`);
           }
