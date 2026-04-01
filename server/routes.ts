@@ -86,10 +86,36 @@ async function sendReviewLinkDirect(booking: any, link: string, source: string):
   return waResult.success;
 }
 
-export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, source: string): Promise<boolean> {
+export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, source: string, opts?: { altegioStaffId?: number; altegioCompanyId?: number }): Promise<boolean> {
   try {
-    const booking = await storage.getBooking(bookingId);
+    let booking = await storage.getBooking(bookingId);
     const specAction = isSpecialistAction(source);
+
+    if (opts?.altegioStaffId && booking && opts.altegioStaffId !== (booking as any).altegioStaffId) {
+      const { STAFF_ID_ALIASES } = await import('./altegio');
+      let effectiveStaffId = opts.altegioStaffId;
+      let effectiveCompanyId = opts.altegioCompanyId || null;
+      const alias = STAFF_ID_ALIASES[opts.altegioStaffId];
+      if (alias) {
+        effectiveStaffId = alias.primaryStaffId;
+        effectiveCompanyId = alias.primaryCompanyId;
+      }
+      const allSpecs = await storage.getSpecialists();
+      const connSpecs = allSpecs.filter((s: any) => s.altegioStaffId && s.altegioCompanyId);
+      const matchedSpec = effectiveCompanyId
+        ? connSpecs.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
+        : null;
+      const newSpec = matchedSpec || connSpecs.find((s: any) => s.altegioStaffId === effectiveStaffId);
+      if (newSpec && newSpec.id !== booking.specialistId) {
+        console.log(`[MAGIC_LINK_REASSIGN] booking=${bookingId} specialist ${booking.specialistId} → ${newSpec.id} (${newSpec.name}) at completion time, staff_id=${opts.altegioStaffId}`);
+        await storage.updateBooking(bookingId, {
+          specialistId: newSpec.id,
+          altegioStaffId: opts.altegioStaffId,
+          updatedFrom: "altegio",
+        } as any);
+        booking = await storage.getBooking(bookingId);
+      }
+    }
     console.log(`[MAGIC_LINK_TRACE] booking=${bookingId} source=${source} specialistAction=${specAction} status=${booking?.status} clientId=${booking?.clientId} normalizedPhone=${booking?.normalizedPhone} customerPhone=${booking?.customerPhone} bookingSource=${(booking as any)?.bookingSource} invalidPhone=${(booking as any)?.invalidPhone} paymentStatus=${(booking as any)?.paymentStatus}`);
     if (!booking || booking.status !== 'completed') {
       console.log(`[MAGIC_LINK_TRACE] booking=${bookingId} BLOCKED: status=${booking?.status} (need completed)`);
@@ -3302,7 +3328,7 @@ ${magicLink}`;
 
             if (isNewVisitCompleted) {
               console.log(`[ALTEGIO] New booking ${newBooking.id} already completed, attempting magic link creation`);
-              await tryCreateMagicLinkForCompletedVisit(newBooking.id, 'altegio_webhook_new_completed');
+              await tryCreateMagicLinkForCompletedVisit(newBooking.id, 'altegio_webhook_new_completed', { altegioStaffId: staffId, altegioCompanyId: companyId });
             }
             break;
           }
@@ -3366,7 +3392,7 @@ ${magicLink}`;
           }
 
           if (isVisitCompleted) {
-            await tryCreateMagicLinkForCompletedVisit(existing.id, 'altegio_webhook_attendance');
+            await tryCreateMagicLinkForCompletedVisit(existing.id, 'altegio_webhook_attendance', { altegioStaffId: staffId, altegioCompanyId: companyId });
           }
 
           const isPaid = data?.paid === true || data?.paid === 1 || data?.paid === "1" ||
@@ -3403,7 +3429,7 @@ ${magicLink}`;
           }
           await storage.updateBooking(existing.id, { status: "completed", visitTrustWeight: 1.0, updatedFrom: "altegio" } as any);
           console.log(`[ALTEGIO] Completed booking ${existing.id} for appointment ${altegioId}`);
-          await tryCreateMagicLinkForCompletedVisit(existing.id, 'altegio_webhook_completed');
+          await tryCreateMagicLinkForCompletedVisit(existing.id, 'altegio_webhook_completed', { altegioStaffId: staffId, altegioCompanyId: companyId });
           break;
         }
 

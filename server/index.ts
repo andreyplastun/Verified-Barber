@@ -480,7 +480,7 @@ app.use((req, res, next) => {
       try {
         if (await isAltegioConfigured()) {
           const result = await syncUpcomingAppointments({
-            onCompleted: (bookingId) => tryCreateMagicLinkForCompletedVisit(bookingId, 'altegio_sync_periodic'),
+            onCompleted: (bookingId, altegioInfo) => tryCreateMagicLinkForCompletedVisit(bookingId, 'altegio_sync_periodic', altegioInfo ? { altegioStaffId: altegioInfo.staffId, altegioCompanyId: altegioInfo.companyId } : undefined),
           });
           if (result.updated > 0 || result.imported > 0) {
             console.log(`[PERIODIC_SYNC] Altegio sync: ${result.imported} imported, ${result.updated} updated, ${result.skipped} skipped`);

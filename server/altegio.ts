@@ -1038,7 +1038,7 @@ export async function fetchUpcomingAppointments(companyId: number, options?: { s
   }
 }
 
-export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId: number) => Promise<any> }): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
+export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId: number, altegioInfo?: { staffId?: number; companyId?: number }) => Promise<any> }): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
   const config = getConfig();
   if (!config) {
     console.log("[ALTEGIO-SYNC-APPTS] Not configured, skipping");
@@ -1185,10 +1185,10 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           console.log(`[ALTEGIO-SYNC-STATUS] Booking ${existing.id} (${existing.customerName}): status ${existing.status} → completed (attendance=1 from Altegio, weight=1.0 cash/unknown)`);
           didUpdate = true;
           if (opts?.onCompleted) {
-            await opts.onCompleted(existing.id);
+            await opts.onCompleted(existing.id, { staffId: appt.staff_id, companyId: appt.company_id });
           }
         } else if (existing.status === "completed" && appt.attendance === 1 && opts?.onCompleted) {
-          await opts.onCompleted(existing.id);
+          await opts.onCompleted(existing.id, { staffId: appt.staff_id, companyId: appt.company_id });
         }
 
         if (didUpdate) {
@@ -1257,7 +1257,7 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           bookingSource: "altegio",
         });
         if (status === "completed" && opts?.onCompleted) {
-          await opts.onCompleted(newBooking.id);
+          await opts.onCompleted(newBooking.id, { staffId: appt.staff_id, companyId: appt.company_id });
         }
         imported++;
       } catch (err: any) {
