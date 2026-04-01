@@ -281,10 +281,8 @@ function randomMinutes(minMin: number, maxMin: number): number {
   return (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
 }
 
-function getMinIntervalMs(dailyLimit: number): number {
-  if (dailyLimit <= 0) return 60 * 60000;
-  const intervalMs = (SEND_WINDOW_MINUTES * 60000) / dailyLimit;
-  return Math.max(intervalMs, 5 * 60000);
+function getMinIntervalMs(): number {
+  return (12 + Math.random() * 3) * 60000;
 }
 
 async function getLastSentAt(): Promise<number> {
@@ -971,7 +969,6 @@ async function deduplicateQueueByPhone(): Promise<number> {
 }
 
 const POLL_INTERVAL_MS = 30000;
-const SKIP_INTERVAL_MS = 5000;
 
 let isWorkerRunning = false;
 let workerConsecutiveFailures = 0;
@@ -995,9 +992,8 @@ async function _processOneMessageCycle(): Promise<void> {
   const effectiveLimit = getWarmupDailyLimit(settings.warmupStartDate, settings.dailyLimit);
   if (effectiveLimit <= 0) return;
 
-  const now = new Date();
   const nowMs = Date.now();
-  const minInterval = getMinIntervalMs(effectiveLimit);
+  const now = new Date();
 
   if (isBeforeWindowStart()) {
     const almatyMs = nowMs + ALMATY_UTC_OFFSET * 3600000;
@@ -1037,7 +1033,7 @@ async function _processOneMessageCycle(): Promise<void> {
     return;
   }
 
-  const [msg] = await db.select()
+  const readyMessages = await db.select()
     .from(waMessages)
     .where(
       and(
@@ -1050,9 +1046,9 @@ async function _processOneMessageCycle(): Promise<void> {
       sql`${waMessages.priority} DESC`,
       waMessages.scheduledAt
     )
-    .limit(1);
+    .limit(10);
 
-  if (!msg) {
+  if (readyMessages.length === 0) {
     heartbeatCounter++;
     if (heartbeatCounter >= HEARTBEAT_EVERY_N) {
       heartbeatCounter = 0;
@@ -1073,137 +1069,140 @@ async function _processOneMessageCycle(): Promise<void> {
 
   heartbeatCounter = 0;
 
-  const msgDeadline = (msg as any).deadline ? new Date((msg as any).deadline) : null;
-  if (msgDeadline && nowMs > msgDeadline.getTime()) {
-    const reason = msg.messageType === "primary" ? "expired_delay" : "expired_followup";
-    await storage.markWaMessageSkipped(msg.id, reason);
-    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} scheduledAt=${msg.scheduledAt} deadline=${msgDeadline.toISOString()} actualTime=${now.toISOString()} reason=${reason}`);
-    scheduleNextSend(SKIP_INTERVAL_MS);
-    return;
-  }
+  for (const msg of readyMessages) {
+    const currentMs = Date.now();
+    const msgDeadline = (msg as any).deadline ? new Date((msg as any).deadline) : null;
 
-  if (msg.messageType === "primary" && isPrimaryPastQuiet()) {
-    await storage.markWaMessageSkipped(msg.id, "quiet_hours_primary");
-    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary scheduledAt=${msg.scheduledAt} actualTime=${now.toISOString()} reason=quiet_hours_primary (past 21:45)`);
-    scheduleNextSend(SKIP_INTERVAL_MS);
-    return;
-  }
+    if (msgDeadline && currentMs > msgDeadline.getTime()) {
+      const reason = msg.messageType === "primary" ? "expired_delay" : "expired_followup";
+      await storage.markWaMessageSkipped(msg.id, reason);
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} scheduledAt=${msg.scheduledAt} deadline=${msgDeadline.toISOString()} actualTime=${new Date().toISOString()} reason=${reason}`);
+      continue;
+    }
 
-  if (msg.messageType === "reminder" && isFollowupPastQuiet()) {
-    await storage.markWaMessageSkipped(msg.id, "quiet_hours_followup");
-    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=reminder scheduledAt=${msg.scheduledAt} actualTime=${now.toISOString()} reason=quiet_hours_followup (past 20:00)`);
-    scheduleNextSend(SKIP_INTERVAL_MS);
-    return;
-  }
+    if (msg.messageType === "primary" && isPrimaryPastQuiet()) {
+      await storage.markWaMessageSkipped(msg.id, "quiet_hours_primary");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary reason=quiet_hours_primary (past 21:45)`);
+      continue;
+    }
 
-  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
-  if (isOptedOut) {
-    await storage.markWaMessageSkipped(msg.id, "opt_out");
-    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=opt_out`);
-    scheduleNextSend(SKIP_INTERVAL_MS);
-    return;
-  }
+    if (msg.messageType === "reminder" && isFollowupPastQuiet()) {
+      await storage.markWaMessageSkipped(msg.id, "quiet_hours_followup");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=reminder reason=quiet_hours_followup (past 20:00)`);
+      continue;
+    }
 
-  const booking = await storage.getBooking(msg.bookingId);
-  if (!booking) {
-    await storage.markWaMessageSkipped(msg.id, "booking_not_found");
-    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_not_found`);
-    scheduleNextSend(SKIP_INTERVAL_MS);
-    return;
-  }
-  if (booking.hasReview) {
-    await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
-    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=review_already_submitted`);
-    scheduleNextSend(SKIP_INTERVAL_MS);
-    return;
-  }
-  if (booking.status === "cancelled") {
-    await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
-    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_cancelled`);
-    scheduleNextSend(SKIP_INTERVAL_MS);
-    return;
-  }
+    const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
+    if (isOptedOut) {
+      await storage.markWaMessageSkipped(msg.id, "opt_out");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=opt_out`);
+      continue;
+    }
 
-  if (msg.messageType === "primary" && !isVisitToday(booking.appointmentTime)) {
-    await storage.markWaMessageSkipped(msg.id, "expired_not_today");
-    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary reason=expired_not_today appt=${booking.appointmentTime}`);
-    scheduleNextSend(SKIP_INTERVAL_MS);
-    return;
-  }
+    const booking = await storage.getBooking(msg.bookingId);
+    if (!booking) {
+      await storage.markWaMessageSkipped(msg.id, "booking_not_found");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_not_found`);
+      continue;
+    }
+    if (booking.hasReview) {
+      await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=review_already_submitted`);
+      continue;
+    }
+    if (booking.status === "cancelled") {
+      await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_cancelled`);
+      continue;
+    }
 
-  if (msg.messageType === "reminder") {
-    const primaryCheck = await checkPrimaryBeforeFollowup(msg);
-    if (primaryCheck === "wait") {
-      console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=reminder reason=WAIT_PRIMARY (primary not yet sent)`);
-      const deferTo = new Date(Date.now() + 30 * 60 * 1000);
-      await db.update(waMessages)
-        .set({ scheduledAt: deferTo } as any)
-        .where(eq(waMessages.id, msg.id));
-      scheduleNextSend(SKIP_INTERVAL_MS);
+    if (msg.messageType === "primary" && !isVisitToday(booking.appointmentTime)) {
+      await storage.markWaMessageSkipped(msg.id, "expired_not_today");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary reason=expired_not_today appt=${booking.appointmentTime}`);
+      continue;
+    }
+
+    if (msg.messageType === "reminder") {
+      const primaryCheck = await checkPrimaryBeforeFollowup(msg);
+      if (primaryCheck === "wait") {
+        console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=reminder reason=WAIT_PRIMARY`);
+        const deferTo = new Date(Date.now() + 30 * 60 * 1000);
+        await db.update(waMessages)
+          .set({ scheduledAt: deferTo } as any)
+          .where(eq(waMessages.id, msg.id));
+        continue;
+      }
+      if (primaryCheck === "orphan") {
+        await storage.markWaMessageSkipped(msg.id, "orphan_primary_terminal");
+        console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=reminder reason=orphan_primary_terminal`);
+        continue;
+      }
+    }
+
+    const sentToday = await storage.countWaMessagesSentToday();
+    if (sentToday >= effectiveLimit) {
+      console.log(`[WA_PROCESSOR] Daily limit reached: ${sentToday}/${effectiveLimit}. msg=${msg.id} stays queued.`);
+      scheduleNextSend(POLL_INTERVAL_MS);
       return;
     }
-    if (primaryCheck === "orphan") {
-      await storage.markWaMessageSkipped(msg.id, "orphan_primary_terminal");
-      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=reminder reason=orphan_primary_terminal`);
-      scheduleNextSend(SKIP_INTERVAL_MS);
-      return;
-    }
-  }
 
-  const sentToday = await storage.countWaMessagesSentToday();
-  if (sentToday >= effectiveLimit) {
-    console.log(`[WA_PROCESSOR] Daily limit reached: ${sentToday}/${effectiveLimit}. msg=${msg.id} stays queued.`);
-    scheduleNextSend(POLL_INTERVAL_MS);
-    return;
-  }
+    const minInterval = getMinIntervalMs();
+    const lastSentMs = await getLastSentAt();
+    if (lastSentMs > 0) {
+      const elapsed = Date.now() - lastSentMs;
+      if (elapsed < minInterval) {
+        const waitMs = minInterval - elapsed;
+        const timeLeft = msgDeadline ? msgDeadline.getTime() - Date.now() : Infinity;
 
-  const lastSentMs = await getLastSentAt();
-  if (lastSentMs > 0) {
-    const elapsed = nowMs - lastSentMs;
-    if (elapsed < minInterval) {
-      const waitMs = minInterval - elapsed;
-      const sendAtMs = nowMs + waitMs;
+        if (waitMs > timeLeft) {
+          await storage.markWaMessageSkipped(msg.id, "rate_limit_would_break_ttl");
+          console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=rate_limit_would_break_ttl (wait=${Math.round(waitMs/1000)}s > timeLeft=${Math.round(timeLeft/1000)}s)`);
+          continue;
+        }
 
-      if (msgDeadline && sendAtMs > msgDeadline.getTime()) {
-        await storage.markWaMessageSkipped(msg.id, "expired_after_wait");
-        console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=expired_after_wait (rateLimit wait ${Math.round(waitMs/1000)}s would exceed deadline ${msgDeadline.toISOString()})`);
-        scheduleNextSend(SKIP_INTERVAL_MS);
+        console.log(`[WA_RATE_LIMIT] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} — waiting ${Math.round(waitMs / 1000)}s (lastSent ${Math.round(elapsed / 1000)}s ago, minInterval=${Math.round(minInterval / 60000)}min)`);
+        scheduleNextSend(waitMs);
         return;
       }
-
-      console.log(`[WA_RATE_LIMIT] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} — waiting ${Math.round(waitMs / 1000)}s for rate limit (lastSent ${Math.round(elapsed / 1000)}s ago, minInterval=${Math.round(minInterval / 60000)}min)`);
-      scheduleNextSend(waitMs);
-      return;
     }
-  }
 
-  await db.update(waMessages)
-    .set({ status: "sending" } as any)
-    .where(eq(waMessages.id, msg.id));
-
-  const result = await doSend({ ...msg, status: "sending" as any }, "queue");
-
-  if (result) {
-    workerConsecutiveFailures = 0;
-    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(minInterval / 60000)}min`);
-    scheduleNextSend(minInterval);
-  } else {
-    const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
-    const wasDeferred = refreshed && refreshed.status === "queued";
-    const wasSkipped = refreshed && (refreshed.status === "skipped" || refreshed.status === "failed");
-    if (refreshed?.status === "sending") {
-      await db.update(waMessages)
-        .set({ status: "queued" } as any)
-        .where(eq(waMessages.id, msg.id));
+    const postWaitMs = Date.now();
+    if (msgDeadline && postWaitMs > msgDeadline.getTime()) {
+      await storage.markWaMessageSkipped(msg.id, "expired_after_wait");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=expired_after_wait`);
+      continue;
     }
-    if (wasDeferred || wasSkipped) {
+
+    await db.update(waMessages)
+      .set({ status: "sending" } as any)
+      .where(eq(waMessages.id, msg.id));
+
+    const result = await doSend({ ...msg, status: "sending" as any }, "queue");
+
+    if (result) {
       workerConsecutiveFailures = 0;
-      scheduleNextSend(SKIP_INTERVAL_MS);
-    } else {
-      workerConsecutiveFailures++;
+      console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(minInterval / 60000)}min`);
       scheduleNextSend(minInterval);
+      return;
+    } else {
+      const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
+      if (refreshed?.status === "sending") {
+        await db.update(waMessages)
+          .set({ status: "queued" } as any)
+          .where(eq(waMessages.id, msg.id));
+      }
+      if (refreshed && (refreshed.status === "queued" || refreshed.status === "skipped" || refreshed.status === "failed")) {
+        workerConsecutiveFailures = 0;
+        continue;
+      } else {
+        workerConsecutiveFailures++;
+        scheduleNextSend(minInterval);
+        return;
+      }
     }
   }
+
+  scheduleNextSend(POLL_INTERVAL_MS);
 }
 
 let nextSendTimer: ReturnType<typeof setTimeout> | null = null;

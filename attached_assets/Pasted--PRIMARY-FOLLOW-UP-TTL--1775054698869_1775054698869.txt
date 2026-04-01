@@ -1,0 +1,127 @@
+ЗАДАНИЕ: исправить финальную логику воркера отправки PRIMARY/FOLLOW-UP (устранить потери из-за TTL и rate limit)
+
+ЦЕЛЬ:
+- не терять сообщения из-за ожидания rate limit
+- строго соблюдать TTL (PRIMARY ≤ 30 мин)
+- убрать “зависание” очереди
+- увеличить фактическое кол-во отправок
+
+---
+
+# 1. MIN INTERVAL (обязательно изменить)
+
+Заменить текущий расчет на фиксированный:
+
+minInterval = random(12–15 минут)
+
+НЕ считать от дневного лимита  
+НЕ увеличивать выше 15 минут  
+
+---
+
+# 2. ЛОГИКА ВОРКЕРА (строго в этом порядке)
+
+Для каждого сообщения:
+
+---
+
+## Шаг 1. Не раньше scheduledAt
+
+if now < scheduledAt:
+    sleep(scheduledAt - now)
+    return
+
+---
+
+## Шаг 2. Проверка TTL ДО любых ожиданий
+
+if messageType == PRIMARY and now > deadline:
+    SKIP(reason="expired_delay")
+    return
+
+if messageType == FOLLOW_UP and now > deadline:
+    SKIP(reason="expired_followup")
+    return
+
+---
+
+## Шаг 3. Rate limit с проверкой на “успеем ли”
+
+lastSentAt = взять из БД
+
+if lastSentAt exists AND now < lastSentAt + minInterval:
+
+    waitTime = (lastSentAt + minInterval) - now
+    timeLeft = deadline - now
+
+    if waitTime > timeLeft:
+        SKIP(reason="rate_limit_would_break_ttl")
+        return
+
+    sleep(waitTime)
+
+---
+
+## Шаг 4. ПОВТОРНАЯ проверка TTL (критично)
+
+if messageType == PRIMARY and now > deadline:
+    SKIP(reason="expired_after_wait")
+    return
+
+if messageType == FOLLOW_UP and now > deadline:
+    SKIP(reason="expired_after_wait")
+    return
+
+---
+
+## Шаг 5. Отправка
+
+sendMessage()
+
+lastSentAt = now (сохранить в БД)
+
+---
+
+# 3. ПОВЕДЕНИЕ ПОСЛЕ SKIP (очень важно)
+
+После любого SKIP:
+
+- НЕ делать sleep
+- НЕ ждать 5/30/60 секунд
+- СРАЗУ брать следующее сообщение из очереди
+
+---
+
+# 4. ИНВАРИАНТЫ (запрещено нарушать)
+
+- ❌ нельзя отправлять PRIMARY позже 30 минут после визита
+- ❌ нельзя ждать rate limit, если сообщение не успевает
+- ❌ нельзя замедлять очередь после SKIP
+- ❌ нельзя увеличивать minInterval выше 15 минут
+
+---
+
+# 5. ЛОГИ (обязательно)
+
+Добавить причины:
+
+- expired_delay
+- expired_after_wait
+- rate_limit_would_break_ttl
+
+---
+
+# 6. ОЖИДАЕМЫЙ РЕЗУЛЬТАТ
+
+После внедрения:
+
+- сообщения перестают “умирать в ожидании”
+- очередь перестаёт залипать
+- фактические отправки растут (≈20–30 в день при потоке)
+- исчезают случаи “было 60 визитов → отправили 12”
+
+---
+
+КРИТЕРИЙ УСПЕХА:
+
+если сообщение не может быть отправлено вовремя — оно скипается СРАЗУ, а не ждёт
