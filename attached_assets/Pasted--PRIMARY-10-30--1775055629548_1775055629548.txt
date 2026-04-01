@@ -1,0 +1,150 @@
+ФИНАЛЬНАЯ СПЕЦИФИКАЦИЯ ВОРКЕРА (НЕ МЕНЯТЬ ДАЛЕЕ)
+
+ЦЕЛЬ:
+- PRIMARY отправляются через 10–30 минут после завершения визита
+- TTL PRIMARY = 30 минут (не увеличивать)
+- FOLLOW-UP через 20–24 часа
+- соблюдается rate limit (антибан)
+- система не теряет сообщения из-за ожиданий
+- воркер непрерывный (без scheduleNextSend)
+
+---
+
+# КОНСТАНТЫ
+
+PRIMARY_DELAY_MIN = 10 минут  
+PRIMARY_DELAY_MAX = 30 минут  
+TTL_PRIMARY = 30 минут  
+
+FOLLOWUP_DELAY_MIN = 20 часов  
+FOLLOWUP_DELAY_MAX = 24 часа  
+
+MIN_INTERVAL = random(12–15 минут) + random(0–30 сек)
+
+IDLE_SLEEP = random(5–10 сек)  
+TICK_SLEEP = random(30–60 сек)
+
+QUIET:
+- FOLLOW_UP: запрещены после 20:00
+- PRIMARY: разрешены до 21:45
+
+---
+
+# СОЗДАНИЕ PRIMARY
+
+scheduledAt = visitEnd + random(10–20 минут)
+
+deadline = visitEnd + 30 минут
+
+(если scheduledAt > deadline → не создавать сообщение)
+
+---
+
+# СОЗДАНИЕ FOLLOW-UP
+
+scheduledAt = primarySentAt + random(20–24 часа)
+
+deadline = scheduledAt + 2 часа (буфер на отправку)
+
+---
+
+# ВЫБОР СООБЩЕНИЯ
+
+ORDER BY:
+1. type = FOLLOW_UP (приоритет)
+2. deadline ASC
+
+---
+
+# ВОРКЕР
+
+while (true):
+
+    message = getNextMessage()
+
+    if message == null:
+        sleep(IDLE_SLEEP)
+        continue
+
+    now = текущее время
+
+    # 1. ждём scheduledAt
+    if now < message.scheduledAt:
+        sleep(min(message.scheduledAt - now, TICK_SLEEP))
+        continue
+
+    # 2. TTL до всего
+    if message.type == PRIMARY and now > message.deadline:
+        SKIP("expired_primary")
+        continue
+
+    if message.type == FOLLOW_UP and now > message.deadline:
+        SKIP("expired_followup")
+        continue
+
+    # 3. quiet hours
+    if message.type == FOLLOW_UP and now >= 20:00:
+        SKIP("quiet_hours_followup")
+        continue
+
+    if message.type == PRIMARY and now > 21:45:
+        SKIP("quiet_hours_primary")
+        continue
+
+    # 4. RATE LIMIT (в цикле)
+    while true:
+
+        lastSentAt = из БД
+        now = текущее время
+
+        if lastSentAt == null OR now >= lastSentAt + MIN_INTERVAL:
+            break
+
+        waitTime = (lastSentAt + MIN_INTERVAL) - now
+        timeLeft = message.deadline - now
+
+        if waitTime > timeLeft:
+            SKIP("rate_limit_would_break_ttl")
+            continue while_main
+
+        sleep(min(waitTime, TICK_SLEEP))
+
+    # 5. финальный TTL
+    now = текущее время
+    if now > message.deadline:
+        SKIP("expired_after_wait")
+        continue
+
+    # 6. отправка
+    sendMessage(message)
+    save lastSentAt = now
+
+    # 7. короткий сон (НЕ minInterval)
+    sleep(TICK_SLEEP)
+
+---
+
+# ПОВЕДЕНИЕ
+
+- после SKIP → сразу continue (без sleep)
+- воркер никогда не выходит
+- rate limit не блокирует цикл, только конкретную отправку
+- новые сообщения подхватываются максимум за 30–60 сек
+
+---
+
+# ЗАПРЕЩЕНО
+
+- scheduleNextSend
+- exit/return после действий
+- sleep(minInterval)
+- ожидание rate limit без проверки TTL
+
+---
+
+# КРИТЕРИЙ УСПЕХА
+
+- PRIMARY уходят в интервале 10–30 мин
+- нет протухших из-за ожидания rate limit
+- очередь разгребается постоянно
+- система даёт максимум возможных отправок при текущем потоке
