@@ -1,0 +1,148 @@
+# ЗАДАНИЕ (ЕДИНЫЙ БЛОК)
+
+ЦЕЛЬ:
+- убрать залпы
+- добавить opt-out
+- согласовать с 30/90/180
+- ничего не сломать
+
+---
+
+1) ЖЁСТКИЙ RATE LIMIT (ОБЯЗАТЕЛЬНО)
+
+Перед ЛЮБОЙ отправкой:
+
+const startOfDay = todayAt(10:30)
+const endOfDay = todayAt(20:00)
+
+const windowMs = endOfDay - startOfDay
+const minInterval = windowMs / dailyLimit
+
+const lastSentAt = await getLastSentAtFromDb()
+
+if (lastSentAt && now < lastSentAt + minInterval) {
+  scheduleNextSend(lastSentAt + minInterval - now)
+  return
+}
+
+await sendMessage()
+await saveLastSentAt(now)
+
+ВАЖНО:
+- lastSentAt хранить в БД
+- это главный предохранитель от залпов
+
+---
+
+2) OPT-OUT (НЕГАТИВ)
+
+Если входящее сообщение содержит:
+["не присыл", "не надо", "отстан", "не отвлека", "хватит"]
+
+ТО:
+client.optOut = true
+client.optOutAt = now
+
+ответ клиенту:
+"Поняли вас, больше не будем писать 🙏"
+
+---
+
+3) ПРОВЕРКА OPT-OUT
+
+if (client.optOut) {
+  skip("opt_out")
+  return
+}
+
+---
+
+4) СТРАТЕГИЯ
+
+if (client.lastResponseType === "negative") {
+  STOP (уже opt-out)
+}
+
+else if (client.lastResponseType === "positive_or_neutral") {
+  strategy = "primary_only"
+}
+
+else if (client.lastResponseType === "none") {
+  strategy = "primary_only"
+}
+
+else {
+  strategy = "primary_plus_followup"
+}
+
+---
+
+5) FOLLOW-UP
+
+if (strategy === "primary_only") {
+  НЕ создавать follow-up
+}
+
+---
+
+6) 30/90/180 (НЕ МЕНЯТЬ)
+
+ЦИКЛ = 1 primary (с follow-up или без)
+
+НЕ считать follow-up отдельно
+
+---
+
+7) ПОРЯДОК ПРОВЕРОК
+
+1. optOut → STOP
+2. лимиты 30/90/180 → STOP если нельзя
+3. rate limit
+4. отправка
+
+---
+
+8) СТАРТ / РЕСТАРТ
+
+При старте:
+
+lastSentAt = взять из БД
+dailyPrimaryIndex = посчитать из отправленных сегодня
+nextSlotTime = lastSentAt + minInterval
+
+---
+
+9) УБРАТЬ МЕЛКИЕ DELAY
+
+УДАЛИТЬ:
+- 5 секунд
+- 30 секунд
+- 1 минута
+- любые быстрые ретраи
+
+ОСТАВИТЬ:
+delay = minInterval
+
+---
+
+10) SKIP / DEFER
+
+Если skip:
+scheduleNextCheck(60000)
+
+НЕ 5 секунд
+
+---
+
+11) ГАРАНТИЯ
+
+- нельзя отправить 2 сообщения быстрее minInterval (~23 мин)
+- даже после рестарта
+- очередь не может "прострелить"
+- негатив → больше не пишем
+- игнор → через 30 дней только primary
+
+---
+
+КРИТЕРИЙ:
+если сейчас отправили сообщение — следующее НЕ раньше чем через minInterval

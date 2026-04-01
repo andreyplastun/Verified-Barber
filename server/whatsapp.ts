@@ -259,88 +259,6 @@ const QUIET_END_HOUR = 10;
 const QUIET_END_MINUTE = 30;
 const SEND_WINDOW_MINUTES = 570;
 
-let dailyPrimaryIndex = 0;
-let dailyPrimaryDate = "";
-let nextSlotTime: number = 0;
-let slotIndexInitialized = false;
-
-function getAlmatyDateStr(): string {
-  const now = new Date();
-  const almatyMs = now.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000;
-  const almaty = new Date(almatyMs);
-  return almaty.toISOString().slice(0, 10);
-}
-
-async function initSlotIndexFromDb(): Promise<void> {
-  if (slotIndexInitialized) return;
-  slotIndexInitialized = true;
-  try {
-    const todayPrimaries = await db.execute(sql`
-      SELECT COUNT(*) as cnt, MAX(scheduled_at) as last_scheduled
-      FROM wa_messages
-      WHERE message_type = 'primary'
-      AND created_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
-    `);
-    const cnt = Number((todayPrimaries.rows[0] as any)?.cnt || 0);
-    const lastScheduled = (todayPrimaries.rows[0] as any)?.last_scheduled;
-    if (cnt > 0) {
-      dailyPrimaryIndex = cnt;
-      dailyPrimaryDate = getAlmatyDateStr();
-      if (lastScheduled) {
-        const lastMs = new Date(lastScheduled).getTime();
-        const intervalMs = (SEND_WINDOW_MINUTES / 25) * 60000;
-        nextSlotTime = lastMs + intervalMs;
-      }
-      console.log(`[WA_SLOT] Restored from DB: dailyPrimaryIndex=${dailyPrimaryIndex} nextSlotTime=${nextSlotTime ? new Date(nextSlotTime).toISOString() : 'none'}`);
-    }
-  } catch (err: any) {
-    console.error(`[WA_SLOT] Failed to init from DB: ${err.message}`);
-  }
-}
-
-function resetDailyIndexIfNeeded(): void {
-  const today = getAlmatyDateStr();
-  if (dailyPrimaryDate !== today) {
-    dailyPrimaryIndex = 0;
-    dailyPrimaryDate = today;
-    nextSlotTime = 0;
-    console.log(`[WA_SLOT] New day detected (${today}), reset dailyPrimaryIndex=0`);
-  }
-}
-
-async function getSlotScheduledAt(dailyLimit: number): Promise<Date> {
-  await initSlotIndexFromDb();
-  resetDailyIndexIfNeeded();
-
-  const nowMs = Date.now();
-  const almatyMs = nowMs + ALMATY_UTC_OFFSET * 3600000;
-  const almaty = new Date(almatyMs);
-  const todayBaseMs = Date.UTC(almaty.getUTCFullYear(), almaty.getUTCMonth(), almaty.getUTCDate(), QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
-  const endOfWindowMs = todayBaseMs + SEND_WINDOW_MINUTES * 60000;
-
-  const intervalMs = (SEND_WINDOW_MINUTES / dailyLimit) * 60000;
-  const idealSlotMs = todayBaseMs + dailyPrimaryIndex * intervalMs;
-  const earliestMs = Math.max(idealSlotMs, nowMs, nextSlotTime);
-
-  if (earliestMs >= endOfWindowMs) {
-    const fallback = Math.min(nowMs + 60000 + Math.floor(Math.random() * 240000), endOfWindowMs - 5 * 60000);
-    const scheduledMs = Math.max(fallback, nowMs + 30000);
-    dailyPrimaryIndex++;
-    nextSlotTime = scheduledMs + 5 * 60000;
-    console.log(`[WA_SLOT] Over window limit, scheduling ASAP: slot=${dailyPrimaryIndex - 1} scheduledAt=${new Date(scheduledMs).toISOString()}`);
-    return new Date(scheduledMs);
-  }
-
-  const jitterMs = (-5 + Math.random() * 10) * 60000;
-  let scheduledMs = earliestMs + jitterMs;
-  if (scheduledMs < nowMs + 30000) scheduledMs = nowMs + 30000 + Math.floor(Math.random() * 60000);
-
-  dailyPrimaryIndex++;
-  nextSlotTime = scheduledMs + intervalMs;
-
-  return new Date(scheduledMs);
-}
-
 function isInQuietHours(date: Date): boolean {
   const almatyHour = (date.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
   const almatyMinute = date.getUTCMinutes();
@@ -358,6 +276,24 @@ function adjustForQuietHours(scheduledAt: Date): Date {
   }
   result.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
   return result;
+}
+
+function getMinIntervalMs(dailyLimit: number): number {
+  if (dailyLimit <= 0) return 60 * 60000;
+  const intervalMs = (SEND_WINDOW_MINUTES * 60000) / dailyLimit;
+  return Math.max(intervalMs, 5 * 60000);
+}
+
+async function getLastSentAt(): Promise<number> {
+  const result = await db.execute(sql`
+    SELECT MAX(sent_at) as last_sent
+    FROM wa_messages
+    WHERE status = 'sent'
+    AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+  `);
+  const lastSent = (result.rows[0] as any)?.last_sent;
+  if (!lastSent) return 0;
+  return new Date(lastSent).getTime();
 }
 
 async function getAssistBotToken(): Promise<string | null> {
@@ -483,6 +419,39 @@ export async function testAssistBotConnection(): Promise<{ success: boolean; sta
   }
 }
 
+const OPT_OUT_KEYWORDS = ["не присыл", "не надо", "отстан", "не отвлека", "хватит"];
+
+export function isOptOutMessage(text: string): boolean {
+  const lower = text.toLowerCase();
+  return OPT_OUT_KEYWORDS.some(kw => lower.includes(kw));
+}
+
+export async function handleIncomingMessage(phone: string, text: string): Promise<{ optedOut: boolean }> {
+  if (isOptOutMessage(text)) {
+    const cleanPhone = phone.replace(/\D/g, "");
+    await storage.addWaOptOut(cleanPhone);
+    console.log(`[WA_OPT_OUT] Phone ${cleanPhone} opted out via message: "${text.substring(0, 50)}"`);
+    return { optedOut: true };
+  }
+  return { optedOut: false };
+}
+
+async function getClientStrategy(phone: string, specialistId: number): Promise<"primary_only" | "primary_plus_followup"> {
+  const cleanPhone = phone.replace(/\D/g, "");
+  const result = await db.execute(sql`
+    SELECT COUNT(*) as cnt FROM wa_messages
+    WHERE customer_phone = ${cleanPhone}
+    AND specialist_id = ${specialistId}
+    AND message_type = 'primary'
+    AND status = 'sent'
+  `);
+  const prevSentCount = Number((result.rows[0] as any)?.cnt || 0);
+  if (prevSentCount > 0) {
+    return "primary_only";
+  }
+  return "primary_plus_followup";
+}
+
 export async function enqueueReviewMessage(params: {
   bookingId: number;
   specialistId: number;
@@ -500,18 +469,18 @@ export async function enqueueReviewMessage(params: {
   const dedupeKey = `${params.messageType}_${params.bookingId}`;
   const cleanPhone = params.customerPhone.replace(/\D/g, "");
 
+  const isOptedOut = await storage.isWaOptedOut(cleanPhone);
+  if (isOptedOut) {
+    console.log(`[WA_QUEUE] Skipping ${params.messageType} for booking=${params.bookingId}: phone opted out`);
+    return;
+  }
+
   if (params.messageType === "primary") {
     const booking = await storage.getBooking(params.bookingId);
     if (booking && !isVisitToday(booking.appointmentTime)) {
       console.log(`[WA_QUEUE] Skipping primary for booking=${params.bookingId}: visit not today (appt=${booking.appointmentTime})`);
       return;
     }
-  }
-
-  const isOptedOut = await storage.isWaOptedOut(cleanPhone);
-  if (isOptedOut) {
-    console.log(`[WA_QUEUE] Skipping ${params.messageType} for booking=${params.bookingId}: phone opted out`);
-    return;
   }
 
   if (params.messageType === "primary" && !params.isSpecialistAction) {
@@ -563,20 +532,9 @@ export async function enqueueReviewMessage(params: {
   const now = new Date();
   let scheduledAt: Date;
 
-  if (params.immediate) {
+  if (params.messageType === "primary") {
     scheduledAt = now;
-  } else if (params.messageType === "primary") {
-    const booking = await storage.getBooking(params.bookingId);
-    if (booking && isEveningVisit(booking.appointmentTime)) {
-      scheduledAt = new Date(now.getTime() + 10 * 60 * 1000);
-      console.log(`[WA_QUEUE] Evening visit booking=${params.bookingId}: scheduling in 10 min (ignoring quiet hours)`);
-    } else {
-      const settings = await getWaSettings();
-      const effectiveLimit = getWarmupDailyLimit(settings.warmupStartDate, settings.dailyLimit);
-      scheduledAt = await getSlotScheduledAt(effectiveLimit);
-      const almatyTime = new Date(scheduledAt.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000);
-      console.log(`[WA_SLOT] booking=${params.bookingId} slot=${dailyPrimaryIndex - 1}/${effectiveLimit} scheduledAt=${scheduledAt.toISOString()} (Almaty ~${almatyTime.getUTCHours()}:${String(almatyTime.getUTCMinutes()).padStart(2, '0')})`);
-    }
+    console.log(`[WA_QUEUE] Primary scheduled at NOW for booking=${params.bookingId} — rate limit worker controls sending`);
   } else {
     const delayMs = params.delayMs || randomMinutes(21 * 60, 24 * 60);
     scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
@@ -605,16 +563,18 @@ export async function enqueueReviewMessage(params: {
   }
 
   console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
-
-  if (params.immediate && params.messageType === "primary") {
-    console.log(`[WA_IMMEDIATE] Immediate flag ignored — rate limit enforced. booking=${params.bookingId} will be sent by worker`);
-  }
 }
 
 async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void> {
   const booking = await storage.getBooking(msg.bookingId);
   if (booking?.hasReview) {
     console.log(`[WA_FOLLOWUP] Skip followup for booking=${msg.bookingId}: review already submitted`);
+    return;
+  }
+
+  const strategy = await getClientStrategy(msg.customerPhone, msg.specialistId);
+  if (strategy === "primary_only") {
+    console.log(`[WA_STRATEGY] No followup for booking=${msg.bookingId} phone=${msg.customerPhone}: primary_only (previous attempts exist)`);
     return;
   }
 
@@ -1064,35 +1024,6 @@ async function deduplicateQueueByPhone(): Promise<number> {
   return superseded;
 }
 
-function getMinIntervalMs(dailyLimit: number, sentToday: number = 0): number {
-  const remaining = dailyLimit - sentToday;
-  if (remaining <= 0) return 60 * 60000;
-
-  const almatyNowMs = Date.now() + ALMATY_UTC_OFFSET * 3600000;
-  const almatyNow = new Date(almatyNowMs);
-  const endOfWindowMs = Date.UTC(
-    almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(),
-    QUIET_START_HOUR - ALMATY_UTC_OFFSET, 0, 0, 0
-  );
-  const remainingMs = endOfWindowMs - Date.now();
-  if (remainingMs <= 0) return 5 * 60000;
-
-  const interval = remainingMs / remaining;
-  return Math.max(interval, 5 * 60000);
-}
-
-async function getLastSentAt(): Promise<number> {
-  const result = await db.execute(sql`
-    SELECT MAX(sent_at) as last_sent
-    FROM wa_messages
-    WHERE status = 'sent'
-    AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
-  `);
-  const lastSent = (result.rows[0] as any)?.last_sent;
-  if (!lastSent) return 0;
-  return new Date(lastSent).getTime();
-}
-
 let isWorkerRunning = false;
 let workerConsecutiveFailures = 0;
 let heartbeatCounter = 0;
@@ -1117,6 +1048,7 @@ async function _processOneMessageCycle(): Promise<void> {
 
   const now = new Date();
   const nowMs = Date.now();
+  const minInterval = getMinIntervalMs(effectiveLimit);
 
   const stuckResult = await db.update(waMessages)
     .set({ status: "queued" } as any)
@@ -1139,11 +1071,10 @@ async function _processOneMessageCycle(): Promise<void> {
   const sentToday = await storage.countWaMessagesSentToday();
   if (sentToday >= effectiveLimit) {
     console.log(`[WA_PROCESSOR] Daily limit reached: ${sentToday}/${effectiveLimit}`);
-    scheduleNextSend(getMinIntervalMs(effectiveLimit, sentToday));
+    scheduleNextSend(minInterval);
     return;
   }
 
-  const minInterval = getMinIntervalMs(effectiveLimit, sentToday);
   const lastSentMs = await getLastSentAt();
   if (lastSentMs > 0) {
     const elapsed = nowMs - lastSentMs;
@@ -1215,7 +1146,7 @@ async function _processOneMessageCycle(): Promise<void> {
     }
     if (wasDeferred || wasSkipped) {
       workerConsecutiveFailures = 0;
-      scheduleNextSend(10000);
+      scheduleNextSend(60000);
     } else {
       workerConsecutiveFailures++;
       scheduleNextSend(minInterval);

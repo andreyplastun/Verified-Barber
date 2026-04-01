@@ -12,7 +12,7 @@ import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isVali
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { appConfig } from "@shared/schema";
-import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen } from "./whatsapp";
+import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 
@@ -3669,6 +3669,26 @@ ${magicLink}`;
   app.post("/api/webhooks/assistbot-delivery", async (req, res) => {
     console.log(`[ASSISTBOT_WEBHOOK] Delivery callback received: ${JSON.stringify(req.body).substring(0, 500)}`);
     res.json({ ok: true });
+  });
+
+  app.post("/api/webhooks/assistbot-incoming", async (req, res) => {
+    try {
+      const { phone, text } = req.body || {};
+      if (!phone || !text) {
+        console.log(`[ASSISTBOT_INCOMING] Missing phone or text: ${JSON.stringify(req.body).substring(0, 300)}`);
+        res.json({ ok: true });
+        return;
+      }
+      console.log(`[ASSISTBOT_INCOMING] phone=${phone} text="${text.substring(0, 100)}"`);
+      const result = await handleIncomingMessage(phone, text);
+      if (result.optedOut) {
+        console.log(`[ASSISTBOT_INCOMING] Phone ${phone} opted out`);
+      }
+      res.json({ ok: true, optedOut: result.optedOut });
+    } catch (err: any) {
+      console.error(`[ASSISTBOT_INCOMING] Error: ${err.message}`);
+      res.json({ ok: true });
+    }
   });
 
   // WHATSAPP ADMIN ROUTES
