@@ -23,7 +23,7 @@ function getCityForBranch(companyId: number): string {
   return BRANCH_CITY_MAP[companyId] || "Алматы";
 }
 
-const STAFF_ID_ALIASES: Record<number, { primaryStaffId: number; primaryCompanyId: number }> = {
+export const STAFF_ID_ALIASES: Record<number, { primaryStaffId: number; primaryCompanyId: number }> = {
   1394519: { primaryStaffId: 57457, primaryCompanyId: 37245 },
   2194088: { primaryStaffId: 57457, primaryCompanyId: 37245 },
   2668559: { primaryStaffId: 2668558, primaryCompanyId: 37245 },
@@ -1116,6 +1116,42 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
 
         if (appt.staff_id === 2879303 || appt.company_id === 28196) {
           console.log(`[ALTEGIO-SYNC-EXISTING] appt=${appt.id} staff_id=${appt.staff_id} company=${appt.company_id} client=${clientName} booking=${existing.id} status=${existing.status} attendance=${appt.attendance}`);
+        }
+
+        if (appt.staff_id && appt.staff_id !== existing.altegioStaffId) {
+          let effectiveStaffId = appt.staff_id;
+          let effectiveCompanyId = appt.company_id;
+          const alias = STAFF_ID_ALIASES[appt.staff_id];
+          if (alias) {
+            effectiveStaffId = alias.primaryStaffId;
+            effectiveCompanyId = alias.primaryCompanyId;
+          }
+          const matchedSpec = effectiveCompanyId
+            ? connectedSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
+            : null;
+          const newSpec = matchedSpec || connectedSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId);
+          if (newSpec && newSpec.id !== existing.specialistId) {
+            console.log(`[ALTEGIO-SYNC-REASSIGN] Booking ${existing.id} (${existing.customerName}): specialist ${existing.specialistId} → ${newSpec.id} (${newSpec.name}), staff_id ${existing.altegioStaffId} → ${appt.staff_id}`);
+            await storage.updateBooking(existing.id, {
+              specialistId: newSpec.id,
+              altegioStaffId: appt.staff_id,
+              updatedFrom: "altegio",
+            } as any);
+            didUpdate = true;
+          } else if (!newSpec) {
+            console.log(`[ALTEGIO-SYNC-REASSIGN] Booking ${existing.id}: staff_id changed to ${appt.staff_id} but no specialist match found, keeping specialist=${existing.specialistId}`);
+          }
+        }
+
+        const existingApptTime = existing.appointmentTime ? new Date(existing.appointmentTime).getTime() : 0;
+        const newApptTime = apptTime.getTime();
+        if (newApptTime && Math.abs(existingApptTime - newApptTime) > 60000) {
+          await storage.updateBooking(existing.id, {
+            appointmentTime: apptTime,
+            updatedFrom: "altegio",
+          } as any);
+          console.log(`[ALTEGIO-SYNC-TIME] Booking ${existing.id} (${existing.customerName}): time updated ${new Date(existingApptTime).toISOString()} → ${apptTime.toISOString()}`);
+          didUpdate = true;
         }
 
         const needsNameUpdate = existing.customerName === "Клиент Altegio" && clientName !== "Клиент Altegio";

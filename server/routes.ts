@@ -3322,7 +3322,33 @@ ${magicLink}`;
           if (altegioClientIdParsed && !existing.altegioClientId) {
             updateData.altegioClientId = altegioClientIdParsed;
           }
-          if (staffId) updateData.altegioStaffId = staffId;
+          if (staffId && staffId !== existing.altegioStaffId) {
+            let effectiveStaffId = staffId;
+            let effectiveCompanyId = companyId;
+            const { STAFF_ID_ALIASES } = await import('./altegio');
+            const alias = STAFF_ID_ALIASES[staffId];
+            if (alias) {
+              effectiveStaffId = alias.primaryStaffId;
+              effectiveCompanyId = alias.primaryCompanyId;
+            }
+            const allSpecs = await storage.getSpecialists();
+            const connSpecs = allSpecs.filter((s: any) => s.altegioStaffId && s.altegioCompanyId);
+            const matchedSpec = effectiveCompanyId
+              ? connSpecs.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
+              : null;
+            const newSpec = matchedSpec || connSpecs.find((s: any) => s.altegioStaffId === effectiveStaffId);
+            if (newSpec && newSpec.id !== existing.specialistId) {
+              console.log(`[ALTEGIO-WEBHOOK-REASSIGN] Booking ${existing.id} (${existing.customerName}): specialist ${existing.specialistId} → ${newSpec.id} (${newSpec.name}), staff_id ${existing.altegioStaffId} → ${staffId}`);
+              updateData.specialistId = newSpec.id;
+              updateData.altegioStaffId = staffId;
+            } else if (newSpec) {
+              updateData.altegioStaffId = staffId;
+            } else {
+              console.log(`[ALTEGIO-WEBHOOK-REASSIGN] Booking ${existing.id}: staff_id changed to ${staffId} but no specialist match found, NOT updating altegioStaffId to allow sync retry`);
+            }
+          } else if (staffId) {
+            updateData.altegioStaffId = staffId;
+          }
           updateData.updatedFrom = "altegio";
 
           if (isVisitCompleted) {
