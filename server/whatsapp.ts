@@ -1040,9 +1040,15 @@ export async function startWaWorkerLoop(): Promise<void> {
         continue;
       }
 
+      const currentNow = new Date();
       const [msg] = await db.select()
         .from(waMessages)
-        .where(eq(waMessages.status, "queued"))
+        .where(
+          and(
+            eq(waMessages.status, "queued"),
+            sql`${waMessages.scheduledAt} <= ${currentNow}`
+          )
+        )
         .orderBy(
           sql`CASE WHEN ${waMessages.messageType} = 'reminder' THEN 0 ELSE 1 END`,
           sql`COALESCE(${waMessages.deadline}, '2099-01-01'::timestamp) ASC`,
@@ -1062,20 +1068,25 @@ export async function startWaWorkerLoop(): Promise<void> {
             SELECT MIN(scheduled_at) as next_at FROM wa_messages WHERE status = 'queued' AND scheduled_at > NOW()
           `);
           const nextAt = (nextScheduled.rows[0] as any)?.next_at;
-          console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sentToday=${sentToday} limit=${effectiveLimit} nextScheduledAt=${nextAt || 'none'} time=${new Date().toISOString()}`);
+          console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sentToday=${sentToday} limit=${effectiveLimit} nextScheduledAt=${nextAt || 'none'} time=${currentNow.toISOString()}`);
+        }
+
+        const nextReady = await db.execute(sql`
+          SELECT MIN(scheduled_at) as next_at FROM wa_messages WHERE status = 'queued' AND scheduled_at > NOW()
+        `);
+        const nextReadyAt = (nextReady.rows[0] as any)?.next_at;
+        if (nextReadyAt) {
+          const waitUntil = new Date(nextReadyAt).getTime() - Date.now();
+          if (waitUntil > 0 && waitUntil < 60000) {
+            await sleep(waitUntil + 500);
+            continue;
+          }
         }
         await sleep(idleSleep());
         continue;
       }
 
       heartbeatCounter = 0;
-
-      const scheduledAtMs = new Date(msg.scheduledAt).getTime();
-      if (Date.now() < scheduledAtMs) {
-        const diff = scheduledAtMs - Date.now();
-        await sleep(Math.min(diff, tickSleep()));
-        continue;
-      }
 
       const msgDeadline = (msg as any).deadline ? new Date((msg as any).deadline) : null;
 
@@ -1192,8 +1203,8 @@ export async function startWaWorkerLoop(): Promise<void> {
 
       if (result) {
         workerConsecutiveFailures = 0;
-        console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit}`);
-        await sleep(tickSleep());
+        console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(minInterval / 60000)}min`);
+        await sleep(minInterval);
       } else {
         const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
         if (refreshed?.status === "sending") {
