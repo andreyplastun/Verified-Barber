@@ -533,8 +533,9 @@ export async function enqueueReviewMessage(params: {
   let scheduledAt: Date;
 
   if (params.messageType === "primary") {
-    scheduledAt = now;
-    console.log(`[WA_QUEUE] Primary scheduled at NOW for booking=${params.bookingId} — rate limit worker controls sending`);
+    const delayMinutes = 10 + Math.random() * 20;
+    scheduledAt = new Date(now.getTime() + delayMinutes * 60000);
+    console.log(`[WA_QUEUE] Primary scheduled ${Math.round(delayMinutes)}min after visit for booking=${params.bookingId} at ${scheduledAt.toISOString()}`);
   } else {
     const delayMs = params.delayMs || randomMinutes(21 * 60, 24 * 60);
     scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
