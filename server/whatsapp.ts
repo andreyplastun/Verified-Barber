@@ -1164,6 +1164,25 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       const minInterval = getMinIntervalMs();
+
+      if (msgDeadline) {
+        const timeLeft = msgDeadline.getTime() - Date.now();
+        if (timeLeft <= 0) {
+          const reason = msg.messageType === "primary" ? "expired_primary" : "expired_followup";
+          await storage.markWaMessageSkipped(msg.id, reason);
+          console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=${reason} (pre-rate-limit check, timeLeft=${Math.round(timeLeft/1000)}s)`);
+          continue;
+        }
+
+        const lastSentMs = await getLastSentAt();
+        const earliestSendIn = lastSentMs > 0 ? Math.max(0, (lastSentMs + minInterval) - Date.now()) : 0;
+        if (timeLeft < earliestSendIn) {
+          await storage.markWaMessageSkipped(msg.id, "cannot_meet_sla");
+          console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=cannot_meet_sla (timeLeft=${Math.round(timeLeft/1000)}s < earliestSendIn=${Math.round(earliestSendIn/1000)}s)`);
+          continue;
+        }
+      }
+
       let rateLimitSkipped = false;
       while (true) {
         const lastSentMs = await getLastSentAt();
