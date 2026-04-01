@@ -67,23 +67,51 @@ function validateMessageText(text: string, context: string): void {
   }
 }
 
-const ALMATY_UTC_OFFSET_EARLY = 5;
+const ALMATY_UTC_OFFSET = 5;
+
+function getAlmatyHour(): number {
+  const now = new Date();
+  return (now.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
+}
+
+function getAlmatyMinute(): number {
+  return new Date().getUTCMinutes();
+}
 
 function isVisitToday(appointmentTime: Date | string | null): boolean {
   if (!appointmentTime) return false;
   const appt = new Date(appointmentTime);
-  const nowAlmaty = new Date(Date.now() + ALMATY_UTC_OFFSET_EARLY * 60 * 60 * 1000);
-  const apptAlmaty = new Date(appt.getTime() + ALMATY_UTC_OFFSET_EARLY * 60 * 60 * 1000);
+  const nowAlmaty = new Date(Date.now() + ALMATY_UTC_OFFSET * 60 * 60 * 1000);
+  const apptAlmaty = new Date(appt.getTime() + ALMATY_UTC_OFFSET * 60 * 60 * 1000);
   return nowAlmaty.getUTCFullYear() === apptAlmaty.getUTCFullYear() &&
          nowAlmaty.getUTCMonth() === apptAlmaty.getUTCMonth() &&
          nowAlmaty.getUTCDate() === apptAlmaty.getUTCDate();
 }
 
-function isEveningVisit(appointmentTime: Date | string | null): boolean {
-  if (!appointmentTime) return false;
-  const appt = new Date(appointmentTime);
-  const almatyHour = (appt.getUTCHours() + ALMATY_UTC_OFFSET_EARLY) % 24;
-  return almatyHour >= 20 && almatyHour < 21;
+const WINDOW_START_HOUR = 10;
+const WINDOW_START_MINUTE = 0;
+const PRIMARY_END_HOUR = 21;
+const PRIMARY_END_MINUTE = 45;
+const FOLLOWUP_END_HOUR = 20;
+const FOLLOWUP_END_MINUTE = 0;
+const SEND_WINDOW_MINUTES = (PRIMARY_END_HOUR * 60 + PRIMARY_END_MINUTE) - (WINDOW_START_HOUR * 60 + WINDOW_START_MINUTE);
+
+function isBeforeWindowStart(): boolean {
+  const h = getAlmatyHour();
+  const m = getAlmatyMinute();
+  return h < WINDOW_START_HOUR || (h === WINDOW_START_HOUR && m < WINDOW_START_MINUTE);
+}
+
+function isPrimaryPastQuiet(): boolean {
+  const h = getAlmatyHour();
+  const m = getAlmatyMinute();
+  return h > PRIMARY_END_HOUR || (h === PRIMARY_END_HOUR && m >= PRIMARY_END_MINUTE);
+}
+
+function isFollowupPastQuiet(): boolean {
+  const h = getAlmatyHour();
+  const m = getAlmatyMinute();
+  return h >= FOLLOWUP_END_HOUR && m >= FOLLOWUP_END_MINUTE;
 }
 
 const PRIMARY_TEMPLATES = [
@@ -251,31 +279,6 @@ function getWarmupDailyLimit(warmupStartDate: string, configLimit: number): numb
 
 function randomMinutes(minMin: number, maxMin: number): number {
   return (minMin + Math.random() * (maxMin - minMin)) * 60 * 1000;
-}
-
-const ALMATY_UTC_OFFSET = 5;
-const QUIET_START_HOUR = 20;
-const QUIET_END_HOUR = 10;
-const QUIET_END_MINUTE = 30;
-const SEND_WINDOW_MINUTES = 570;
-
-function isInQuietHours(date: Date): boolean {
-  const almatyHour = (date.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
-  const almatyMinute = date.getUTCMinutes();
-  return almatyHour >= QUIET_START_HOUR ||
-    almatyHour < QUIET_END_HOUR ||
-    (almatyHour === QUIET_END_HOUR && almatyMinute < QUIET_END_MINUTE);
-}
-
-function adjustForQuietHours(scheduledAt: Date): Date {
-  if (!isInQuietHours(scheduledAt)) return scheduledAt;
-  const result = new Date(scheduledAt);
-  const almatyHour = (result.getUTCHours() + ALMATY_UTC_OFFSET) % 24;
-  if (almatyHour >= QUIET_START_HOUR) {
-    result.setUTCDate(result.getUTCDate() + 1);
-  }
-  result.setUTCHours(QUIET_END_HOUR - ALMATY_UTC_OFFSET, QUIET_END_MINUTE, 0, 0);
-  return result;
 }
 
 function getMinIntervalMs(dailyLimit: number): number {
@@ -531,14 +534,18 @@ export async function enqueueReviewMessage(params: {
 
   const now = new Date();
   let scheduledAt: Date;
+  let deadline: Date | null = null;
 
   if (params.messageType === "primary") {
-    const delayMinutes = 10 + Math.random() * 20;
+    const delayMinutes = 10 + Math.random() * 10;
     scheduledAt = new Date(now.getTime() + delayMinutes * 60000);
-    console.log(`[WA_QUEUE] Primary scheduled ${Math.round(delayMinutes)}min after visit for booking=${params.bookingId} at ${scheduledAt.toISOString()}`);
+    deadline = new Date(now.getTime() + 30 * 60000);
+    console.log(`[WA_QUEUE] Primary: booking=${params.bookingId} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline.toISOString()} (delay=${Math.round(delayMinutes)}min)`);
   } else {
-    const delayMs = params.delayMs || randomMinutes(21 * 60, 24 * 60);
-    scheduledAt = adjustForQuietHours(new Date(now.getTime() + delayMs));
+    const delayMs = params.delayMs || randomMinutes(20 * 60, 24 * 60);
+    scheduledAt = new Date(now.getTime() + delayMs);
+    deadline = new Date(scheduledAt.getTime() + 2 * 60 * 60000);
+    console.log(`[WA_QUEUE] Followup: booking=${params.bookingId} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline.toISOString()}`);
   }
 
   try {
@@ -553,8 +560,9 @@ export async function enqueueReviewMessage(params: {
       templateIndex,
       messageText,
       scheduledAt,
+      deadline,
       dedupeKey,
-    }).onConflictDoNothing();
+    } as any).onConflictDoNothing();
   } catch (err: any) {
     if (err.code === '23505' && err.constraint?.includes('dedupe')) {
       console.log(`[WA_QUEUE] Dedupe: ${params.messageType} for booking=${params.bookingId} already exists`);
@@ -563,7 +571,7 @@ export async function enqueueReviewMessage(params: {
     throw err;
   }
 
-  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} scheduledAt=${scheduledAt.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
+  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline?.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
 }
 
 async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void> {
@@ -603,15 +611,16 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
     delayMs = randomMinutes(2 * 60, 4 * 60);
     priority = 10;
     templateType = "reminder_opened";
-    console.log(`[WA_FOLLOWUP] booking=${msg.bookingId} segment=OPENED_NOT_CONVERTED openedAt=${magicLink!.openedAt!.toISOString()} priority=HIGH delay=2-4h`);
+    console.log(`[WA_FOLLOWUP] booking=${msg.bookingId} segment=OPENED_NOT_CONVERTED priority=HIGH delay=2-4h`);
   } else {
-    delayMs = randomMinutes(18 * 60, 24 * 60);
+    delayMs = randomMinutes(20 * 60, 24 * 60);
     priority = 0;
     templateType = "reminder";
-    console.log(`[WA_FOLLOWUP] booking=${msg.bookingId} segment=NOT_OPENED priority=NORMAL delay=18-24h`);
+    console.log(`[WA_FOLLOWUP] booking=${msg.bookingId} segment=NOT_OPENED priority=NORMAL delay=20-24h`);
   }
 
-  const scheduledAt = adjustForQuietHours(new Date(Date.now() + delayMs));
+  const scheduledAt = new Date(Date.now() + delayMs);
+  const deadlineAt = new Date(scheduledAt.getTime() + 2 * 60 * 60000);
   const dedupeKey = `reminder_${msg.bookingId}`;
 
   const reviewLink = msg.reviewLink;
@@ -644,10 +653,11 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
       templateIndex,
       messageText,
       scheduledAt,
+      deadline: deadlineAt,
       dedupeKey,
       priority,
     } as any).onConflictDoNothing();
-    console.log(`[WA_FOLLOWUP] Created followup for booking=${msg.bookingId} phone=${msg.customerPhone} scheduledAt=${scheduledAt.toISOString()} priority=${priority} segment=${isOpened ? 'opened' : 'not_opened'} dedupe=${dedupeKey}`);
+    console.log(`[WA_FOLLOWUP] Created followup for booking=${msg.bookingId} phone=${msg.customerPhone} scheduledAt=${scheduledAt.toISOString()} deadline=${deadlineAt.toISOString()} priority=${priority} dedupe=${dedupeKey}`);
   } catch (err: any) {
     if (err.code === '23505') {
       console.log(`[WA_FOLLOWUP] Dedupe: followup for booking=${msg.bookingId} already exists`);
@@ -668,7 +678,8 @@ export async function upgradeFollowupOnLinkOpen(bookingId: number, openedAt: Dat
   if (!existingFollowup) return;
 
   const delayMs = randomMinutes(2 * 60, 4 * 60);
-  const newScheduledAt = adjustForQuietHours(new Date(openedAt.getTime() + delayMs));
+  const newScheduledAt = new Date(openedAt.getTime() + delayMs);
+  const newDeadline = new Date(newScheduledAt.getTime() + 2 * 60 * 60000);
 
   const lastIndex = await storage.getLastSentTemplateIndex("reminder");
   const templateIndex = pickTemplateIndex("reminder_opened", lastIndex);
@@ -682,13 +693,14 @@ export async function upgradeFollowupOnLinkOpen(bookingId: number, openedAt: Dat
   await db.update(waMessages)
     .set({
       scheduledAt: newScheduledAt,
+      deadline: newDeadline,
       priority: 10,
       templateIndex,
       messageText,
     } as any)
     .where(eq(waMessages.id, existingFollowup.id));
 
-  console.log(`[FOLLOWUP_UPGRADED] booking=${bookingId} msg=${existingFollowup.id} upgraded to OPENED segment, newScheduledAt=${newScheduledAt.toISOString()} priority=10`);
+  console.log(`[FOLLOWUP_UPGRADED] booking=${bookingId} msg=${existingFollowup.id} upgraded to OPENED segment, newScheduledAt=${newScheduledAt.toISOString()} deadline=${newDeadline.toISOString()} priority=10`);
 }
 
 async function checkPrimaryBeforeFollowup(msg: typeof waMessages.$inferSelect): Promise<"ok" | "wait" | "orphan"> {
@@ -779,10 +791,9 @@ async function refreshLinkIfExpired(msg: typeof waMessages.$inferSelect): Promis
 async function doSend(msg: typeof waMessages.$inferSelect, source: string = "queue"): Promise<boolean> {
   const lockAcquired = await acquirePhoneLock(msg.customerPhone);
   if (!lockAcquired) {
-    console.log(`[WA_LOCK] Could not acquire lock for phone=${msg.customerPhone} msg=${msg.id} booking=${msg.bookingId} — rescheduling`);
-    const deferTo = new Date(Date.now() + 2 * 60 * 1000);
+    console.log(`[WA_LOCK] Could not acquire lock for phone=${msg.customerPhone} msg=${msg.id} booking=${msg.bookingId} — will retry next cycle`);
     await db.update(waMessages)
-      .set({ scheduledAt: deferTo, status: "queued" } as any)
+      .set({ status: "queued" } as any)
       .where(eq(waMessages.id, msg.id));
     return false;
   }
@@ -810,7 +821,13 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
         }
       }
       if (!bypassCooldown) {
+        const msgDeadline = (msg as any).deadline ? new Date((msg as any).deadline) : null;
         const deferTo = new Date(cooldown.lastSentAt.getTime() + 20 * 60 * 60 * 1000);
+        if (msgDeadline && deferTo > msgDeadline) {
+          await storage.markWaMessageSkipped(msg.id, "cooldown_past_deadline");
+          console.log(`[WA_COOLDOWN] SKIP msg=${msg.id} booking=${msg.bookingId}: cooldown ends ${deferTo.toISOString()} past deadline ${msgDeadline.toISOString()}`);
+          return false;
+        }
         await db.update(waMessages)
           .set({ scheduledAt: deferTo, status: "queued" } as any)
           .where(eq(waMessages.id, msg.id));
@@ -822,7 +839,7 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
     msg = await refreshLinkIfExpired(msg);
     const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId, `${source}_${msg.messageType}`);
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
-    console.log(`[WA_PROCESSOR] Sent msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} template=${msg.templateIndex} assistbot_id=${assistbotMessageId}`);
+    console.log(`[WA_SENT] msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} scheduledAt=${msg.scheduledAt} actualSendTime=${new Date().toISOString()} reason=SENT`);
 
     if (msg.messageType === "primary") {
       await createFollowup(msg);
@@ -843,78 +860,6 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
   } finally {
     await releasePhoneLock(msg.customerPhone);
   }
-}
-
-async function processOneMessage(msg: typeof waMessages.$inferSelect): Promise<boolean> {
-  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
-  if (isOptedOut) {
-    await storage.markWaMessageSkipped(msg.id, "opt_out");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=opt_out`);
-    return false;
-  }
-
-  const booking = await storage.getBooking(msg.bookingId);
-  if (!booking) {
-    await storage.markWaMessageSkipped(msg.id, "booking_not_found");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_not_found`);
-    return false;
-  }
-  if (booking.hasReview) {
-    await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=review_already_submitted`);
-    return false;
-  }
-  if (booking.status === "cancelled") {
-    await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_cancelled`);
-    return false;
-  }
-  if (msg.messageType === "primary" && !isVisitToday(booking.appointmentTime)) {
-    await storage.markWaMessageSkipped(msg.id, "expired_not_today");
-    console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=primary reason=expired_not_today appt=${booking.appointmentTime}`);
-    return false;
-  }
-
-  if (isInQuietHours(new Date()) && !isEveningVisit(booking.appointmentTime)) {
-    const nextAllowed = adjustForQuietHours(new Date());
-    if (msg.messageType === "reminder" && (msg as any).priority >= 10) {
-      const magicLink = await storage.getMagicLinkByBookingId(msg.bookingId);
-      if (magicLink?.openedAt) {
-        const randomOffsetMs = randomMinutes(0, 2 * 60);
-        const deferTo = new Date(nextAllowed.getTime() + randomOffsetMs);
-        await db.update(waMessages)
-          .set({ scheduledAt: deferTo, status: "queued" } as any)
-          .where(eq(waMessages.id, msg.id));
-        console.log(`[QUIET_RESCHEDULE] msg=${msg.id} booking=${msg.bookingId} type=reminder opened=true defer_to=${deferTo.toISOString()} (nextAllowed + 0-2h random)`);
-        return false;
-      }
-    }
-    const deferTo = nextAllowed;
-    await db.update(waMessages)
-      .set({ scheduledAt: deferTo, status: "queued" } as any)
-      .where(eq(waMessages.id, msg.id));
-    console.log(`[QUIET_RESCHEDULE] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} defer_to=${deferTo.toISOString()}`);
-    return false;
-  }
-
-  if (msg.messageType === "reminder") {
-    const primaryCheck = await checkPrimaryBeforeFollowup(msg);
-    if (primaryCheck === "wait") {
-      console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=reminder reason=WAIT_PRIMARY (primary not yet sent)`);
-      const deferTo = new Date(Date.now() + 30 * 60 * 1000);
-      await db.update(waMessages)
-        .set({ scheduledAt: deferTo } as any)
-        .where(eq(waMessages.id, msg.id));
-      return false;
-    }
-    if (primaryCheck === "orphan") {
-      await storage.markWaMessageSkipped(msg.id, "orphan_primary_terminal");
-      console.log(`[WA_PROCESSOR] Skipped msg=${msg.id} booking=${msg.bookingId} type=reminder reason=orphan_primary_terminal (primary missing/failed/skipped)`);
-      return false;
-    }
-  }
-
-  return await doSend(msg, "queue");
 }
 
 export async function sendWaMessageNow(messageId: number): Promise<{ success: boolean; error?: string }> {
@@ -1051,6 +996,18 @@ async function _processOneMessageCycle(): Promise<void> {
   const nowMs = Date.now();
   const minInterval = getMinIntervalMs(effectiveLimit);
 
+  if (isBeforeWindowStart()) {
+    const almatyMs = nowMs + ALMATY_UTC_OFFSET * 3600000;
+    const almaty = new Date(almatyMs);
+    const windowStartMs = Date.UTC(almaty.getUTCFullYear(), almaty.getUTCMonth(), almaty.getUTCDate(), WINDOW_START_HOUR - ALMATY_UTC_OFFSET, WINDOW_START_MINUTE, 0, 0);
+    const waitMs = windowStartMs - nowMs;
+    if (waitMs > 0) {
+      console.log(`[WA_WORKER] Before window start (10:00 Almaty). Waiting ${Math.round(waitMs / 60000)}min`);
+      scheduleNextSend(waitMs + 5000);
+      return;
+    }
+  }
+
   const stuckResult = await db.update(waMessages)
     .set({ status: "queued" } as any)
     .where(eq(waMessages.status, "sending"))
@@ -1104,8 +1061,8 @@ async function _processOneMessageCycle(): Promise<void> {
       )
     )
     .orderBy(
+      sql`CASE WHEN ${waMessages.messageType} = 'reminder' THEN 0 ELSE 1 END`,
       sql`${waMessages.priority} DESC`,
-      sql`${waMessages.messageType} DESC`,
       waMessages.scheduledAt
     )
     .limit(1);
@@ -1126,11 +1083,88 @@ async function _processOneMessageCycle(): Promise<void> {
 
   heartbeatCounter = 0;
 
+  const msgDeadline = (msg as any).deadline ? new Date((msg as any).deadline) : null;
+  if (msgDeadline && nowMs > msgDeadline.getTime()) {
+    const reason = msg.messageType === "primary" ? "expired_delay" : "expired_followup";
+    await storage.markWaMessageSkipped(msg.id, reason);
+    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} scheduledAt=${msg.scheduledAt} deadline=${msgDeadline.toISOString()} actualTime=${now.toISOString()} reason=${reason}`);
+    scheduleNextSend(60000);
+    return;
+  }
+
+  if (msg.messageType === "primary" && isPrimaryPastQuiet()) {
+    await storage.markWaMessageSkipped(msg.id, "quiet_hours_primary");
+    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary scheduledAt=${msg.scheduledAt} actualTime=${now.toISOString()} reason=quiet_hours_primary (past 21:45)`);
+    scheduleNextSend(60000);
+    return;
+  }
+
+  if (msg.messageType === "reminder" && isFollowupPastQuiet()) {
+    await storage.markWaMessageSkipped(msg.id, "quiet_hours_followup");
+    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=reminder scheduledAt=${msg.scheduledAt} actualTime=${now.toISOString()} reason=quiet_hours_followup (past 20:00)`);
+    scheduleNextSend(60000);
+    return;
+  }
+
+  const isOptedOut = await storage.isWaOptedOut(msg.customerPhone);
+  if (isOptedOut) {
+    await storage.markWaMessageSkipped(msg.id, "opt_out");
+    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=opt_out`);
+    scheduleNextSend(60000);
+    return;
+  }
+
+  const booking = await storage.getBooking(msg.bookingId);
+  if (!booking) {
+    await storage.markWaMessageSkipped(msg.id, "booking_not_found");
+    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_not_found`);
+    scheduleNextSend(60000);
+    return;
+  }
+  if (booking.hasReview) {
+    await storage.markWaMessageSkipped(msg.id, "review_already_submitted");
+    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=review_already_submitted`);
+    scheduleNextSend(60000);
+    return;
+  }
+  if (booking.status === "cancelled") {
+    await storage.markWaMessageSkipped(msg.id, "booking_cancelled");
+    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=booking_cancelled`);
+    scheduleNextSend(60000);
+    return;
+  }
+
+  if (msg.messageType === "primary" && !isVisitToday(booking.appointmentTime)) {
+    await storage.markWaMessageSkipped(msg.id, "expired_not_today");
+    console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary reason=expired_not_today appt=${booking.appointmentTime}`);
+    scheduleNextSend(60000);
+    return;
+  }
+
+  if (msg.messageType === "reminder") {
+    const primaryCheck = await checkPrimaryBeforeFollowup(msg);
+    if (primaryCheck === "wait") {
+      console.log(`[WA_PROCESSOR] Deferred msg=${msg.id} booking=${msg.bookingId} type=reminder reason=WAIT_PRIMARY (primary not yet sent)`);
+      const deferTo = new Date(Date.now() + 30 * 60 * 1000);
+      await db.update(waMessages)
+        .set({ scheduledAt: deferTo } as any)
+        .where(eq(waMessages.id, msg.id));
+      scheduleNextSend(60000);
+      return;
+    }
+    if (primaryCheck === "orphan") {
+      await storage.markWaMessageSkipped(msg.id, "orphan_primary_terminal");
+      console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=reminder reason=orphan_primary_terminal`);
+      scheduleNextSend(60000);
+      return;
+    }
+  }
+
   await db.update(waMessages)
     .set({ status: "sending" } as any)
     .where(eq(waMessages.id, msg.id));
 
-  const result = await processOneMessage({ ...msg, status: "sending" as any });
+  const result = await doSend({ ...msg, status: "sending" as any }, "queue");
 
   if (result) {
     workerConsecutiveFailures = 0;
@@ -1139,7 +1173,7 @@ async function _processOneMessageCycle(): Promise<void> {
   } else {
     const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
     const wasDeferred = refreshed && refreshed.status === "queued";
-    const wasSkipped = refreshed && (refreshed.status === "skipped" || refreshed.status === "failed" || (refreshed as any).status === "expired");
+    const wasSkipped = refreshed && (refreshed.status === "skipped" || refreshed.status === "failed");
     if (refreshed?.status === "sending") {
       await db.update(waMessages)
         .set({ status: "queued" } as any)

@@ -1,0 +1,172 @@
+ЗАДАНИЕ: финальная стабильная логика отправки WhatsApp (PRIMARY + FOLLOW-UP)
+
+ЦЕЛЬ:
+- строгое соблюдение 10–30 минут для PRIMARY
+- отсутствие залпов
+- соблюдение rate limit
+- корректные quiet hours
+- никакие сообщения не “протухают в ожидании”
+
+---
+
+# 1. ОСНОВНЫЕ ПАРАМЕТРЫ
+
+startOfDay = 10:00  
+endPrimary = 21:45  
+endFollowUp = 20:00  
+
+dailyLimit = N  
+
+minInterval = (endOfDay - startOfDay) / dailyLimit  
+
+---
+
+# 2. PRIMARY (АЛТЕЖИО)
+
+При создании:
+
+scheduledAt = visitEnd + random(10–20 минут)  
+deadline = visitEnd + 30 минут  
+
+---
+
+# 3. FOLLOW-UP
+
+scheduledAt = primarySentAt + random(20–24 часа)  
+deadline = scheduledAt + 2 часа (мягкое окно)
+
+---
+
+# 4. ВОРКЕР (ЕДИНСТВЕННАЯ ЛОГИКА ОТПРАВКИ)
+
+Работает циклом. Каждый раз обрабатывает только 1 сообщение.
+
+ПОРЯДОК:
+1. сначала FOLLOW-UP
+2. потом PRIMARY
+
+---
+
+# 5. ЛОГИКА ДЛЯ КАЖДОГО СООБЩЕНИЯ
+
+## 5.1 ЖЁСТКИЙ ПОРЯДОК ПРОВЕРОК
+
+### Шаг 1. Не раньше scheduledAt
+
+if now < scheduledAt:
+    sleep(scheduledAt - now)
+    return
+
+---
+
+### Шаг 2. Проверка TTL (ДО ожиданий)
+
+if messageType == PRIMARY and now > deadline:
+    SKIP(reason="expired_delay")
+    return
+
+if messageType == FOLLOW_UP and now > deadline:
+    SKIP(reason="expired_followup")
+    return
+
+---
+
+### Шаг 3. Quiet hours
+
+if messageType == PRIMARY and now > 21:45:
+    SKIP(reason="quiet_hours_primary")
+    return
+
+if messageType == FOLLOW_UP and now > 20:00:
+    SKIP(reason="quiet_hours_followup")
+    return
+
+---
+
+### Шаг 4. Rate limit (жёсткий)
+
+lastSentAt = взять из БД
+
+if lastSentAt exists AND now < lastSentAt + minInterval:
+    sleep(lastSentAt + minInterval - now)
+    // ВАЖНО: после sleep НЕЛЬЗЯ отправлять сразу
+
+---
+
+### Шаг 5. ПОВТОРНАЯ ПРОВЕРКА TTL (КРИТИЧНО)
+
+if messageType == PRIMARY and now > deadline:
+    SKIP(reason="expired_after_wait")
+    return
+
+if messageType == FOLLOW_UP and now > deadline:
+    SKIP(reason="expired_after_wait")
+    return
+
+---
+
+### Шаг 6. Отправка
+
+sendMessage()
+
+lastSentAt = now (сохранить в БД)
+
+---
+
+# 6. FOLLOW-UP ПРАВИЛА
+
+- создаётся только если нет ответа
+- приоритет выше PRIMARY
+- если не отправился в окно → SKIP (без переноса)
+
+---
+
+# 7. DAILY LIMIT
+
+- считается на день: PRIMARY + FOLLOW-UP
+- FOLLOW-UP забирают лимит первыми
+- PRIMARY используют остаток
+
+---
+
+# 8. ЗАПРЕЩЕНО
+
+- ❌ менять scheduledAt после создания
+- ❌ переносить сообщения на следующий день
+- ❌ отправлять раньше scheduledAt
+- ❌ отправлять после deadline
+- ❌ отправлять быстрее minInterval
+
+---
+
+# 9. ЛОГИ (ОБЯЗАТЕЛЬНО)
+
+Для каждого сообщения:
+
+log:
+- visitEnd
+- scheduledAt
+- deadline
+- actualSendTime
+- reason: SENT / SKIP_*
+
+---
+
+# 10. ГАРАНТИИ
+
+Система должна гарантировать:
+
+- PRIMARY всегда отправляется в диапазоне 10–30 минут ИЛИ SKIP
+- FOLLOW-UP строго 20–24 часа ИЛИ SKIP
+- невозможно отправить два сообщения быстрее minInterval
+- невозможны “залпы”
+- невозможны “зависшие сообщения”
+
+---
+
+РЕЗУЛЬТАТ:
+
+- предсказуемая система
+- стабильная конверсия
+- отсутствие банов
+- отсутствие хаоса

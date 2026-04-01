@@ -415,6 +415,7 @@ export const waMessages = pgTable("wa_messages", {
   attempts: integer("attempts").default(0).notNull(),
   maxAttempts: integer("max_attempts").default(2).notNull(),
   scheduledAt: timestamp("scheduled_at").notNull(),
+  deadline: timestamp("deadline"),
   sentAt: timestamp("sent_at"),
   lastError: text("last_error"),
   skipReason: text("skip_reason"),
