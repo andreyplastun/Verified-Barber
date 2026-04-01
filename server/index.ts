@@ -4,7 +4,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
-import { processWaQueue, getWaSettings } from "./whatsapp";
+import { startWaWorkerLoop, getWaSettings } from "./whatsapp";
 import { syncUpcomingAppointments, isAltegioConfigured } from "./altegio";
 import { readFileSync, existsSync } from "fs";
 import { join } from "path";
@@ -489,12 +489,10 @@ app.use((req, res, next) => {
     }
   }, TRANSITION_INTERVAL_MS);
 
-  setTimeout(async () => {
-    try {
-      await processWaQueue();
-    } catch (err) {
-      console.error("[WA_PROCESSOR] Error starting WhatsApp worker:", err);
-    }
+  setTimeout(() => {
+    startWaWorkerLoop().catch(err => {
+      console.error("[WA_WORKER] Fatal error in worker loop:", err);
+    });
   }, 5000);
   console.log(`[STARTUP] Background jobs started (transitions every ${TRANSITION_INTERVAL_MS / 60000} min, wa_worker=continuous, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, altegio_sync=every ${ALTEGIO_SYNC_EVERY_N * TRANSITION_INTERVAL_MS / 60000} min)`);
 

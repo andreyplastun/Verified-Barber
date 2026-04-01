@@ -1,0 +1,100 @@
+ЗАДАНИЕ: переделать воркер отправки в непрерывный цикл (убрать scheduleNextSend и все выходы)
+
+ЦЕЛЬ:
+- устранить недобор сообщений
+- убрать “засыпание” воркера
+- обеспечить постоянную обработку очереди
+- соблюдать TTL (≤30 мин) и rate limit
+
+---
+
+# ❌ УДАЛИТЬ ПОЛНОСТЬЮ
+
+- любые scheduleNextSend(...)
+- любые exit / return после:
+  - rate limit
+  - отправки
+  - отсутствия сообщений
+
+---
+
+# ✅ РЕАЛИЗОВАТЬ ЕДИНЫЙ ЦИКЛ
+
+while (true):
+
+    message = взять 1 сообщение из очереди (ORDER BY scheduledAt ASC)
+
+    # 1. нет сообщений → короткий сон
+    if message == null:
+        sleep(5–10 секунд)
+        continue
+
+    # 2. не раньше scheduledAt
+    if now < message.scheduledAt:
+        sleep(message.scheduledAt - now)
+        continue
+
+    # 3. TTL до любых ожиданий
+    if now > message.deadline:
+        SKIP(reason="expired_delay")
+        continue
+
+    # 4. RATE LIMIT (до отправки)
+    lastSentAt = взять из БД
+
+    if lastSentAt exists AND now < lastSentAt + minInterval:
+
+        waitTime = (lastSentAt + minInterval) - now
+        timeLeft = message.deadline - now
+
+        # если не успеем — сразу скип
+        if waitTime > timeLeft:
+            SKIP(reason="rate_limit_would_break_ttl")
+            continue
+
+        sleep(waitTime)
+
+        # 5. повторная проверка TTL после ожидания
+        if now > message.deadline:
+            SKIP(reason="expired_after_wait")
+            continue
+
+    # 6. ОТПРАВКА
+    sendMessage(message)
+
+    сохранить lastSentAt = now
+
+    # 7. пауза между отправками (rate limit)
+    sleep(minInterval)
+
+---
+
+# ⚙️ НАСТРОЙКИ
+
+minInterval = random(12–15 минут) + random(0–30 секунд)
+
+TTL (PRIMARY) = 30 минут (НЕ увеличивать)
+
+---
+
+# ⚠️ ИНВАРИАНТЫ
+
+- ❌ не ждать rate limit если сообщение не успевает → сразу SKIP
+- ❌ не делать длинные sleep при пустой очереди (>10 сек)
+- ❌ не использовать таймеры/планировщики вместо цикла
+- ❌ не выходить из воркера после одной операции
+
+---
+
+# 📊 ОЖИДАЕМЫЙ РЕЗУЛЬТАТ
+
+- воркер работает постоянно, не “засыпает”
+- очередь разгребается без зависаний
+- PRIMARY не умирают из-за ожиданий
+- фактические отправки выходят на максимум (20–30+ при потоке)
+
+---
+
+КРИТЕРИЙ УСПЕХА:
+
+если есть сообщения в очереди — воркер НЕ простаивает ни секунд

@@ -12,7 +12,7 @@ import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isVali
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { appConfig } from "@shared/schema";
-import { enqueueReviewMessage, processWaQueue, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
+import { enqueueReviewMessage, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 
