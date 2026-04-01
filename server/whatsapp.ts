@@ -1033,43 +1033,43 @@ async function _processOneMessageCycle(): Promise<void> {
     return;
   }
 
-  const readyMessages = await db.select()
-    .from(waMessages)
-    .where(
-      and(
-        eq(waMessages.status, "queued"),
-        sql`${waMessages.scheduledAt} <= ${now}`
+  while (true) {
+    const currentNow = new Date();
+    const [msg] = await db.select()
+      .from(waMessages)
+      .where(
+        and(
+          eq(waMessages.status, "queued"),
+          sql`${waMessages.scheduledAt} <= ${currentNow}`
+        )
       )
-    )
-    .orderBy(
-      sql`CASE WHEN ${waMessages.messageType} = 'reminder' THEN 0 ELSE 1 END`,
-      sql`${waMessages.priority} DESC`,
-      waMessages.scheduledAt
-    )
-    .limit(10);
+      .orderBy(
+        sql`CASE WHEN ${waMessages.messageType} = 'reminder' THEN 0 ELSE 1 END`,
+        sql`${waMessages.priority} DESC`,
+        waMessages.scheduledAt
+      )
+      .limit(1);
 
-  if (readyMessages.length === 0) {
-    heartbeatCounter++;
-    if (heartbeatCounter >= HEARTBEAT_EVERY_N) {
-      heartbeatCounter = 0;
-      const sentToday = await storage.countWaMessagesSentToday();
-      const queuedCount = await db.select({ count: sql<number>`count(*)` })
-        .from(waMessages)
-        .where(eq(waMessages.status, "queued"));
-      const totalQueued = Number(queuedCount[0]?.count || 0);
-      const nextScheduled = await db.execute(sql`
-        SELECT MIN(scheduled_at) as next_at FROM wa_messages WHERE status = 'queued' AND scheduled_at > NOW()
-      `);
-      const nextAt = (nextScheduled.rows[0] as any)?.next_at;
-      console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sentToday=${sentToday} limit=${effectiveLimit} nextScheduledAt=${nextAt || 'none'} time=${now.toISOString()}`);
+    if (!msg) {
+      heartbeatCounter++;
+      if (heartbeatCounter >= HEARTBEAT_EVERY_N) {
+        heartbeatCounter = 0;
+        const sentToday = await storage.countWaMessagesSentToday();
+        const queuedCount = await db.select({ count: sql<number>`count(*)` })
+          .from(waMessages)
+          .where(eq(waMessages.status, "queued"));
+        const totalQueued = Number(queuedCount[0]?.count || 0);
+        const nextScheduled = await db.execute(sql`
+          SELECT MIN(scheduled_at) as next_at FROM wa_messages WHERE status = 'queued' AND scheduled_at > NOW()
+        `);
+        const nextAt = (nextScheduled.rows[0] as any)?.next_at;
+        console.log(`[WA_HEARTBEAT] No candidates ready. queued=${totalQueued} sentToday=${sentToday} limit=${effectiveLimit} nextScheduledAt=${nextAt || 'none'} time=${currentNow.toISOString()}`);
+      }
+      scheduleNextSend(POLL_INTERVAL_MS);
+      return;
     }
-    scheduleNextSend(POLL_INTERVAL_MS);
-    return;
-  }
 
-  heartbeatCounter = 0;
-
-  for (const msg of readyMessages) {
+    heartbeatCounter = 0;
     const currentMs = Date.now();
     const msgDeadline = (msg as any).deadline ? new Date((msg as any).deadline) : null;
 
@@ -1166,8 +1166,7 @@ async function _processOneMessageCycle(): Promise<void> {
       }
     }
 
-    const postWaitMs = Date.now();
-    if (msgDeadline && postWaitMs > msgDeadline.getTime()) {
+    if (msgDeadline && Date.now() > msgDeadline.getTime()) {
       await storage.markWaMessageSkipped(msg.id, "expired_after_wait");
       console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=expired_after_wait`);
       continue;
@@ -1201,8 +1200,6 @@ async function _processOneMessageCycle(): Promise<void> {
       }
     }
   }
-
-  scheduleNextSend(POLL_INTERVAL_MS);
 }
 
 let nextSendTimer: ReturnType<typeof setTimeout> | null = null;
