@@ -573,7 +573,7 @@ export async function enqueueReviewMessage(params: {
   console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline?.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
 }
 
-async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void> {
+async function createFollowup(msg: typeof waMessages.$inferSelect, opts?: { baseDateMs?: number }): Promise<void> {
   const booking = await storage.getBooking(msg.bookingId);
   if (booking?.hasReview) {
     console.log(`[WA_FOLLOWUP] Skip followup for booking=${msg.bookingId}: review already submitted`);
@@ -612,7 +612,12 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
     console.log(`[WA_FOLLOWUP] booking=${msg.bookingId} segment=NOT_OPENED priority=NORMAL delay=20-24h`);
   }
 
-  const scheduledAt = new Date(Date.now() + delayMs);
+  const baseDate = opts?.baseDateMs ?? Date.now();
+  let scheduledAt = new Date(baseDate + delayMs);
+  if (scheduledAt.getTime() < Date.now()) {
+    scheduledAt = new Date(Date.now() + randomMinutes(1, 5));
+    console.log(`[WA_FOLLOWUP] booking=${msg.bookingId} scheduledAt was in the past, adjusted to near-immediate: ${scheduledAt.toISOString()}`);
+  }
   const deadlineAt = new Date(scheduledAt.getTime() + 2 * 60 * 60000);
   const dedupeKey = `reminder_${msg.bookingId}`;
 
@@ -925,7 +930,8 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
     if (booking.hasReview) { skipped++; continue; }
 
     try {
-      await createFollowup(msg);
+      const baseDateMs = msg.sentAt ? new Date(msg.sentAt).getTime() : Date.now();
+      await createFollowup(msg, { baseDateMs });
       created++;
       details.push(`booking=${msg.bookingId} phone=${msg.customerPhone}`);
     } catch (err: any) {
