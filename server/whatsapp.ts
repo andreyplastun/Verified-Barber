@@ -437,7 +437,7 @@ export async function handleIncomingMessage(phone: string, text: string): Promis
   return { optedOut: false };
 }
 
-async function getClientStrategy(phone: string, specialistId: number): Promise<"primary_only" | "primary_plus_followup"> {
+async function getClientStrategy(phone: string, specialistId: number, currentBookingId: number): Promise<"primary_only" | "primary_plus_followup"> {
   const cleanPhone = phone.replace(/\D/g, "");
   const result = await db.execute(sql`
     SELECT COUNT(*) as cnt FROM wa_messages
@@ -445,6 +445,7 @@ async function getClientStrategy(phone: string, specialistId: number): Promise<"
     AND specialist_id = ${specialistId}
     AND message_type = 'primary'
     AND status = 'sent'
+    AND booking_id != ${currentBookingId}
   `);
   const prevSentCount = Number((result.rows[0] as any)?.cnt || 0);
   if (prevSentCount > 0) {
@@ -579,7 +580,7 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
     return;
   }
 
-  const strategy = await getClientStrategy(msg.customerPhone, msg.specialistId);
+  const strategy = await getClientStrategy(msg.customerPhone, msg.specialistId, msg.bookingId);
   if (strategy === "primary_only") {
     console.log(`[WA_STRATEGY] No followup for booking=${msg.bookingId} phone=${msg.customerPhone}: primary_only (previous attempts exist)`);
     return;
