@@ -882,8 +882,21 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
     }
   }
 
-  const success = await doSend(msg, "resend");
-  return { success };
+  try {
+    const success = await doSend(msg, "resend");
+    if (!success) {
+      const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
+      const reason = refreshed?.status === "skipped" 
+        ? `Пропущено: ${(refreshed as any).skipReason || "неизвестно"}`
+        : refreshed?.status === "failed"
+        ? `Ошибка: ${(refreshed as any).errorMessage || "неизвестно"}`
+        : "Не удалось отправить (cooldown или блокировка)";
+      return { success: false, error: reason };
+    }
+    return { success: true };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
 }
 
 export async function backfillMissingReminders(): Promise<{ created: number; skipped: number; errors: number; details: string[] }> {
