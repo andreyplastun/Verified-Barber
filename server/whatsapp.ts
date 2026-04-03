@@ -887,16 +887,18 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
 }
 
 export async function backfillMissingReminders(): Promise<{ created: number; skipped: number; errors: number; details: string[] }> {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60000);
   const sentPrimaries = await db.select().from(waMessages)
     .where(and(
       sql`${waMessages.messageType} = 'primary'`,
-      sql`${waMessages.status} = 'sent'`
+      sql`${waMessages.status} = 'sent'`,
+      sql`${waMessages.sentAt} >= ${cutoff}`
     ));
 
   let created = 0, skipped = 0, errors = 0;
   const details: string[] = [];
 
-  console.log(`[WA_BACKFILL] Found ${sentPrimaries.length} sent primaries to check`);
+  console.log(`[WA_BACKFILL] Found ${sentPrimaries.length} sent primaries (last 48h) to check`);
 
   for (const msg of sentPrimaries) {
     const existingReminder = await storage.getWaMessageByBookingAndType(msg.bookingId, "reminder");
@@ -912,6 +914,7 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
     try {
       await createFollowup(msg);
       created++;
+      details.push(`booking=${msg.bookingId} phone=${msg.customerPhone}`);
     } catch (err: any) {
       errors++;
       console.error(`[WA_BACKFILL] Failed to create followup for booking=${msg.bookingId}: ${err.message}`);
