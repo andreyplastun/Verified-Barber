@@ -580,12 +580,6 @@ async function createFollowup(msg: typeof waMessages.$inferSelect): Promise<void
     return;
   }
 
-  const strategy = await getClientStrategy(msg.customerPhone, msg.specialistId, msg.bookingId);
-  if (strategy === "primary_only") {
-    console.log(`[WA_STRATEGY] No followup for booking=${msg.bookingId} phone=${msg.customerPhone}: primary_only (previous attempts exist)`);
-    return;
-  }
-
   const superseded = await db.update(waMessages)
     .set({ status: "skipped", skipReason: "superseded_followup_same_phone" } as any)
     .where(and(
