@@ -141,6 +141,7 @@ function normalizePhone(phone: string): string {
 
 export async function calculateNewWeight(specialistId: number, currentPhone: string | null): Promise<number> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const excludeNorm = currentPhone ? normalizePhone(currentPhone) : null;
 
   const result = await db.select({
     uniquePhones: sql<number>`count(distinct COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}))`,
@@ -151,30 +152,15 @@ export async function calculateNewWeight(specialistId: number, currentPhone: str
       eq(reviews.specialistId, specialistId),
       gte(reviews.createdAt, sevenDaysAgo),
       eq(reviews.isFinalized, true),
-      sql`COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}) IS NOT NULL`
+      sql`COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}) IS NOT NULL`,
+      excludeNorm ? sql`COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}) != ${excludeNorm}` : undefined
     ));
 
-  let uniqueNewClients = Number(result[0]?.uniquePhones || 0);
-
-  if (currentPhone) {
-    const norm = normalizePhone(currentPhone);
-    const [already] = await db.select({ cnt: sql<number>`count(*)` })
-      .from(reviews)
-      .innerJoin(bookings, eq(reviews.bookingId, bookings.id))
-      .where(and(
-        eq(reviews.specialistId, specialistId),
-        gte(reviews.createdAt, sevenDaysAgo),
-        eq(reviews.isFinalized, true),
-        sql`COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}) = ${norm}`
-      ));
-    if (Number(already?.cnt || 0) === 0) {
-      uniqueNewClients++;
-    }
-  }
+  const uniqueNewClients = Number(result[0]?.uniquePhones || 0);
 
   if (uniqueNewClients >= 3) return 1.0;
-  if (uniqueNewClients === 2) return 0.85;
-  return 0.6;
+  if (uniqueNewClients === 2) return 0.8;
+  return 0.5;
 }
 
 export async function calculateRepeatWeight(
