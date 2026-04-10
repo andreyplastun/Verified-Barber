@@ -431,6 +431,39 @@ export const waOptOuts = pgTable("wa_opt_outs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const locations = pgTable("locations", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  lat: real("lat").notNull(),
+  lng: real("lng").notNull(),
+  radius: integer("radius").default(150).notNull(),
+  city: text("city"),
+  address: text("address"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const specialistLocations = pgTable("specialist_locations", {
+  id: serial("id").primaryKey(),
+  specialistId: integer("specialist_id").notNull(),
+  locationId: integer("location_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const reviewGeodata = pgTable("review_geodata", {
+  id: serial("id").primaryKey(),
+  reviewId: integer("review_id").notNull(),
+  bookingId: integer("booking_id").notNull(),
+  lat: real("lat"),
+  lng: real("lng"),
+  distanceMeters: real("distance_meters"),
+  geoStatus: text("geo_status", { enum: ["ok", "no_permission", "error", "timeout"] }).notNull(),
+  geoWeight: real("geo_weight").default(0.5).notNull(),
+  locationId: integer("location_id"),
+  ipAddress: text("ip_address"),
+  capturedAt: timestamp("captured_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const legalConsents = pgTable("legal_consents", {
   id: serial("id").primaryKey(),
   userId: text("user_id"),
@@ -446,6 +479,9 @@ export const LEGAL_DOCUMENT_VERSIONS = {
   offer: "1.0",
 } as const;
 
+export type Location = typeof locations.$inferSelect;
+export type SpecialistLocation = typeof specialistLocations.$inferSelect;
+export type ReviewGeodata = typeof reviewGeodata.$inferSelect;
 export type LegalConsent = typeof legalConsents.$inferSelect;
 
 export type Review = typeof reviews.$inferSelect;

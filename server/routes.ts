@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema } from "@shared/schema";
+import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
@@ -15,6 +15,22 @@ import { appConfig } from "@shared/schema";
 import { enqueueReviewMessage, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
+
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function calculateGeoWeight(distanceMeters: number | null, radius: number = 150): number {
+  if (distanceMeters === null) return 0.5;
+  if (distanceMeters <= radius) return 1.0;
+  if (distanceMeters <= 500) return 0.6;
+  return 0.2;
+}
 
 function isSpecialistAction(source: string): boolean {
   return source.startsWith('specialist_');
@@ -1734,7 +1750,7 @@ export async function registerRoutes(
         return res.status(409).json({ message: "Отзыв уже оставлен" });
       }
       
-      const { rating, comment, triggers, showName, priceMismatch } = req.body;
+      const { rating, comment, triggers, showName, priceMismatch, geoLat, geoLng, geoStatus: clientGeoStatus } = req.body;
       
       if (!rating || rating < 1 || rating > 5) {
         return res.status(400).json({ message: "Укажите оценку от 1 до 5" });
@@ -1771,6 +1787,76 @@ export async function registerRoutes(
         priceMismatch: !!priceMismatch,
       });
       
+      // Save geodata if provided
+      try {
+        const geoStatusValue = clientGeoStatus || (geoLat != null ? "ok" : "no_permission");
+        let distanceMeters: number | null = null;
+        let geoWeight = 0.5;
+        let matchedLocationId: number | null = null;
+
+        if (geoLat != null && geoLng != null) {
+          const specLocs = await db.select({
+            locationId: specialistLocations.locationId,
+            lat: locations.lat,
+            lng: locations.lng,
+            radius: locations.radius,
+          })
+            .from(specialistLocations)
+            .innerJoin(locations, sql`${specialistLocations.locationId} = ${locations.id}`)
+            .where(sql`${specialistLocations.specialistId} = ${link.specialistId}`);
+
+          if (specLocs.length > 0) {
+            let minDist = Infinity;
+            for (const loc of specLocs) {
+              const dist = haversineDistance(geoLat, geoLng, loc.lat, loc.lng);
+              if (dist < minDist) {
+                minDist = dist;
+                matchedLocationId = loc.locationId;
+                distanceMeters = Math.round(dist);
+              }
+            }
+            geoWeight = calculateGeoWeight(distanceMeters, specLocs.find(l => l.locationId === matchedLocationId)?.radius ?? 150);
+          }
+
+          if (booking.appointmentTime) {
+            const visitTime = new Date(booking.appointmentTime).getTime();
+            const timeDiffHours = Math.abs(Date.now() - visitTime) / (1000 * 60 * 60);
+            if (timeDiffHours > 2) {
+              geoWeight = geoWeight * 0.3;
+              console.log(`[GEO] Time penalty: review=${review.id} timeDiff=${timeDiffHours.toFixed(1)}h geoWeight=${geoWeight}`);
+            }
+          }
+        }
+
+        const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || null;
+
+        if (clientIp && geoLat != null) {
+          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+          const [ipCount] = await db.select({ count: sql<number>`count(*)` })
+            .from(reviewGeodata)
+            .where(sql`${reviewGeodata.ipAddress} = ${clientIp} AND ${reviewGeodata.capturedAt} >= ${oneHourAgo}`);
+          if (Number(ipCount?.count || 0) >= 5) {
+            geoWeight = geoWeight * 0.7;
+            console.log(`[GEO] IP penalty: review=${review.id} ip=${clientIp} count=${ipCount?.count} geoWeight=${geoWeight}`);
+          }
+        }
+
+        await db.insert(reviewGeodata).values({
+          reviewId: review.id,
+          bookingId: link.bookingId,
+          lat: geoLat ?? null,
+          lng: geoLng ?? null,
+          distanceMeters,
+          geoStatus: geoStatusValue,
+          geoWeight: Math.round(geoWeight * 100) / 100,
+          locationId: matchedLocationId,
+          ipAddress: clientIp,
+        });
+        console.log(`[GEO] Saved geodata: review=${review.id} status=${geoStatusValue} distance=${distanceMeters}m weight=${geoWeight} location=${matchedLocationId}`);
+      } catch (geoErr: any) {
+        console.error(`[GEO] Error saving geodata for review=${review.id}: ${geoErr.message}`);
+      }
+
       // Magic link reviews are finalized immediately (no edit window)
       await storage.finalizeReview(review.id);
       console.log(`[MAGIC LINK] Immediately finalized review ${review.id} for specialist ${link.specialistId}`);

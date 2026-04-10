@@ -244,6 +244,39 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS price integer;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_email text;
 
+      CREATE TABLE IF NOT EXISTS locations (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        radius INTEGER NOT NULL DEFAULT 150,
+        city TEXT,
+        address TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS specialist_locations (
+        id SERIAL PRIMARY KEY,
+        specialist_id INTEGER NOT NULL,
+        location_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS review_geodata (
+        id SERIAL PRIMARY KEY,
+        review_id INTEGER NOT NULL,
+        booking_id INTEGER NOT NULL,
+        lat REAL,
+        lng REAL,
+        distance_meters REAL,
+        geo_status TEXT NOT NULL DEFAULT 'no_permission',
+        geo_weight REAL NOT NULL DEFAULT 0.5,
+        location_id INTEGER,
+        ip_address TEXT,
+        captured_at TIMESTAMP DEFAULT NOW(),
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '30') ON CONFLICT (key) DO NOTHING;
