@@ -458,6 +458,8 @@ export const reviewGeodata = pgTable("review_geodata", {
   distanceMeters: real("distance_meters"),
   geoStatus: text("geo_status", { enum: ["ok", "no_permission", "error", "timeout"] }).notNull(),
   geoWeight: real("geo_weight").default(0.5).notNull(),
+  textWeight: real("text_weight").default(1.0).notNull(),
+  textWeightReason: text("text_weight_reason"),
   locationId: integer("location_id"),
   ipAddress: text("ip_address"),
   capturedAt: timestamp("captured_at").defaultNow(),

@@ -64,6 +64,74 @@ export function calculateTextSimilarity(a: string, b: string): number {
   return calculateJaccardSimilarity(a, b);
 }
 
+export function levenshteinDistance(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  const dp: number[] = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    let prev = i - 1;
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prev : 1 + Math.min(prev, dp[j], dp[j - 1]);
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+export function levenshteinSimilarity(a: string, b: string): number {
+  if (a === b) return 1;
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0) return 1;
+  return 1 - levenshteinDistance(a, b) / maxLen;
+}
+
+function normalizeForComparison(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, "").replace(/[^\p{L}\p{N}]/gu, "");
+}
+
+export async function calculateTextWeight(
+  specialistId: number, 
+  comment: string | null | undefined,
+  bookingSource: string | null
+): Promise<{ textWeight: number; reason?: string }> {
+  if (bookingSource === "altegio") {
+    return { textWeight: 1.0 };
+  }
+
+  const normalized = comment ? normalizeForComparison(comment) : "";
+
+  if (!normalized || normalized.length < 10) {
+    return { textWeight: 0.8, reason: "short_or_empty" };
+  }
+
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const recentReviews = await db.select({ comment: reviews.comment })
+    .from(reviews)
+    .where(and(
+      eq(reviews.specialistId, specialistId),
+      gte(reviews.createdAt, sevenDaysAgo),
+      sql`${reviews.comment} IS NOT NULL AND length(${reviews.comment}) > 0`
+    ));
+
+  let similarCount = 0;
+  for (const r of recentReviews) {
+    if (!r.comment) continue;
+    const rNorm = normalizeForComparison(r.comment);
+    if (rNorm.length < 5) continue;
+    const sim = levenshteinSimilarity(normalized, rNorm);
+    if (sim >= 0.8) similarCount++;
+  }
+
+  if (similarCount >= 2) {
+    return { textWeight: 0.5, reason: `similar_to_${similarCount}_reviews` };
+  }
+
+  return { textWeight: 1.0 };
+}
+
 export interface AntifraudResult {
   isLimited: boolean;
   reason: string | null;

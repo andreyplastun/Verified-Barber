@@ -58,6 +58,8 @@ const t = {
     selectRatingDesc: "Пожалуйста, выберите количество звёзд.",
     loadingLink: "Проверка ссылки...",
     trustLink: "Как формируется доверие в Rateus",
+    geoTrust: "Геолокация подтверждена — доверие к отзыву повышено",
+    geoRequest: "Подтвердим, что вы были у мастера — это повышает доверие к отзыву",
     errorToast: "Ошибка",
     newAccountTitle: "Почему этот отзыв может не влиять на рейтинг?",
     newAccountP1: "Мы показываем все отзывы. Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.",
@@ -110,6 +112,8 @@ const t = {
     selectRatingDesc: "Жұлдыздар санын таңдаңыз.",
     loadingLink: "Сілтемені тексеру...",
     trustLink: "Rateus-та сенім қалай қалыптасады",
+    geoTrust: "Геолокация расталды — пікірге сенім артты",
+    geoRequest: "Сіздің шеберде болғаныңызды растаймыз — бұл пікірге сенімді арттырады",
     errorToast: "Қате",
     newAccountTitle: "Бұл пікір рейтингке неге әсер етпеуі мүмкін?",
     newAccountP1: "Біз барлық пікірлерді көрсетеміз. Бірақ рейтингті есептеу үшін сервиспен танысқан пайдаланушылардың пікірлері ескеріледі.",
@@ -210,9 +214,11 @@ export default function MagicReviewPage() {
   const [showTipsScreen, setShowTipsScreen] = useState(false);
   const [showThankYouScreen, setShowThankYouScreen] = useState(false);
   const [customTipAmount, setCustomTipAmount] = useState('');
+  const [geoData, setGeoData] = useState<{ lat: number; lng: number; status: string } | null>(null);
   
   const openedTrackedRef = useRef(false);
   const screenLoadedTrackedRef = useRef(false);
+  const geoRequestedRef = useRef(false);
 
   const trackEvent = async (eventType: string, extraData?: Record<string, any>) => {
     try {
@@ -240,6 +246,23 @@ export default function MagicReviewPage() {
     if (linkData?.valid && !openedTrackedRef.current) {
       openedTrackedRef.current = true;
       trackEvent('magic_link_opened');
+    }
+  }, [linkData]);
+
+  useEffect(() => {
+    if (linkData?.valid && !geoRequestedRef.current && navigator.geolocation) {
+      geoRequestedRef.current = true;
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGeoData({ lat: pos.coords.latitude, lng: pos.coords.longitude, status: "ok" });
+        },
+        () => {
+          setGeoData({ lat: 0, lng: 0, status: "no_permission" });
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      );
+    } else if (linkData?.valid && !navigator.geolocation) {
+      setGeoData({ lat: 0, lng: 0, status: "error" });
     }
   }, [linkData]);
 
@@ -293,7 +316,7 @@ export default function MagicReviewPage() {
 
   const activeToken = linkData?.token || token;
   const submitMutation = useMutation({
-    mutationFn: async (data: { rating: number; comment: string; triggers: string[]; showName: boolean; priceMismatch: boolean }) => {
+    mutationFn: async (data: { rating: number; comment: string; triggers: string[]; showName: boolean; priceMismatch: boolean; geoLat?: number; geoLng?: number; geoStatus?: string }) => {
       const res = await fetch(`/api/r/${activeToken}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -331,7 +354,10 @@ export default function MagicReviewPage() {
       return;
     }
     const priceTrigger = L.triggersNegative[L.triggersNegative.length - 1];
-    submitMutation.mutate({ rating, comment, triggers, showName: !hiddenName, priceMismatch: triggers.includes(priceTrigger) });
+    submitMutation.mutate({ 
+      rating, comment, triggers, showName: !hiddenName, priceMismatch: triggers.includes(priceTrigger),
+      ...(geoData?.status === "ok" ? { geoLat: geoData.lat, geoLng: geoData.lng, geoStatus: "ok" } : { geoStatus: geoData?.status || "no_permission" }),
+    });
   };
 
   const [selectedTipAmount, setSelectedTipAmount] = useState<number | null>(null);
@@ -573,6 +599,22 @@ export default function MagicReviewPage() {
           {L.shareImpressions(linkData.customerName)}
         </p>
       </div>
+
+      {geoData && (
+        <div className="max-w-md mx-auto mb-4" data-testid="geo-status-badge">
+          {geoData.status === "ok" ? (
+            <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2">
+              <CheckCircle size={14} />
+              <span>{L.geoTrust}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-lg px-3 py-2">
+              <Info size={14} />
+              <span>{L.geoRequest}</span>
+            </div>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-8 max-w-md mx-auto">
         <InteractiveStarRating

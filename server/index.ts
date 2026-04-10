@@ -271,11 +271,15 @@ app.use((req, res, next) => {
         distance_meters REAL,
         geo_status TEXT NOT NULL DEFAULT 'no_permission',
         geo_weight REAL NOT NULL DEFAULT 0.5,
+        text_weight REAL NOT NULL DEFAULT 1.0,
+        text_weight_reason TEXT,
         location_id INTEGER,
         ip_address TEXT,
         captured_at TIMESTAMP DEFAULT NOW(),
         created_at TIMESTAMP DEFAULT NOW()
       );
+      ALTER TABLE review_geodata ADD COLUMN IF NOT EXISTS text_weight REAL NOT NULL DEFAULT 1.0;
+      ALTER TABLE review_geodata ADD COLUMN IF NOT EXISTS text_weight_reason TEXT;
 
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;

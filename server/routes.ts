@@ -1787,6 +1787,18 @@ export async function registerRoutes(
         priceMismatch: !!priceMismatch,
       });
       
+      // Calculate text weight for non-Altegio reviews
+      let textWeightResult = { textWeight: 1.0, reason: undefined as string | undefined };
+      try {
+        const { calculateTextWeight } = await import("./antifraud");
+        textWeightResult = await calculateTextWeight(link.specialistId, comment, booking.bookingSource || null);
+        if (textWeightResult.textWeight < 1.0) {
+          console.log(`[TEXT_WEIGHT] review=${review.id} specialist=${link.specialistId} weight=${textWeightResult.textWeight} reason=${textWeightResult.reason}`);
+        }
+      } catch (twErr: any) {
+        console.error(`[TEXT_WEIGHT] Error: ${twErr.message}`);
+      }
+
       // Save geodata if provided
       try {
         const geoStatusValue = clientGeoStatus || (geoLat != null ? "ok" : "no_permission");
@@ -1849,10 +1861,12 @@ export async function registerRoutes(
           distanceMeters,
           geoStatus: geoStatusValue,
           geoWeight: Math.round(geoWeight * 100) / 100,
+          textWeight: textWeightResult.textWeight,
+          textWeightReason: textWeightResult.reason || null,
           locationId: matchedLocationId,
           ipAddress: clientIp,
         });
-        console.log(`[GEO] Saved geodata: review=${review.id} status=${geoStatusValue} distance=${distanceMeters}m weight=${geoWeight} location=${matchedLocationId}`);
+        console.log(`[GEO] Saved geodata: review=${review.id} status=${geoStatusValue} distance=${distanceMeters}m geoWeight=${geoWeight} textWeight=${textWeightResult.textWeight} location=${matchedLocationId}`);
       } catch (geoErr: any) {
         console.error(`[GEO] Error saving geodata for review=${review.id}: ${geoErr.message}`);
       }
@@ -3812,6 +3826,126 @@ ${magicLink}`;
     } catch (err: any) {
       console.error(`[ASSISTBOT_INCOMING] Error: ${err.message}`);
       res.json({ ok: true });
+    }
+  });
+
+  // LOCATION ADMIN ROUTES
+  // =====================
+
+  app.get("/api/admin/locations", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const allLocations = await db.select().from(locations).orderBy(locations.id);
+      res.json(allLocations);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/locations", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const { name, lat, lng, radius, city, address } = req.body;
+      if (!name || lat == null || lng == null) return res.status(400).json({ message: "name, lat, lng обязательны" });
+      const [loc] = await db.insert(locations).values({ name, lat, lng, radius: radius || 150, city, address }).returning();
+      res.status(201).json(loc);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/admin/locations/:id", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const locId = parseInt(req.params.id);
+      const { name, lat, lng, radius, city, address } = req.body;
+      const [updated] = await db.update(locations).set({ name, lat, lng, radius, city, address }).where(sql`${locations.id} = ${locId}`).returning();
+      if (!updated) return res.status(404).json({ message: "Точка не найдена" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/admin/locations/:id", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const locId = parseInt(req.params.id);
+      await db.delete(specialistLocations).where(sql`${specialistLocations.locationId} = ${locId}`);
+      await db.delete(locations).where(sql`${locations.id} = ${locId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/admin/specialists/:id/locations", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const specId = parseInt(req.params.id);
+      const locs = await db.select({
+        id: specialistLocations.id,
+        locationId: specialistLocations.locationId,
+        name: locations.name,
+        lat: locations.lat,
+        lng: locations.lng,
+        radius: locations.radius,
+        city: locations.city,
+        address: locations.address,
+      })
+        .from(specialistLocations)
+        .innerJoin(locations, sql`${specialistLocations.locationId} = ${locations.id}`)
+        .where(sql`${specialistLocations.specialistId} = ${specId}`);
+      res.json(locs);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/specialists/:id/locations", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const specId = parseInt(req.params.id);
+      const { locationId } = req.body;
+      if (!locationId) return res.status(400).json({ message: "locationId обязателен" });
+      const existing = await db.select().from(specialistLocations)
+        .where(sql`${specialistLocations.specialistId} = ${specId} AND ${specialistLocations.locationId} = ${locationId}`);
+      if (existing.length > 0) return res.status(409).json({ message: "Уже привязан" });
+      const [link] = await db.insert(specialistLocations).values({ specialistId: specId, locationId }).returning();
+      res.status(201).json(link);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/admin/specialists/:specId/locations/:locId", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const specId = parseInt(req.params.specId);
+      const locId = parseInt(req.params.locId);
+      await db.delete(specialistLocations).where(sql`${specialistLocations.specialistId} = ${specId} AND ${specialistLocations.locationId} = ${locId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/admin/geodata", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const data = await db.select().from(reviewGeodata).orderBy(sql`${reviewGeodata.id} DESC`).limit(limit);
+      res.json(data);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
