@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { reviews, users } from "@shared/schema";
+import { reviews, users, bookings } from "@shared/schema";
 import { eq, and, gte, sql } from "drizzle-orm";
 
 // Test mode: speeds up time limits for testing (set via env var)
@@ -130,6 +130,74 @@ export async function calculateTextWeight(
   }
 
   return { textWeight: 1.0 };
+}
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("8") && digits.length === 11) return "+7" + digits.slice(1);
+  if (!digits.startsWith("+")) return "+" + digits;
+  return "+" + digits;
+}
+
+export async function calculateNewWeight(specialistId: number, currentPhone: string | null): Promise<number> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  const result = await db.select({
+    uniquePhones: sql<number>`count(distinct COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}))`,
+  })
+    .from(reviews)
+    .innerJoin(bookings, eq(reviews.bookingId, bookings.id))
+    .where(and(
+      eq(reviews.specialistId, specialistId),
+      gte(reviews.createdAt, sevenDaysAgo),
+      eq(reviews.isFinalized, true),
+      sql`COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}) IS NOT NULL`
+    ));
+
+  let uniqueNewClients = Number(result[0]?.uniquePhones || 0);
+
+  if (currentPhone) {
+    const norm = normalizePhone(currentPhone);
+    const [already] = await db.select({ cnt: sql<number>`count(*)` })
+      .from(reviews)
+      .innerJoin(bookings, eq(reviews.bookingId, bookings.id))
+      .where(and(
+        eq(reviews.specialistId, specialistId),
+        gte(reviews.createdAt, sevenDaysAgo),
+        eq(reviews.isFinalized, true),
+        sql`COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}) = ${norm}`
+      ));
+    if (Number(already?.cnt || 0) === 0) {
+      uniqueNewClients++;
+    }
+  }
+
+  if (uniqueNewClients >= 3) return 1.0;
+  if (uniqueNewClients === 2) return 0.85;
+  return 0.6;
+}
+
+export async function calculateRepeatWeight(
+  specialistId: number,
+  customerPhone: string | null
+): Promise<number> {
+  if (!customerPhone) return 1.0;
+
+  const norm = normalizePhone(customerPhone);
+  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+
+  const existing = await db.select({ id: reviews.id })
+    .from(reviews)
+    .innerJoin(bookings, eq(reviews.bookingId, bookings.id))
+    .where(and(
+      eq(reviews.specialistId, specialistId),
+      sql`COALESCE(${bookings.normalizedPhone}, ${bookings.customerPhone}) = ${norm}`,
+      gte(reviews.createdAt, sixtyDaysAgo),
+      eq(reviews.isFinalized, true)
+    ))
+    .limit(1);
+
+  return existing.length > 0 ? 0 : 1.0;
 }
 
 export interface AntifraudResult {

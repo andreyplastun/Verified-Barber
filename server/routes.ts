@@ -1787,26 +1787,44 @@ export async function registerRoutes(
         priceMismatch: !!priceMismatch,
       });
       
-      // Calculate text weight for non-Altegio reviews
+      const isAltegio = booking.bookingSource === "altegio";
+      const reviewSource = isAltegio ? "altegio" : "manual";
+
       let textWeightResult = { textWeight: 1.0, reason: undefined as string | undefined };
+      let newWeight = 1.0;
+      let repeatWeight = 1.0;
+
       try {
-        const { calculateTextWeight } = await import("./antifraud");
-        textWeightResult = await calculateTextWeight(link.specialistId, comment, booking.bookingSource || null);
-        if (textWeightResult.textWeight < 1.0) {
-          console.log(`[TEXT_WEIGHT] review=${review.id} specialist=${link.specialistId} weight=${textWeightResult.textWeight} reason=${textWeightResult.reason}`);
+        const { calculateTextWeight, calculateNewWeight, calculateRepeatWeight } = await import("./antifraud");
+
+        repeatWeight = await calculateRepeatWeight(link.specialistId, booking.customerPhone);
+        if (repeatWeight === 0) {
+          console.log(`[WEIGHT] repeat_weight=0 review=${review.id} specialist=${link.specialistId} phone=${booking.customerPhone}`);
+        }
+
+        if (!isAltegio) {
+          textWeightResult = await calculateTextWeight(link.specialistId, comment, booking.bookingSource || null);
+          newWeight = await calculateNewWeight(link.specialistId, booking.customerPhone);
+          if (textWeightResult.textWeight < 1.0) {
+            console.log(`[WEIGHT] text_weight=${textWeightResult.textWeight} review=${review.id} reason=${textWeightResult.reason}`);
+          }
+          if (newWeight < 1.0) {
+            console.log(`[WEIGHT] new_weight=${newWeight} review=${review.id} specialist=${link.specialistId}`);
+          }
         }
       } catch (twErr: any) {
-        console.error(`[TEXT_WEIGHT] Error: ${twErr.message}`);
+        console.error(`[WEIGHT] Error calculating weights: ${twErr.message}`);
       }
 
-      // Save geodata if provided
       try {
         const geoStatusValue = clientGeoStatus || (geoLat != null ? "ok" : "no_permission");
         let distanceMeters: number | null = null;
         let geoWeight = 0.5;
         let matchedLocationId: number | null = null;
 
-        if (geoLat != null && geoLng != null) {
+        if (isAltegio) {
+          geoWeight = 1.0;
+        } else if (geoLat != null && geoLng != null) {
           const specLocs = await db.select({
             locationId: specialistLocations.locationId,
             lat: locations.lat,
@@ -1842,7 +1860,7 @@ export async function registerRoutes(
 
         const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || null;
 
-        if (clientIp && geoLat != null) {
+        if (clientIp && geoLat != null && !isAltegio) {
           const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
           const [ipCount] = await db.select({ count: sql<number>`count(*)` })
             .from(reviewGeodata)
@@ -1853,20 +1871,32 @@ export async function registerRoutes(
           }
         }
 
+        let finalWeight: number;
+        if (isAltegio) {
+          finalWeight = repeatWeight === 0 ? 0 : 1.0;
+        } else {
+          finalWeight = geoWeight * newWeight * repeatWeight;
+        }
+        finalWeight = Math.round(finalWeight * 100) / 100;
+
         await db.insert(reviewGeodata).values({
           reviewId: review.id,
           bookingId: link.bookingId,
           lat: geoLat ?? null,
           lng: geoLng ?? null,
           distanceMeters,
-          geoStatus: geoStatusValue,
+          geoStatus: isAltegio ? "ok" : geoStatusValue,
           geoWeight: Math.round(geoWeight * 100) / 100,
           textWeight: textWeightResult.textWeight,
           textWeightReason: textWeightResult.reason || null,
+          newWeight,
+          repeatWeight,
+          finalWeight,
+          reviewSource,
           locationId: matchedLocationId,
           ipAddress: clientIp,
         });
-        console.log(`[GEO] Saved geodata: review=${review.id} status=${geoStatusValue} distance=${distanceMeters}m geoWeight=${geoWeight} textWeight=${textWeightResult.textWeight} location=${matchedLocationId}`);
+        console.log(`[WEIGHT] Saved: review=${review.id} source=${reviewSource} geo=${geoWeight} new=${newWeight} repeat=${repeatWeight} final=${finalWeight} location=${matchedLocationId}`);
       } catch (geoErr: any) {
         console.error(`[GEO] Error saving geodata for review=${review.id}: ${geoErr.message}`);
       }

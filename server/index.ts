@@ -280,6 +280,10 @@ app.use((req, res, next) => {
       );
       ALTER TABLE review_geodata ADD COLUMN IF NOT EXISTS text_weight REAL NOT NULL DEFAULT 1.0;
       ALTER TABLE review_geodata ADD COLUMN IF NOT EXISTS text_weight_reason TEXT;
+      ALTER TABLE review_geodata ADD COLUMN IF NOT EXISTS new_weight REAL NOT NULL DEFAULT 1.0;
+      ALTER TABLE review_geodata ADD COLUMN IF NOT EXISTS repeat_weight REAL NOT NULL DEFAULT 1.0;
+      ALTER TABLE review_geodata ADD COLUMN IF NOT EXISTS final_weight REAL NOT NULL DEFAULT 1.0;
+      ALTER TABLE review_geodata ADD COLUMN IF NOT EXISTS review_source TEXT NOT NULL DEFAULT 'manual';
 
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;

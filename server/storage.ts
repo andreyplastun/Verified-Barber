@@ -1,4 +1,4 @@
-import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, reviewGeodata, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, gte, asc, sql } from "drizzle-orm";
@@ -517,6 +517,20 @@ export class DatabaseStorage implements IStorage {
       dampingFactor = 0.8;
     }
 
+    const reviewIds = validReviews.map(r => r.reviewId);
+    let geodataMap = new Map<number, number>();
+    if (reviewIds.length > 0) {
+      const geodataRows = await db.select({
+        reviewId: reviewGeodata.reviewId,
+        finalWeight: reviewGeodata.finalWeight,
+      })
+        .from(reviewGeodata)
+        .where(sql`${reviewGeodata.reviewId} IN (${sql.join(reviewIds.map(id => sql`${id}`), sql`, `)})`);
+      for (const row of geodataRows) {
+        geodataMap.set(row.reviewId, row.finalWeight);
+      }
+    }
+
     let weightedSum = 0;
     let weightSum = 0;
     let trustedReviewsCount = 0;
@@ -537,8 +551,11 @@ export class DatabaseStorage implements IStorage {
 
       if (visitWeight === 0) continue;
 
+      const finalWeight = geodataMap.get(r.reviewId) ?? 1.0;
+      if (finalWeight === 0) continue;
+
       trustedReviewsCount++;
-      const w = visitWeight * dampingFactor;
+      const w = visitWeight * dampingFactor * finalWeight;
       weightedSum += r.rating * w;
       weightSum += w;
     }
