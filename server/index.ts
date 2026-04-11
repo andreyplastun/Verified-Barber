@@ -64,7 +64,7 @@ try {
 }
 
 // Build version marker - helps verify which version is deployed
-const BUILD_VERSION = "2026-03-27-v98-human-throttle-spread";
+const BUILD_VERSION = "2026-04-11-v99-geo-self-address";
 console.log(`[STARTUP] Build version: ${BUILD_VERSION}`);
 const envKeys = Object.keys(process.env).sort();
 console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);
