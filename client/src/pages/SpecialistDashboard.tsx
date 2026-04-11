@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays } from 'lucide-react';
+import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays, MapPin, Navigation } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -35,6 +35,11 @@ export default function SpecialistDashboard() {
   const [subcategory, setSubcategory] = useState('');
   const [city, setCity] = useState('Алматы');
   const [savingBio, setSavingBio] = useState(false);
+  const [workAddress, setWorkAddress] = useState('');
+  const [workLat, setWorkLat] = useState<number | null>(null);
+  const [workLng, setWorkLng] = useState<number | null>(null);
+  const [detectingLocation, setDetectingLocation] = useState(false);
+  const [geocoding, setGeocoding] = useState(false);
   const [kaspiPhone, setKaspiPhone] = useState('');
   const [tipsEnabled, setTipsEnabled] = useState(false);
   const [savingTips, setSavingTips] = useState(false);
@@ -618,8 +623,66 @@ export default function SpecialistDashboard() {
       setTipsEnabled(specialist.tipsEnabled || false);
       setBaseServiceName(specialist.baseServiceName || '');
       setBaseServicePrice(specialist.baseServicePrice ? String(specialist.baseServicePrice) : '');
+      setWorkAddress((specialist as any).workAddress || '');
+      setWorkLat((specialist as any).workLat ?? null);
+      setWorkLng((specialist as any).workLng ?? null);
     }
   }, [specialist]);
+
+  const handleDetectLocation = async () => {
+    if (!navigator.geolocation) {
+      toast({ title: 'Геолокация недоступна', variant: 'destructive' });
+      return;
+    }
+    setDetectingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setWorkLat(lat);
+        setWorkLng(lng);
+        try {
+          const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ru`);
+          if (resp.ok) {
+            const data = await resp.json();
+            const addr = data.display_name || '';
+            setWorkAddress(addr);
+          }
+        } catch {
+        }
+        setDetectingLocation(false);
+        toast({ title: 'Местоположение определено' });
+      },
+      () => {
+        setDetectingLocation(false);
+        toast({ title: 'Не удалось определить', description: 'Разрешите доступ к геолокации', variant: 'destructive' });
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const handleGeocodeAddress = async () => {
+    if (!workAddress.trim()) return;
+    setGeocoding(true);
+    try {
+      const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(workAddress)}&format=json&limit=1&accept-language=ru`);
+      if (resp.ok) {
+        const results = await resp.json();
+        if (results.length > 0) {
+          setWorkLat(Number(results[0].lat));
+          setWorkLng(Number(results[0].lon));
+          setWorkAddress(results[0].display_name || workAddress);
+          toast({ title: 'Адрес найден' });
+        } else {
+          toast({ title: 'Адрес не найден', variant: 'destructive' });
+        }
+      }
+    } catch {
+      toast({ title: 'Ошибка геокодирования', variant: 'destructive' });
+    } finally {
+      setGeocoding(false);
+    }
+  };
 
   const handleSaveBio = async () => {
     if (!specialistId || !currentUser?.id) return;
@@ -631,7 +694,7 @@ export default function SpecialistDashboard() {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio, city, subcategory }),
+        body: JSON.stringify({ bio, city, subcategory, workAddress, workLat, workLng }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -787,6 +850,46 @@ export default function SpecialistDashboard() {
             />
           </div>
           <div className="space-y-2">
+            <Label htmlFor="workAddress">Адрес места работы</Label>
+            <div className="flex gap-2">
+              <Input
+                id="workAddress"
+                value={workAddress}
+                onChange={(e) => { setWorkAddress(e.target.value); setWorkLat(null); setWorkLng(null); }}
+                placeholder="Например: ул. Абая 150, Алматы"
+                data-testid="input-work-address"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={handleGeocodeAddress}
+                disabled={geocoding || !workAddress.trim()}
+                title="Найти координаты по адресу"
+                data-testid="button-geocode-address"
+              >
+                {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+              </Button>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleDetectLocation}
+              disabled={detectingLocation}
+              className="w-full"
+              data-testid="button-detect-location"
+            >
+              {detectingLocation ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Navigation className="w-4 h-4 mr-2" />}
+              Определить моё местоположение
+            </Button>
+            {workLat != null && workLng != null && (
+              <p className="text-xs text-muted-foreground" data-testid="text-coords">
+                Координаты: {workLat.toFixed(5)}, {workLng.toFixed(5)}
+              </p>
+            )}
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="bio">Краткое описание</Label>
             <Textarea
               id="bio"
@@ -804,7 +907,7 @@ export default function SpecialistDashboard() {
               <Button
                 size="sm"
                 onClick={handleSaveBio}
-                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || ''))}
+                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null))}
                 data-testid="button-save-bio"
               >
                 {savingBio ? 'Сохранение...' : 'Сохранить'}

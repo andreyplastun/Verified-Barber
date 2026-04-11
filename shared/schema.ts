@@ -76,6 +76,9 @@ export const specialists = pgTable("specialists", {
   city: text("city").default("Алматы").notNull(),
   district: text("district"), // Optional, e.g. "Бостандыкский район"
   locationNote: text("location_note"), // Private note, not public address
+  workAddress: text("work_address"), // Address entered by specialist
+  workLat: real("work_lat"), // Latitude (geocoded or from GPS)
+  workLng: real("work_lng"), // Longitude (geocoded or from GPS)
   // Kaspi tipping fields
   kaspiPhone: text("kaspi_phone"), // Phone number for Kaspi tips (nullable)
   tipsEnabled: boolean("tips_enabled").default(false).notNull(), // Whether tips are enabled

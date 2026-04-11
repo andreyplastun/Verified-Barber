@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2, Send, Power, PowerOff, AlertTriangle, Star, MapPin } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2, Send, Power, PowerOff, AlertTriangle, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -54,7 +54,7 @@ export default function AdminDashboard() {
     appointmentTime: "",
   });
 
-  const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims" | "whatsapp" | "locations">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims" | "whatsapp">("bookings");
   const [waMessageLimit, setWaMessageLimit] = useState(50);
   const [waStatsPeriod, setWaStatsPeriod] = useState(7);
   const [specialistFormOpen, setSpecialistFormOpen] = useState(false);
@@ -526,45 +526,7 @@ export default function AdminDashboard() {
       if (!res.ok) throw new Error("Failed to fetch locations");
       return res.json();
     },
-    enabled: !!currentUser && activeTab === "locations",
-  });
-  const locations = locationsData || [];
-
-  const [locationForm, setLocationForm] = useState({ name: "", city: "Алматы", address: "", lat: "", lng: "", radius: 150 });
-  const [editingLocationId, setEditingLocationId] = useState<number | null>(null);
-
-  const createLocationMutation = useMutation({
-    mutationFn: async (data: typeof locationForm) => {
-      const res = await fetch("/api/admin/locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id || "" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to create location");
-      return res.json();
-    },
-    onSuccess: () => {
-      refetchLocations();
-      setLocationForm({ name: "", city: "Алматы", address: "", lat: "", lng: "", radius: 150 });
-      toast({ title: "Точка добавлена" });
-    },
-    onError: (err: Error) => toast({ title: "Ошибка", description: err.message, variant: "destructive" }),
-  });
-
-  const deleteLocationMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/admin/locations/${id}`, {
-        method: "DELETE",
-        headers: { "x-user-id": currentUser?.id || "" },
-      });
-      if (!res.ok) throw new Error("Failed to delete location");
-      return res.json();
-    },
-    onSuccess: () => {
-      refetchLocations();
-      toast({ title: "Точка удалена" });
-    },
-    onError: (err: Error) => toast({ title: "Ошибка", description: err.message, variant: "destructive" }),
+    enabled: false,
   });
 
   const filteredBookings = bookings;
@@ -582,8 +544,8 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims" | "whatsapp" | "locations")}>
-          <TabsList className="grid w-full grid-cols-5 mb-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims" | "whatsapp")}>
+          <TabsList className="grid w-full grid-cols-4 mb-4">
             <TabsTrigger value="bookings" data-testid="tab-bookings-main" className="relative">
               <Calendar className="h-4 w-4 mr-1" />
               <span className="text-xs">Записи</span>
@@ -614,10 +576,6 @@ export default function AdminDashboard() {
             <TabsTrigger value="whatsapp" data-testid="tab-whatsapp-main">
               <Send className="h-4 w-4 mr-1" />
               <span className="text-xs">WA</span>
-            </TabsTrigger>
-            <TabsTrigger value="locations" data-testid="tab-locations-main">
-              <MapPin className="h-4 w-4 mr-1" />
-              <span className="text-xs">Точки</span>
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -1640,102 +1598,6 @@ export default function AdminDashboard() {
         </DialogContent>
       </Dialog>
 
-      {activeTab === "locations" && (
-        <div className="space-y-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <MapPin className="h-5 w-5" />
-                Точки приёма ({locations.length})
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 gap-3 p-3 bg-muted/50 rounded-lg">
-                <div className="grid grid-cols-2 gap-2">
-                  <Input
-                    placeholder="Название"
-                    value={locationForm.name}
-                    onChange={(e) => setLocationForm(prev => ({ ...prev, name: e.target.value }))}
-                    data-testid="input-location-name"
-                  />
-                  <Select value={locationForm.city} onValueChange={(v) => setLocationForm(prev => ({ ...prev, city: v }))}>
-                    <SelectTrigger data-testid="select-location-city">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Алматы">Алматы</SelectItem>
-                      <SelectItem value="Астана">Астана</SelectItem>
-                      <SelectItem value="Караганда">Караганда</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Input
-                  placeholder="Адрес"
-                  value={locationForm.address}
-                  onChange={(e) => setLocationForm(prev => ({ ...prev, address: e.target.value }))}
-                  data-testid="input-location-address"
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <Input
-                    placeholder="Широта"
-                    value={locationForm.lat}
-                    onChange={(e) => setLocationForm(prev => ({ ...prev, lat: e.target.value }))}
-                    data-testid="input-location-lat"
-                  />
-                  <Input
-                    placeholder="Долгота"
-                    value={locationForm.lng}
-                    onChange={(e) => setLocationForm(prev => ({ ...prev, lng: e.target.value }))}
-                    data-testid="input-location-lng"
-                  />
-                  <Input
-                    type="number"
-                    placeholder="Радиус (м)"
-                    value={locationForm.radius}
-                    onChange={(e) => setLocationForm(prev => ({ ...prev, radius: parseInt(e.target.value) || 150 }))}
-                    data-testid="input-location-radius"
-                  />
-                </div>
-                <Button
-                  onClick={() => createLocationMutation.mutate(locationForm)}
-                  disabled={!locationForm.name || !locationForm.lat || !locationForm.lng || createLocationMutation.isPending}
-                  data-testid="button-add-location"
-                >
-                  <Plus className="h-4 w-4 mr-2" />
-                  Добавить точку
-                </Button>
-              </div>
-
-              {locations.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">Точки не добавлены</p>
-              ) : (
-                <div className="space-y-2">
-                  {locations.map((loc) => (
-                    <div key={loc.id} className="flex items-center justify-between p-3 border rounded-lg" data-testid={`location-item-${loc.id}`}>
-                      <div>
-                        <p className="font-medium text-sm">{loc.name}</p>
-                        <p className="text-xs text-muted-foreground">{loc.city}, {loc.address}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {loc.lat}, {loc.lng} · радиус {loc.radius}м
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => deleteLocationMutation.mutate(loc.id)}
-                        disabled={deleteLocationMutation.isPending}
-                        data-testid={`button-delete-location-${loc.id}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-red-500" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
     </div>
   );
 }

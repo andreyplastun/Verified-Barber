@@ -1825,27 +1825,11 @@ export async function registerRoutes(
         if (isAltegio) {
           geoWeight = 1.0;
         } else if (geoLat != null && geoLng != null) {
-          const specLocs = await db.select({
-            locationId: specialistLocations.locationId,
-            lat: locations.lat,
-            lng: locations.lng,
-            radius: locations.radius,
-          })
-            .from(specialistLocations)
-            .innerJoin(locations, sql`${specialistLocations.locationId} = ${locations.id}`)
-            .where(sql`${specialistLocations.specialistId} = ${link.specialistId}`);
-
-          if (specLocs.length > 0) {
-            let minDist = Infinity;
-            for (const loc of specLocs) {
-              const dist = haversineDistance(geoLat, geoLng, loc.lat, loc.lng);
-              if (dist < minDist) {
-                minDist = dist;
-                matchedLocationId = loc.locationId;
-                distanceMeters = Math.round(dist);
-              }
-            }
-            geoWeight = calculateGeoWeight(distanceMeters, specLocs.find(l => l.locationId === matchedLocationId)?.radius ?? 150);
+          const spec = await storage.getSpecialist(link.specialistId);
+          if (spec?.workLat != null && spec?.workLng != null) {
+            distanceMeters = Math.round(haversineDistance(geoLat, geoLng, spec.workLat, spec.workLng));
+            geoWeight = calculateGeoWeight(distanceMeters, 150);
+            console.log(`[GEO] Distance: review=${review.id} dist=${distanceMeters}m geoWeight=${geoWeight}`);
           }
 
           if (booking.appointmentTime) {
@@ -2547,7 +2531,7 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       const specialistId = Number(req.params.id);
-      const { bio, city, subcategory } = req.body;
+      const { bio, city, subcategory, workAddress, workLat, workLng } = req.body;
 
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -2575,6 +2559,9 @@ ${magicLink}`;
       const updates: any = {};
       if (city) updates.city = city;
       if (subcategory !== undefined) updates.subcategory = subcategory || null;
+      if (workAddress !== undefined) updates.workAddress = workAddress || null;
+      if (workLat !== undefined) updates.workLat = workLat != null ? Number(workLat) : null;
+      if (workLng !== undefined) updates.workLng = workLng != null ? Number(workLng) : null;
       if (Object.keys(updates).length > 0) {
         await storage.updateSpecialist(specialistId, updates);
       }

@@ -355,6 +355,9 @@ app.use((req, res, next) => {
 
     await pool.query(`
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS slug text;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS work_address text;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS work_lat real;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS work_lng real;
       ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS short_code integer;
     `);
 
