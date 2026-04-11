@@ -40,6 +40,7 @@ export default function SpecialistDashboard() {
   const [workLng, setWorkLng] = useState<number | null>(null);
   const [detectingLocation, setDetectingLocation] = useState(false);
   const [geocoding, setGeocoding] = useState(false);
+  const [locationCooldownOpen, setLocationCooldownOpen] = useState(false);
   const [kaspiPhone, setKaspiPhone] = useState('');
   const [tipsEnabled, setTipsEnabled] = useState(false);
   const [savingTips, setSavingTips] = useState(false);
@@ -859,49 +860,82 @@ export default function SpecialistDashboard() {
               const daysLeft = locked ? Math.ceil(7 - daysSince) : 0;
               return (
                 <>
-                  {locked && (
-                    <p className="text-xs text-orange-600" data-testid="text-location-cooldown">
-                      Изменение адреса доступно через {daysLeft} дн.
-                    </p>
-                  )}
-                  <div className="flex gap-2">
-                    <Input
-                      id="workAddress"
-                      value={workAddress}
-                      onChange={(e) => { setWorkAddress(e.target.value); setWorkLat(null); setWorkLng(null); }}
-                      placeholder="Например: ул. Абая 150, Алматы"
-                      disabled={locked}
-                      data-testid="input-work-address"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={handleGeocodeAddress}
-                      disabled={locked || geocoding || !workAddress.trim()}
-                      title="Найти координаты по адресу"
-                      data-testid="button-geocode-address"
+                  {locked ? (
+                    <div
+                      className="p-3 bg-muted/50 rounded-lg cursor-pointer"
+                      onClick={() => setLocationCooldownOpen(true)}
+                      data-testid="area-location-locked"
                     >
-                      {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-                    </Button>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleDetectLocation}
-                    disabled={locked || detectingLocation}
-                    className="w-full"
-                    data-testid="button-detect-location"
-                  >
-                    {detectingLocation ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Navigation className="w-4 h-4 mr-2" />}
-                    Определить моё местоположение
-                  </Button>
-                  {workLat != null && workLng != null && (
-                    <p className="text-xs text-muted-foreground" data-testid="text-coords">
-                      Координаты: {workLat.toFixed(5)}, {workLng.toFixed(5)}
-                    </p>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <MapPin className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{workAddress || 'Адрес указан'}</span>
+                      </div>
+                      {workLat != null && workLng != null && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {workLat.toFixed(5)}, {workLng.toFixed(5)}
+                        </p>
+                      )}
+                      <p className="text-xs text-orange-600 mt-1">
+                        Изменение через {daysLeft} дн.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex gap-2">
+                        <Input
+                          id="workAddress"
+                          value={workAddress}
+                          onChange={(e) => { setWorkAddress(e.target.value); setWorkLat(null); setWorkLng(null); }}
+                          placeholder="Например: ул. Абая 150, Алматы"
+                          data-testid="input-work-address"
+                        />
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          onClick={handleGeocodeAddress}
+                          disabled={geocoding || !workAddress.trim()}
+                          title="Найти координаты по адресу"
+                          data-testid="button-geocode-address"
+                        >
+                          {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleDetectLocation}
+                        disabled={detectingLocation}
+                        className="w-full"
+                        data-testid="button-detect-location"
+                      >
+                        {detectingLocation ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Navigation className="w-4 h-4 mr-2" />}
+                        Определить моё местоположение
+                      </Button>
+                      {workLat != null && workLng != null && (
+                        <p className="text-xs text-muted-foreground" data-testid="text-coords">
+                          Координаты: {workLat.toFixed(5)}, {workLng.toFixed(5)}
+                        </p>
+                      )}
+                    </>
                   )}
+                  <Dialog open={locationCooldownOpen} onOpenChange={setLocationCooldownOpen}>
+                    <DialogContent className="max-w-sm">
+                      <DialogHeader>
+                        <DialogTitle>Адрес временно заблокирован</DialogTitle>
+                        <DialogDescription>
+                          Вы недавно указали адрес места работы. Изменение адреса доступно не чаще 1 раза в 7 дней — это помогает защитить достоверность отзывов.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <p className="text-sm text-center text-orange-600 font-medium" data-testid="text-cooldown-days">
+                        Осталось {daysLeft} дн.
+                      </p>
+                      <Button onClick={() => setLocationCooldownOpen(false)} className="w-full" data-testid="button-cooldown-ok">
+                        Понятно
+                      </Button>
+                    </DialogContent>
+                  </Dialog>
                 </>
               );
             })()}
