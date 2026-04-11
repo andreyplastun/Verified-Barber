@@ -2559,9 +2559,28 @@ ${magicLink}`;
       const updates: any = {};
       if (city) updates.city = city;
       if (subcategory !== undefined) updates.subcategory = subcategory || null;
-      if (workAddress !== undefined) updates.workAddress = workAddress || null;
-      if (workLat !== undefined) updates.workLat = workLat != null ? Number(workLat) : null;
-      if (workLng !== undefined) updates.workLng = workLng != null ? Number(workLng) : null;
+
+      const locationChanging = workLat !== undefined || workLng !== undefined || workAddress !== undefined;
+      if (locationChanging) {
+        const spec = await storage.getSpecialist(specialistId);
+        const hasExisting = spec?.workLat != null && spec?.workLng != null;
+
+        if (hasExisting) {
+          const lastUpdate = (spec as any)?.workLocationUpdatedAt;
+          if (lastUpdate) {
+            const daysSince = (Date.now() - new Date(lastUpdate).getTime()) / (1000 * 60 * 60 * 24);
+            if (daysSince < 7) {
+              return res.status(429).json({ message: `Адрес можно менять не чаще 1 раза в 7 дней. Осталось ${Math.ceil(7 - daysSince)} дн.` });
+            }
+          }
+        }
+
+        if (workAddress !== undefined) updates.workAddress = workAddress || null;
+        if (workLat !== undefined) updates.workLat = workLat != null ? Number(workLat) : null;
+        if (workLng !== undefined) updates.workLng = workLng != null ? Number(workLng) : null;
+        updates.workLocationUpdatedAt = new Date();
+      }
+
       if (Object.keys(updates).length > 0) {
         await storage.updateSpecialist(specialistId, updates);
       }

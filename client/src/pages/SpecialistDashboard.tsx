@@ -851,43 +851,60 @@ export default function SpecialistDashboard() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="workAddress">Адрес места работы</Label>
-            <div className="flex gap-2">
-              <Input
-                id="workAddress"
-                value={workAddress}
-                onChange={(e) => { setWorkAddress(e.target.value); setWorkLat(null); setWorkLng(null); }}
-                placeholder="Например: ул. Абая 150, Алматы"
-                data-testid="input-work-address"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={handleGeocodeAddress}
-                disabled={geocoding || !workAddress.trim()}
-                title="Найти координаты по адресу"
-                data-testid="button-geocode-address"
-              >
-                {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-              </Button>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleDetectLocation}
-              disabled={detectingLocation}
-              className="w-full"
-              data-testid="button-detect-location"
-            >
-              {detectingLocation ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Navigation className="w-4 h-4 mr-2" />}
-              Определить моё местоположение
-            </Button>
-            {workLat != null && workLng != null && (
-              <p className="text-xs text-muted-foreground" data-testid="text-coords">
-                Координаты: {workLat.toFixed(5)}, {workLng.toFixed(5)}
-              </p>
-            )}
+            {(() => {
+              const hasCoords = (specialist as any)?.workLat != null && (specialist as any)?.workLng != null;
+              const updatedAt = (specialist as any)?.workLocationUpdatedAt;
+              const daysSince = updatedAt ? (Date.now() - new Date(updatedAt).getTime()) / (1000 * 60 * 60 * 24) : 999;
+              const locked = hasCoords && daysSince < 7;
+              const daysLeft = locked ? Math.ceil(7 - daysSince) : 0;
+              return (
+                <>
+                  {locked && (
+                    <p className="text-xs text-orange-600" data-testid="text-location-cooldown">
+                      Изменение адреса доступно через {daysLeft} дн.
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <Input
+                      id="workAddress"
+                      value={workAddress}
+                      onChange={(e) => { setWorkAddress(e.target.value); setWorkLat(null); setWorkLng(null); }}
+                      placeholder="Например: ул. Абая 150, Алматы"
+                      disabled={locked}
+                      data-testid="input-work-address"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={handleGeocodeAddress}
+                      disabled={locked || geocoding || !workAddress.trim()}
+                      title="Найти координаты по адресу"
+                      data-testid="button-geocode-address"
+                    >
+                      {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleDetectLocation}
+                    disabled={locked || detectingLocation}
+                    className="w-full"
+                    data-testid="button-detect-location"
+                  >
+                    {detectingLocation ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Navigation className="w-4 h-4 mr-2" />}
+                    Определить моё местоположение
+                  </Button>
+                  {workLat != null && workLng != null && (
+                    <p className="text-xs text-muted-foreground" data-testid="text-coords">
+                      Координаты: {workLat.toFixed(5)}, {workLng.toFixed(5)}
+                    </p>
+                  )}
+                </>
+              );
+            })()}
           </div>
           <div className="space-y-2">
             <Label htmlFor="bio">Краткое описание</Label>

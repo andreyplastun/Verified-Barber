@@ -358,6 +358,7 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS work_address text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS work_lat real;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS work_lng real;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS work_location_updated_at timestamp;
       ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS short_code integer;
     `);
 

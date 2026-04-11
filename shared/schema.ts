@@ -79,6 +79,7 @@ export const specialists = pgTable("specialists", {
   workAddress: text("work_address"), // Address entered by specialist
   workLat: real("work_lat"), // Latitude (geocoded or from GPS)
   workLng: real("work_lng"), // Longitude (geocoded or from GPS)
+  workLocationUpdatedAt: timestamp("work_location_updated_at"), // Last time work location was changed
   // Kaspi tipping fields
   kaspiPhone: text("kaspi_phone"), // Phone number for Kaspi tips (nullable)
   tipsEnabled: boolean("tips_enabled").default(false).notNull(), // Whether tips are enabled
