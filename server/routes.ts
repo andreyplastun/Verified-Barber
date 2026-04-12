@@ -25,11 +25,11 @@ function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-function calculateGeoWeight(distanceMeters: number | null, radius: number = 150): number {
+function calculateGeoWeight(distanceMeters: number | null): number {
   if (distanceMeters === null) return 0.5;
-  if (distanceMeters <= radius) return 1.0;
-  if (distanceMeters <= 500) return 0.6;
-  return 0.2;
+  if (distanceMeters <= 200) return 1.0;
+  if (distanceMeters <= 1000) return 0.7;
+  return 0.4;
 }
 
 function isSpecialistAction(source: string): boolean {
@@ -1828,7 +1828,7 @@ export async function registerRoutes(
           const spec = await storage.getSpecialist(link.specialistId);
           if (spec?.workLat != null && spec?.workLng != null) {
             distanceMeters = Math.round(haversineDistance(geoLat, geoLng, spec.workLat, spec.workLng));
-            geoWeight = calculateGeoWeight(distanceMeters, 150);
+            geoWeight = calculateGeoWeight(distanceMeters);
             console.log(`[GEO] Distance: review=${review.id} dist=${distanceMeters}m geoWeight=${geoWeight}`);
           }
 
