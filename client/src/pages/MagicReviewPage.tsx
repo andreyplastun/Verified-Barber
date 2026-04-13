@@ -174,6 +174,7 @@ interface MagicLinkData {
   kaspiPhone?: string | null;
   sentAt?: string;
   baseServicePrice?: number | null;
+  bookingSource?: string;
 }
 
 export default function MagicReviewPage() {
@@ -250,7 +251,12 @@ export default function MagicReviewPage() {
   }, [linkData]);
 
   useEffect(() => {
-    if (linkData?.valid && !geoRequestedRef.current && navigator.geolocation) {
+    if (!linkData?.valid || geoRequestedRef.current) return;
+    if (linkData.bookingSource === "altegio") {
+      geoRequestedRef.current = true;
+      return;
+    }
+    if (navigator.geolocation) {
       geoRequestedRef.current = true;
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -261,7 +267,7 @@ export default function MagicReviewPage() {
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
       );
-    } else if (linkData?.valid && !navigator.geolocation) {
+    } else {
       setGeoData({ lat: 0, lng: 0, status: "error" });
     }
   }, [linkData]);

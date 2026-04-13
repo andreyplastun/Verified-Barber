@@ -1603,6 +1603,7 @@ export async function registerRoutes(
         kaspiPhone: specialist.kaspiPhone || null,
         sentAt: link.createdAt,
         baseServicePrice: specialist.baseServicePrice || null,
+        bookingSource: (booking as any).bookingSource || "manual",
       });
     } catch (err: any) {
       console.error("Error validating magic link:", err);
@@ -1703,6 +1704,7 @@ export async function registerRoutes(
         sentAt: link.createdAt,
         baseServicePrice: specialist.baseServicePrice || null,
         token: link.token,
+        bookingSource: (booking as any).bookingSource || "manual",
       });
     } catch (err: any) {
       console.error("Error validating short review link:", err);
