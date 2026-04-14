@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata } from "@shared/schema";
+import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata, waMessages } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
@@ -99,6 +99,32 @@ async function sendReviewLinkDirect(booking: any, link: string, source: string):
   const reviewText = `Спасибо за визит к ${specialistDative}!\n\nОставьте отзыв по ссылке:\n${link}`;
   const waResult = await sendDirectWaMessage(phone, reviewText, booking.id);
   console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} phone=${phone} link=${link} success=${waResult.success}`);
+
+  if (waResult.success) {
+    try {
+      const cleanPhone = phone.replace(/\D/g, "");
+      const now = new Date();
+      await db.insert(waMessages).values({
+        bookingId: booking.id,
+        specialistId: booking.specialistId,
+        customerPhone: cleanPhone,
+        customerName: booking.customerName || "",
+        specialistName: specialist?.name || "",
+        reviewLink: link,
+        messageType: "primary",
+        templateIndex: 0,
+        messageText: reviewText,
+        scheduledAt: now,
+        sentAt: now,
+        status: "sent",
+        dedupeKey: `specialist_direct_${booking.id}`,
+      });
+      console.log(`[SPECIALIST_SEND] Recorded in wa_messages: booking=${booking.id} phone=${cleanPhone}`);
+    } catch (recordErr: any) {
+      console.error(`[SPECIALIST_SEND] Failed to record in wa_messages: booking=${booking.id} error=${recordErr.message}`);
+    }
+  }
+
   return waResult.success;
 }
 
