@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays, MapPin, Navigation } from 'lucide-react';
+import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays, MapPin, Navigation, MessageCircle } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -1995,6 +1995,19 @@ export default function SpecialistDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <a
+        href="https://wa.me/77089902547?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5!%20%D0%A3%20%D0%BC%D0%B5%D0%BD%D1%8F%20%D0%B2%D0%BE%D0%BF%D1%80%D0%BE%D1%81%20%D0%BF%D0%BE%20Rateus."
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block"
+        data-testid="link-support-whatsapp"
+      >
+        <Button variant="outline" className="w-full gap-2">
+          <MessageCircle className="w-4 h-4" />
+          Поддержка
+        </Button>
+      </a>
 
       <Dialog open={priceDialogBookingId !== null} onOpenChange={(open) => { if (!open) { setPriceDialogBookingId(null); setPriceInputValue(''); } }}>
         <DialogContent className="max-w-sm">
