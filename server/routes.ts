@@ -2896,16 +2896,12 @@ ${magicLink}`;
         return res.status(404).json({ message: "Специалист не найден" });
       }
 
-      if (specialist.ownerUserId) {
-        return res.status(400).json({ message: "Профиль уже привязан" });
-      }
-
       const existingClaims = await storage.getClaimRequests();
-      const hasPendingClaim = existingClaims.some(
-        c => c.specialistId === specialistId && c.status === "pending"
+      const hasActiveClaim = existingClaims.some(
+        c => c.specialistId === specialistId && (c.status === "pending" || c.status === "approved")
       );
-      if (hasPendingClaim) {
-        return res.status(400).json({ message: "Запрос уже отправлен" });
+      if (hasActiveClaim) {
+        return res.status(400).json({ message: "Запрос уже отправлен или профиль привязан" });
       }
 
       const claim = await storage.createClaimRequest(specialistId, phone || "");
@@ -2952,7 +2948,11 @@ ${magicLink}`;
       if (!specialist) {
         return res.status(404).json({ message: "Специалист не найден" });
       }
-      if (specialist.ownerUserId) {
+      const approveAllClaims = await storage.getClaimRequests();
+      const hasCompletedClaimForApprove = approveAllClaims.some(
+        c => c.specialistId === existing.specialistId && c.status === "approved" && c.tokenUsedAt
+      );
+      if (hasCompletedClaimForApprove) {
         return res.status(400).json({ message: "Профиль уже привязан к другому пользователю" });
       }
 
@@ -3054,13 +3054,33 @@ ${magicLink}`;
       if (!specialist) {
         return res.status(404).json({ message: "Специалист не найден" });
       }
-      if (specialist.ownerUserId) {
-        return res.status(400).json({ message: "Профиль уже привязан к другому пользователю" });
+      const bindResult = await pool.query(`
+        WITH token_check AS (
+          UPDATE claim_requests 
+          SET token_used_at = NOW() 
+          WHERE id = $1 AND token_used_at IS NULL AND status = 'approved'
+          RETURNING specialist_id
+        ),
+        bind_specialist AS (
+          UPDATE specialists 
+          SET owner_user_id = $2 
+          WHERE id = (SELECT specialist_id FROM token_check)
+          RETURNING id
+        ),
+        bind_user AS (
+          UPDATE users 
+          SET role = 'specialist', specialist_id = (SELECT specialist_id FROM token_check)
+          WHERE id = $2 AND (SELECT specialist_id FROM token_check) IS NOT NULL
+          RETURNING id
+        )
+        SELECT (SELECT specialist_id FROM token_check) as specialist_id
+      `, [claim.id, authUserId]);
+
+      if (!bindResult.rows[0]?.specialist_id) {
+        return res.status(400).json({ message: "Ссылка уже использована или профиль привязан" });
       }
 
-      // Bind the specialist to this user
-      await storage.bindSpecialistToUser(claim.specialistId, authUserId);
-      await storage.markClaimTokenUsed(claim.id);
+      console.log(`[CLAIM] Bound specialist ${claim.specialistId} to user ${authUserId} (atomic)`);
 
       res.json({ 
         message: "Профиль успешно привязан", 
@@ -3081,11 +3101,11 @@ ${magicLink}`;
         return res.status(404).json({ message: "Специалист не найден" });
       }
       const allClaims = await storage.getClaimRequests();
-      const hasPendingOrApprovedClaim = allClaims.some(
+      const hasActiveClaim = allClaims.some(
         c => c.specialistId === specialistId && (c.status === "pending" || c.status === "approved")
       );
       res.json({ 
-        isClaimed: !!specialist.ownerUserId || hasPendingOrApprovedClaim,
+        isClaimed: hasActiveClaim,
         specialistId 
       });
     } catch (err: any) {
