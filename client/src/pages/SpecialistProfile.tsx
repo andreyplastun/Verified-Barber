@@ -4,8 +4,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
 import { useAuth } from "@/contexts/AuthContext";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info, UserCheck } from "lucide-react";
+import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info, UserCheck, Phone } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -30,13 +31,18 @@ export default function SpecialistProfile() {
     enabled: id > 0,
   });
 
+  const [showClaimForm, setShowClaimForm] = useState(false);
+  const [claimPhone, setClaimPhone] = useState("");
+
   const claimMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/claim-requests", { specialistId: id });
+      await apiRequest("POST", "/api/claim-requests", { specialistId: id, phone: claimPhone });
     },
     onSuccess: () => {
       toast({ title: "Запрос отправлен", description: "Администратор рассмотрит ваш запрос." });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', id, 'claim-status'] });
+      setShowClaimForm(false);
+      setClaimPhone("");
     },
     onError: (error: any) => {
       toast({ title: "Ошибка", description: error?.message || "Ошибка при отправке запроса", variant: "destructive" });
@@ -261,21 +267,57 @@ export default function SpecialistProfile() {
 
         {showClaimButton && (
           <div className="mt-4 bg-card rounded-2xl p-4 shadow-sm border border-border" data-testid="claim-profile-banner">
-            <div className="flex items-center gap-3">
-              <UserCheck className="w-5 h-5 text-primary flex-shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium">Это ваш профиль?</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Отправьте запрос на управление профилем</p>
+            {!showClaimForm ? (
+              <div className="flex items-center gap-3">
+                <UserCheck className="w-5 h-5 text-primary flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">Это ваш профиль?</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Отправьте запрос на управление</p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => setShowClaimForm(true)}
+                  data-testid="button-claim-profile"
+                >
+                  Забрать
+                </Button>
               </div>
-              <Button
-                size="sm"
-                onClick={() => claimMutation.mutate()}
-                disabled={claimMutation.isPending}
-                data-testid="button-claim-profile"
-              >
-                {claimMutation.isPending ? "Отправка..." : "Забрать"}
-              </Button>
-            </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-primary flex-shrink-0" />
+                  <p className="text-sm font-medium">Укажите ваш номер телефона</p>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      type="tel"
+                      placeholder="+7 (___) ___-__-__"
+                      value={claimPhone}
+                      onChange={(e) => setClaimPhone(e.target.value)}
+                      className="pl-9"
+                      data-testid="input-claim-phone"
+                    />
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => claimMutation.mutate()}
+                    disabled={claimMutation.isPending || !claimPhone.trim()}
+                    data-testid="button-submit-claim"
+                  >
+                    {claimMutation.isPending ? "..." : "Отправить"}
+                  </Button>
+                </div>
+                <button
+                  className="text-xs text-muted-foreground underline"
+                  onClick={() => { setShowClaimForm(false); setClaimPhone(""); }}
+                  data-testid="button-cancel-claim"
+                >
+                  Отмена
+                </button>
+              </div>
+            )}
           </div>
         )}
 
