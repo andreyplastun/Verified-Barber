@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from "react";
 import { useRoute, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
 import { useAuth } from "@/contexts/AuthContext";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info } from "lucide-react";
+import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn, Confetti } from "@/components/ui/animations";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
@@ -15,7 +17,33 @@ export default function SpecialistProfile() {
   const [, params] = useRoute("/specialist/:id");
   const id = params ? parseInt(params.id) : 0;
   const { currentUser } = useAuth();
+  const { toast } = useToast();
   const { data: specialist, isLoading } = useSpecialist(id, currentUser?.id);
+
+  const { data: claimStatus } = useQuery<{ isClaimed: boolean }>({
+    queryKey: ['/api/specialists', id, 'claim-status'],
+    queryFn: async () => {
+      const res = await fetch(`/api/specialists/${id}/claim-status`);
+      if (!res.ok) return { isClaimed: true };
+      return res.json();
+    },
+    enabled: id > 0,
+  });
+
+  const claimMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("POST", "/api/claim-requests", { specialistId: id });
+    },
+    onSuccess: () => {
+      toast({ title: "Запрос отправлен", description: "Администратор рассмотрит ваш запрос." });
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', id, 'claim-status'] });
+    },
+    onError: (error: any) => {
+      toast({ title: "Ошибка", description: error?.message || "Ошибка при отправке запроса", variant: "destructive" });
+    },
+  });
+
+  const showClaimButton = claimStatus && !claimStatus.isClaimed;
 
   // Fetch user's bookings to check if they can leave a review
   const { data: myBookings = [] } = useQuery<Booking[]>({
@@ -230,6 +258,26 @@ export default function SpecialistProfile() {
             </div>
           </div>
         </div>
+
+        {showClaimButton && (
+          <div className="mt-4 bg-card rounded-2xl p-4 shadow-sm border border-border" data-testid="claim-profile-banner">
+            <div className="flex items-center gap-3">
+              <UserCheck className="w-5 h-5 text-primary flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">Это ваш профиль?</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Отправьте запрос на управление профилем</p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => claimMutation.mutate()}
+                disabled={claimMutation.isPending}
+                data-testid="button-claim-profile"
+              >
+                {claimMutation.isPending ? "Отправка..." : "Забрать"}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Work Photos Gallery */}
         {workPhotos.length > 0 && (
