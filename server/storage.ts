@@ -1336,7 +1336,18 @@ export class DatabaseStorage implements IStorage {
     openedCount: number;
     conversionOpened: number;
     conversionNotOpened: number;
+    openedAfterPrimaryNoReview: number;
+    openedAfterFollowupNoReview: number;
   }> {
+    // ACTIVITY-BASED STATS: count what actually happened in this period,
+    // not cohort outcomes. Reasons:
+    //   - Follow-ups go out 20-24h after primary, so cohort-based "Вчера"
+    //     would always show 0 follow-ups for yesterday's primaries.
+    //   - Reviews are written hours/days after the primary was sent.
+    // We count: primaries sent in range, follow-ups sent in range,
+    // reviews CREATED in range (with attribution to primary or follow-up
+    // based on whether a follow-up was sent before the review).
+
     const sentPrimaries = await db.select({
       bookingId: waMessages.bookingId,
       sentAt: waMessages.sentAt,
@@ -1347,83 +1358,99 @@ export class DatabaseStorage implements IStorage {
         sql`${waMessages.sentAt} >= ${from} AND ${waMessages.sentAt} < ${to}`
       )
     );
+    const totalBookings = new Set(sentPrimaries.map(m => m.bookingId)).size;
 
-    const uniqueBookingIds = [...new Set(sentPrimaries.map(m => m.bookingId))];
-    const totalBookings = uniqueBookingIds.length;
-
-    if (totalBookings === 0) {
-      return { totalBookings: 0, totalReviews: 0, reviewsAfterPrimary: 0, reviewsAfterFollowup: 0, conversionPercent: 0, primaryConversionPercent: 0, followupIncrementPercent: 0, followupSent: 0, followupEfficiencyPercent: 0, openedCount: 0, conversionOpened: 0, conversionNotOpened: 0, openedAfterPrimaryNoReview: 0, openedAfterFollowupNoReview: 0 };
-    }
-
-    const bookingReviews = await db.select({
-      bookingId: reviews.bookingId,
-      createdAt: reviews.createdAt,
-    }).from(reviews).where(
-      sql`${reviews.bookingId} IN (${sql.join(uniqueBookingIds.map(id => sql`${id}`), sql`, `)})`
-    );
-    const reviewMap = new Map(bookingReviews.map(r => [r.bookingId, r.createdAt]));
-
-    const sentFollowups = await db.select({
+    const sentFollowupsInRange = await db.select({
       bookingId: waMessages.bookingId,
       sentAt: waMessages.sentAt,
     }).from(waMessages).where(
       and(
         eq(waMessages.status, "sent"),
         eq(waMessages.messageType, "reminder"),
-        sql`${waMessages.bookingId} IN (${sql.join(uniqueBookingIds.map(id => sql`${id}`), sql`, `)})`
+        sql`${waMessages.sentAt} >= ${from} AND ${waMessages.sentAt} < ${to}`
       )
     );
-    const followupSentMap = new Map(sentFollowups.map(f => [f.bookingId, f.sentAt]));
-    const followupSent = new Set(sentFollowups.map(f => f.bookingId)).size;
+    const followupSent = new Set(sentFollowupsInRange.map(f => f.bookingId)).size;
 
-    const openedLinks = await db.select({
+    const reviewsInRange = await db.select({
+      bookingId: reviews.bookingId,
+      createdAt: reviews.createdAt,
+    }).from(reviews).where(
+      and(
+        sql`${reviews.bookingId} IS NOT NULL`,
+        sql`${reviews.createdAt} >= ${from} AND ${reviews.createdAt} < ${to}`
+      )
+    );
+
+    const reviewBookingIds = reviewsInRange.map(r => r.bookingId).filter((id) => id !== null && id !== undefined) as any[];
+
+    const followupForReviewMap = new Map<any, Date | null>();
+    const openedForReviewSet = new Set<any>();
+    if (reviewBookingIds.length > 0) {
+      const allFollowupsForReviews = await db.select({
+        bookingId: waMessages.bookingId,
+        sentAt: waMessages.sentAt,
+      }).from(waMessages).where(
+        and(
+          eq(waMessages.status, "sent"),
+          eq(waMessages.messageType, "reminder"),
+          sql`${waMessages.bookingId} IN (${sql.join(reviewBookingIds.map(id => sql`${id}`), sql`, `)})`
+        )
+      );
+      for (const f of allFollowupsForReviews) {
+        followupForReviewMap.set(f.bookingId, f.sentAt);
+      }
+
+      const allOpenedForReviews = await db.select({
+        bookingId: magicLinks.bookingId,
+        openedAt: magicLinks.openedAt,
+      }).from(magicLinks).where(
+        sql`${magicLinks.bookingId} IN (${sql.join(reviewBookingIds.map(id => sql`${id}`), sql`, `)})`
+      );
+      for (const o of allOpenedForReviews) {
+        if (o.openedAt) openedForReviewSet.add(o.bookingId);
+      }
+    }
+
+    // Opened links in range (any booking, opened during this period)
+    const openedLinksInRange = await db.select({
       bookingId: magicLinks.bookingId,
       openedAt: magicLinks.openedAt,
     }).from(magicLinks).where(
       and(
-        sql`${magicLinks.bookingId} IN (${sql.join(uniqueBookingIds.map(id => sql`${id}`), sql`, `)})`,
-        sql`${magicLinks.openedAt} IS NOT NULL`
+        sql`${magicLinks.openedAt} >= ${from} AND ${magicLinks.openedAt} < ${to}`
       )
     );
-    const openedBookingIds = new Set(openedLinks.map(l => l.bookingId));
-    const openedAtMap = new Map(openedLinks.map(l => [l.bookingId, l.openedAt]));
+    const openedCount = new Set(openedLinksInRange.map(l => l.bookingId)).size;
 
     let reviewsAfterPrimary = 0;
     let reviewsAfterFollowup = 0;
     let reviewsFromOpened = 0;
     let reviewsFromNotOpened = 0;
-    let openedAfterPrimaryNoReview = 0;
-    let openedAfterFollowupNoReview = 0;
+    const openedAfterPrimaryNoReview = 0;
+    const openedAfterFollowupNoReview = 0;
 
-    for (const bookingId of uniqueBookingIds) {
-      const reviewCreatedAt = reviewMap.get(bookingId);
-      const followupSentAt = followupSentMap.get(bookingId);
-      const linkOpenedAt = openedAtMap.get(bookingId);
-
-      if (reviewCreatedAt) {
-        if (followupSentAt && reviewCreatedAt > followupSentAt) {
-          reviewsAfterFollowup++;
-        } else {
-          reviewsAfterPrimary++;
-        }
-
-        if (openedBookingIds.has(bookingId)) {
-          reviewsFromOpened++;
-        } else {
-          reviewsFromNotOpened++;
-        }
-      } else if (linkOpenedAt) {
-        if (followupSentAt && linkOpenedAt > followupSentAt) {
-          openedAfterFollowupNoReview++;
-        } else {
-          openedAfterPrimaryNoReview++;
-        }
+    for (const r of reviewsInRange) {
+      if (!r.bookingId || !r.createdAt) continue;
+      const followupSentAt = followupForReviewMap.get(r.bookingId);
+      if (followupSentAt && r.createdAt > followupSentAt) {
+        reviewsAfterFollowup++;
+      } else {
+        reviewsAfterPrimary++;
+      }
+      if (openedForReviewSet.has(r.bookingId)) {
+        reviewsFromOpened++;
+      } else {
+        reviewsFromNotOpened++;
       }
     }
 
     const totalReviews = reviewsAfterPrimary + reviewsAfterFollowup;
-    const openedCount = openedBookingIds.size;
-    const notOpenedCount = totalBookings - openedCount;
+    const notOpenedCount = Math.max(0, totalBookings - openedCount);
+
+    if (totalBookings === 0 && totalReviews === 0 && followupSent === 0 && openedCount === 0) {
+      return { totalBookings: 0, totalReviews: 0, reviewsAfterPrimary: 0, reviewsAfterFollowup: 0, conversionPercent: 0, primaryConversionPercent: 0, followupIncrementPercent: 0, followupSent: 0, followupEfficiencyPercent: 0, openedCount: 0, conversionOpened: 0, conversionNotOpened: 0, openedAfterPrimaryNoReview: 0, openedAfterFollowupNoReview: 0 };
+    }
 
     return {
       totalBookings,
