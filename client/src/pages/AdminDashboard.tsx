@@ -1240,21 +1240,24 @@ export default function AdminDashboard() {
                 {waConversion ? (
                   <div className="space-y-3">
                     <div className="text-center space-y-1">
-                      <p className="text-3xl font-bold" data-testid="text-wa-conversion-percent">{waConversion.conversionPercent}%</p>
+                      <p className="text-3xl font-bold" data-testid="text-wa-conversion-percent">{waConversion.totalReviews}</p>
                       <p className="text-xs text-muted-foreground">
-                        {waConversion.days === -1 ? 'за вчера' : waConversion.days === 1 ? 'за сегодня' : `за ${waConversion.days} дн.`}
+                        отзывов получено {waConversion.days === -1 ? 'вчера' : waConversion.days === 1 ? 'сегодня' : `за ${waConversion.days} дн.`}
                       </p>
                     </div>
                     <div className="space-y-2 pt-2">
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">После primary</span>
-                        <span className="font-medium" data-testid="text-wa-primary-conversion">{waConversion.primaryConversionPercent}%</span>
+                        <span className="font-medium" data-testid="text-wa-primary-conversion">{waConversion.reviewsAfterPrimary}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
-                        <span className="text-muted-foreground">Дожали follow-up</span>
-                        <span className="font-medium text-green-600 dark:text-green-400" data-testid="text-wa-followup-increment">+{waConversion.followupIncrementPercent}%</span>
+                        <span className="text-muted-foreground">После follow-up</span>
+                        <span className="font-medium text-green-600 dark:text-green-400" data-testid="text-wa-followup-increment">{waConversion.reviewsAfterFollowup}</span>
                       </div>
                       <div className="border-t pt-2 space-y-1">
+                        <div className="text-[10px] text-muted-foreground italic pb-1">
+                          Числа независимы: визиты сегодня — это сегодняшние записи, отзывы — это полученные сегодня (часто по более старым визитам).
+                        </div>
                         <div className="flex justify-between items-center text-xs text-muted-foreground">
                           <span>Всего визитов</span>
                           <span data-testid="text-wa-total-bookings">{waConversion.totalBookings}</span>
