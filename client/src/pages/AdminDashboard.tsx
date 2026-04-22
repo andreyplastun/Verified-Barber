@@ -1240,9 +1240,13 @@ export default function AdminDashboard() {
                 {waConversion ? (
                   <div className="space-y-3">
                     <div className="text-center space-y-1">
-                      <p className="text-3xl font-bold" data-testid="text-wa-conversion-percent">{waConversion.totalReviews}</p>
+                      <p className="text-3xl font-bold" data-testid="text-wa-conversion-percent">
+                        {waConversion.totalBookings > 0 ? Math.round(waConversion.totalReviews / waConversion.totalBookings * 100) : 0}%
+                      </p>
                       <p className="text-xs text-muted-foreground">
-                        отзывов получено {waConversion.days === -1 ? 'вчера' : waConversion.days === 1 ? 'сегодня' : `за ${waConversion.days} дн.`}
+                        {waConversion.totalReviews} отзывов / {waConversion.totalBookings} визитов
+                        {' · '}
+                        {waConversion.days === -1 ? 'за вчера' : waConversion.days === 1 ? 'за сегодня' : `за ${waConversion.days} дн.`}
                       </p>
                     </div>
                     <div className="space-y-2 pt-2">
