@@ -3889,8 +3889,46 @@ ${magicLink}`;
   // =====================
   // ASSISTBOT DELIVERY WEBHOOK
   app.post("/api/webhooks/assistbot-delivery", async (req, res) => {
-    console.log(`[ASSISTBOT_WEBHOOK] Delivery callback received: ${JSON.stringify(req.body).substring(0, 500)}`);
-    res.json({ ok: true });
+    try {
+      const body = req.body || {};
+      const rawStr = JSON.stringify(body).substring(0, 1000);
+      console.log(`[ASSISTBOT_WEBHOOK] Delivery callback received: ${rawStr}`);
+
+      // AssistBot delivery callback: try to extract message id and status from common fields
+      const msgUniqueId: string | undefined = body.id || body.message_id || body.uid || body?.data?.id;
+      const rawStatus: string = String(body.status || body.state || body.delivery_status || body.event || "received").toLowerCase();
+
+      let normalized = "received";
+      if (/(deliver|read)/i.test(rawStatus)) normalized = "delivered";
+      else if (/(fail|error|reject|undeliver|expired|invalid)/i.test(rawStatus)) normalized = "failed";
+      else if (/(sent|accept|queue|process|ack)/i.test(rawStatus)) normalized = "sent_to_provider";
+
+      // Match the wa_messages row by extracting bookingId from our own id pattern: rateus_<source>_<bookingId>_<ts>
+      let bookingId: number | null = null;
+      if (msgUniqueId && typeof msgUniqueId === "string") {
+        const match = msgUniqueId.match(/rateus_[^_]+_(\d+)_/);
+        if (match) bookingId = parseInt(match[1], 10);
+      }
+
+      if (bookingId) {
+        await db.execute(sql`
+          UPDATE wa_messages
+          SET delivery_status = ${normalized},
+              delivery_received_at = NOW(),
+              delivery_raw = ${rawStr}
+          WHERE booking_id = ${bookingId}
+            AND status = 'sent'
+            AND (delivery_received_at IS NULL OR delivery_status <> 'delivered')
+        `);
+        console.log(`[ASSISTBOT_WEBHOOK] Updated booking=${bookingId} delivery_status=${normalized}`);
+      } else {
+        console.log(`[ASSISTBOT_WEBHOOK] Could not extract bookingId from id=${msgUniqueId} — body logged only`);
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      console.error(`[ASSISTBOT_WEBHOOK] Error: ${err.message}`);
+      res.json({ ok: true });
+    }
   });
 
   app.post("/api/webhooks/assistbot-incoming", async (req, res) => {

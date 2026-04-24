@@ -238,6 +238,9 @@ app.use((req, res, next) => {
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS deadline TIMESTAMP;
+      ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS delivery_status TEXT;
+      ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS delivery_received_at TIMESTAMP;
+      ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS delivery_raw TEXT;
 
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invalid_phone boolean DEFAULT false;

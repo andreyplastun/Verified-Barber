@@ -373,10 +373,25 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number, 
   }
 
   let assistbotMessageId: string | null = null;
+  let respJson: any = null;
   try {
-    const respJson = JSON.parse(respBody);
+    respJson = JSON.parse(respBody);
     assistbotMessageId = respJson?.message_id || respJson?.id || respJson?.data?.id || null;
   } catch {}
+
+  // Even with HTTP 200, AssistBot may return an error envelope. Surface it.
+  const explicitError =
+    respJson?.error ||
+    respJson?.errors ||
+    (respJson?.success === false ? (respJson?.message || "success=false") : null) ||
+    (respJson?.status && /^(error|fail|reject)/i.test(String(respJson.status)) ? respJson.status : null);
+
+  console.log(`[WA_SEND] Response: phone=${phoneFormatted} bookingId=${bookingId} http=${response.status} body=${respBody.substring(0, 400)}`);
+
+  if (explicitError) {
+    console.error(`[WA_SEND] AssistBot returned 200 but with error envelope: ${JSON.stringify(explicitError)}`);
+    throw new Error(`AssistBot returned error: ${typeof explicitError === "string" ? explicitError : JSON.stringify(explicitError).substring(0, 200)}`);
+  }
 
   console.log(`[WA_SEND] Success: phone=${phoneFormatted} bookingId=${bookingId} assistbot_id=${assistbotMessageId}`);
 

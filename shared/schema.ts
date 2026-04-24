@@ -426,6 +426,9 @@ export const waMessages = pgTable("wa_messages", {
   assistbotMessageId: text("assistbot_message_id"),
   dedupeKey: text("dedupe_key").unique(),
   priority: integer("priority").default(0).notNull(),
+  deliveryStatus: text("delivery_status"),
+  deliveryReceivedAt: timestamp("delivery_received_at"),
+  deliveryRaw: text("delivery_raw"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
