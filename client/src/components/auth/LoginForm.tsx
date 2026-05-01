@@ -1,15 +1,19 @@
 import { useState } from 'react';
+import { useLocation } from 'wouter';
 import { signIn } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Briefcase } from 'lucide-react';
 
 interface LoginFormProps {
   onSuccess: () => void;
   onSwitchToSignUp: () => void;
+  onClose?: () => void;
 }
 
-export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
+export function LoginForm({ onSuccess, onSwitchToSignUp, onClose }: LoginFormProps) {
+  const [, setLocation] = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -82,6 +86,21 @@ export function LoginForm({ onSuccess, onSwitchToSignUp }: LoginFormProps) {
           Зарегистрироваться
         </button>
       </p>
+
+      <div className="border-t pt-4">
+        <button
+          type="button"
+          onClick={() => {
+            onClose?.();
+            setLocation('/specialist-signup');
+          }}
+          className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          data-testid="link-specialist-signup"
+        >
+          <Briefcase className="w-4 h-4" />
+          <span>Я специалист — стать партнёром</span>
+        </button>
+      </div>
     </form>
   );
 }

@@ -1,17 +1,20 @@
 import { useState } from 'react';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 import { signUp } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Briefcase } from 'lucide-react';
 
 interface SignUpFormProps {
   onSuccess: () => void;
   onSwitchToLogin: () => void;
+  onClose?: () => void;
 }
 
-export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
+export function SignUpForm({ onSuccess, onSwitchToLogin, onClose }: SignUpFormProps) {
+  const [, setLocation] = useLocation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

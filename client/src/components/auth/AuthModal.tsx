@@ -35,12 +35,14 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
         {mode === 'login' ? (
           <LoginForm 
             onSuccess={handleSuccess} 
-            onSwitchToSignUp={() => setMode('signup')} 
+            onSwitchToSignUp={() => setMode('signup')}
+            onClose={handleClose}
           />
         ) : (
           <SignUpForm 
             onSuccess={handleSuccess} 
-            onSwitchToLogin={() => setMode('login')} 
+            onSwitchToLogin={() => setMode('login')}
+            onClose={handleClose}
           />
         )}
       </DialogContent>
