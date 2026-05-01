@@ -87,20 +87,22 @@ export function LoginForm({ onSuccess, onSwitchToSignUp, onClose }: LoginFormPro
         </button>
       </p>
 
-      <div className="border-t pt-4">
-        <button
-          type="button"
-          onClick={() => {
-            onClose?.();
-            setLocation('/specialist-signup');
-          }}
-          className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          data-testid="link-specialist-signup"
-        >
-          <Briefcase className="w-4 h-4" />
-          <span>Я специалист — стать партнёром</span>
-        </button>
-      </div>
+      {onClose && (
+        <div className="border-t pt-4">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              setLocation('/specialist-signup');
+            }}
+            className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+            data-testid="link-specialist-signup"
+          >
+            <Briefcase className="w-4 h-4" />
+            <span>Я специалист — стать партнёром</span>
+          </button>
+        </div>
+      )}
     </form>
   );
 }

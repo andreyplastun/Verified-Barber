@@ -141,14 +141,14 @@ export function Navigation() {
               <span className="text-[10px] font-medium">Выйти</span>
             </button>
           ) : (
-            <button
-              onClick={() => setAuthModalOpen(true)}
+            <Link
+              href="/login"
               className="flex flex-col items-center justify-center space-y-1 w-16 h-full cursor-pointer transition-colors duration-200 text-muted-foreground hover:text-foreground"
               data-testid="button-login"
             >
               <LogIn className="w-6 h-6" strokeWidth={2} />
               <span className="text-[10px] font-medium">Войти</span>
-            </button>
+            </Link>
           )}
         </div>
       </nav>

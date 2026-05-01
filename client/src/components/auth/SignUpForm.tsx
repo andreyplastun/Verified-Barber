@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'wouter';
+import { Link } from 'wouter';
 import { signUp } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Briefcase } from 'lucide-react';
 
 interface SignUpFormProps {
   onSuccess: () => void;
@@ -13,8 +12,7 @@ interface SignUpFormProps {
   onClose?: () => void;
 }
 
-export function SignUpForm({ onSuccess, onSwitchToLogin, onClose }: SignUpFormProps) {
-  const [, setLocation] = useLocation();
+export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

@@ -51,14 +51,17 @@ export default function LoginPage() {
             <SignUpForm onSuccess={handleSuccess} onSwitchToLogin={() => setIsLogin(true)} />
           )}
 
-          <div className="pt-6 border-t">
-            <Link 
-              href="/specialist-signup" 
-              className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          <div className="pt-6 border-t space-y-3">
+            <p className="text-center text-xs text-muted-foreground uppercase tracking-wide">
+              Вы специалист?
+            </p>
+            <Link
+              href="/specialist-signup"
+              className="flex items-center justify-center gap-2 w-full rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm font-medium text-foreground hover:bg-primary/10 transition-colors"
               data-testid="link-specialist-signup"
             >
               <UserPlus className="h-4 w-4" />
-              Добавить себя как специалиста
+              Зарегистрироваться как специалист
             </Link>
           </div>
 
