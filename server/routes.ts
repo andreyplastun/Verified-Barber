@@ -185,14 +185,15 @@ export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, sou
       return false;
     }
 
-    if (booking.normalizedPhone && !specAction) {
-      const stats = await storage.getClientAttemptStats(booking.normalizedPhone, booking.specialistId);
+    const lookupPhone = booking.normalizedPhone || booking.customerPhone || null;
+    if (lookupPhone && !specAction) {
+      const stats = await storage.getClientAttemptStats(lookupPhone, booking.specialistId);
       const now = Date.now();
       const daysSinceLastAttempt = stats.lastAttemptAt ? (now - stats.lastAttemptAt.getTime()) / (24 * 60 * 60 * 1000) : null;
       const daysSinceLastReview = stats.lastReviewAt ? (now - stats.lastReviewAt.getTime()) / (24 * 60 * 60 * 1000) : null;
       const hasReviewAfterLastAttempt = stats.lastReviewAt && stats.lastAttemptAt && stats.lastReviewAt > stats.lastAttemptAt;
 
-      console.log(`[ATTEMPT_CHECK] phone=${booking.normalizedPhone} specialist=${booking.specialistId} attempts=${stats.attemptCount} lastAttempt=${stats.lastAttemptAt?.toISOString() || 'never'} lastReview=${stats.lastReviewAt?.toISOString() || 'never'} hasReviewAfter=${hasReviewAfterLastAttempt}`);
+      console.log(`[ATTEMPT_CHECK] phone=${lookupPhone} (normalized=${booking.normalizedPhone || 'null'}) specialist=${booking.specialistId} attempts=${stats.attemptCount} lastAttempt=${stats.lastAttemptAt?.toISOString() || 'never'} lastReview=${stats.lastReviewAt?.toISOString() || 'never'} hasReviewAfter=${hasReviewAfterLastAttempt}`);
 
       let skipReason: string | null = null;
 
@@ -210,14 +211,14 @@ export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, sou
       }
 
       if (skipReason) {
-        console.log(`[ATTEMPT_CHECK] SKIP phone=${booking.normalizedPhone} specialist=${booking.specialistId} reason=${skipReason} attempts=${stats.attemptCount} daysSinceAttempt=${daysSinceLastAttempt?.toFixed(1)} daysSinceReview=${daysSinceLastReview?.toFixed(1)}`);
+        console.log(`[ATTEMPT_CHECK] SKIP phone=${lookupPhone} specialist=${booking.specialistId} reason=${skipReason} attempts=${stats.attemptCount} daysSinceAttempt=${daysSinceLastAttempt?.toFixed(1)} daysSinceReview=${daysSinceLastReview?.toFixed(1)}`);
         await storage.updateBooking(bookingId, {
           reviewEligibility: false,
           reviewEligibilityReason: skipReason,
         } as any);
         return false;
       }
-    } else if (booking.normalizedPhone && specAction) {
+    } else if (lookupPhone && specAction) {
       console.log(`[MAGIC_LINK] booking=${bookingId}: bypassing attempt check for specialist action (source=${source})`);
     }
 

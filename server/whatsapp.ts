@@ -855,7 +855,12 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
     console.log(`[WA_SENT] msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} scheduledAt=${msg.scheduledAt} actualSendTime=${new Date().toISOString()} reason=SENT`);
 
     if (msg.messageType === "primary") {
-      await createFollowup(msg);
+      const strategy = await getClientStrategy(msg.customerPhone, msg.specialistId, msg.bookingId);
+      if (strategy === "primary_only") {
+        console.log(`[WA_STRATEGY] booking=${msg.bookingId} phone=${msg.customerPhone} specialist=${msg.specialistId} → primary_only (repeat client), skipping follow-up`);
+      } else {
+        await createFollowup(msg);
+      }
     }
     return true;
   } catch (err: any) {
@@ -943,6 +948,13 @@ export async function backfillMissingReminders(): Promise<{ created: number; ski
     const booking = await storage.getBooking(msg.bookingId);
     if (!booking) { skipped++; continue; }
     if (booking.hasReview) { skipped++; continue; }
+
+    const strategy = await getClientStrategy(msg.customerPhone, msg.specialistId, msg.bookingId);
+    if (strategy === "primary_only") {
+      skipped++;
+      console.log(`[WA_BACKFILL] Skip booking=${msg.bookingId} phone=${msg.customerPhone}: primary_only (repeat client)`);
+      continue;
+    }
 
     try {
       const baseDateMs = msg.sentAt ? new Date(msg.sentAt).getTime() : Date.now();
