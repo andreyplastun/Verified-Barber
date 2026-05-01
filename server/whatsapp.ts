@@ -435,7 +435,27 @@ export async function testAssistBotConnection(): Promise<{ success: boolean; sta
   }
 }
 
-const OPT_OUT_KEYWORDS = ["не присыл", "не надо", "отстан", "не отвлека", "хватит"];
+const OPT_OUT_KEYWORDS = [
+  "не присыл",
+  "не надо",
+  "отстан",
+  "не отвлека",
+  "хватит",
+  "навязыва",
+  "задолба",
+  "задрал",
+  "можно не присыл",
+  "не пишите",
+  "не пиши",
+  "удалите",
+  "удали мой",
+  "отпишите",
+  "отписк",
+  "не беспокой",
+  "достал",
+  "спам",
+  "stop",
+];
 
 export function isOptOutMessage(text: string): boolean {
   const lower = text.toLowerCase();
