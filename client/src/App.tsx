@@ -173,6 +173,7 @@ function Router() {
       <Route path="/specialist-dashboard" component={SpecialistDashboardRoute} />
       <Route path="/specialist-onboarding" component={SpecialistOnboardingRoute} />
       <Route path="/specialist-signup" component={SpecialistSignup} />
+      <Route path="/create-profile" component={SpecialistSignup} />
       <Route path="/join" component={JoinPage} />
       <Route path="/privacy" component={PrivacyPage} />
       <Route path="/terms" component={TermsPage} />
