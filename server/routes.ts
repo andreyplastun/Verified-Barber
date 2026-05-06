@@ -3424,17 +3424,24 @@ ${magicLink}`;
 
           let specialistId: number | null = null;
           if (staffId) {
+            const { STAFF_ID_ALIASES } = await import('./altegio');
+            let effectiveStaffId = staffId;
+            let effectiveCompanyId = companyId;
+            const alias = STAFF_ID_ALIASES[staffId];
+            if (alias) {
+              effectiveStaffId = alias.primaryStaffId;
+              effectiveCompanyId = alias.primaryCompanyId;
+            }
             const allSpecialists = await storage.getSpecialists();
-            const matched = companyId
-              ? allSpecialists.find((s: any) => s.altegioStaffId === staffId && s.altegioCompanyId === companyId)
+            const matched = effectiveCompanyId
+              ? allSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
               : null;
-            const fallback = matched || allSpecialists.find((s: any) => s.altegioStaffId === staffId);
+            const fallback = matched || allSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId);
             if (fallback) specialistId = fallback.id;
           }
           if (!specialistId) {
-            const firstSpecialist = await storage.getFirstSpecialist();
-            specialistId = firstSpecialist?.id || 1;
-            console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId}, using default id=${specialistId}`);
+            console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId} — SKIPPING booking creation for appointment ${altegioId} (was: defaulting to id=1)`);
+            break;
           }
 
           const appointmentTime = datetime ? new Date(datetime) : new Date();
@@ -3473,17 +3480,24 @@ ${magicLink}`;
             console.warn(`[ALTEGIO] Appointment ${altegioId} not found for update, creating new (attendance=${attendance}, completed=${isNewVisitCompleted})`);
             let specialistId: number | null = null;
             if (staffId) {
+              const { STAFF_ID_ALIASES } = await import('./altegio');
+              let effectiveStaffId = staffId;
+              let effectiveCompanyId = companyId;
+              const alias = STAFF_ID_ALIASES[staffId];
+              if (alias) {
+                effectiveStaffId = alias.primaryStaffId;
+                effectiveCompanyId = alias.primaryCompanyId;
+              }
               const allSpecialists = await storage.getSpecialists();
-              const matched = companyId
-                ? allSpecialists.find((s: any) => s.altegioStaffId === staffId && s.altegioCompanyId === companyId)
+              const matched = effectiveCompanyId
+                ? allSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
                 : null;
-              const fallback = matched || allSpecialists.find((s: any) => s.altegioStaffId === staffId);
+              const fallback = matched || allSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId);
               if (fallback) specialistId = fallback.id;
             }
             if (!specialistId) {
-              const firstSpecialist = await storage.getFirstSpecialist();
-              specialistId = firstSpecialist?.id || 1;
-              console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId}, using default id=${specialistId}`);
+              console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId} — SKIPPING booking creation for appointment ${altegioId} (was: defaulting to id=1)`);
+              break;
             }
             const appointmentTime = datetime ? new Date(datetime) : new Date();
             const identity = await resolveClientIdentity({
