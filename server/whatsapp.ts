@@ -455,6 +455,11 @@ const OPT_OUT_KEYWORDS = [
   "достал",
   "спам",
   "stop",
+  "назойлив",
+  "надоел",
+  "перестан",
+  "больше не",
+  "мешает",
 ];
 
 export function isOptOutMessage(text: string): boolean {
