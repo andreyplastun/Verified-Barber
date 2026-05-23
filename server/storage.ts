@@ -469,7 +469,16 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bookings).where(eq(bookings.specialistId, id));
     // 4. Delete photos
     await db.delete(specialistPhotos).where(eq(specialistPhotos.specialistId, id));
-    // 5. Finally delete specialist
+    // 5. NULL out cross-references from other tables (FK constraints in prod)
+    //    - users.specialist_id (users_specialist_id_fkey in Railway/Supabase)
+    //    - specialists.referred_by_specialist_id (self-reference)
+    await db.execute(sql`UPDATE users SET specialist_id = NULL WHERE specialist_id = ${id}`);
+    await db.execute(sql`UPDATE specialists SET referred_by_specialist_id = NULL WHERE referred_by_specialist_id = ${id}`);
+    // 6. Best-effort cleanup of optional tables that may reference specialist
+    await db.execute(sql`DELETE FROM wa_messages WHERE specialist_id = ${id}`).catch(() => {});
+    await db.execute(sql`DELETE FROM legal_consents WHERE specialist_id = ${id}`).catch(() => {});
+    await db.execute(sql`DELETE FROM analytics_events WHERE specialist_id = ${id}`).catch(() => {});
+    // 7. Finally delete specialist
     await db.delete(specialists).where(eq(specialists.id, id));
   }
 
