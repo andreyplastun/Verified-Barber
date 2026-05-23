@@ -102,60 +102,68 @@ export function BookingButton({ specialist, variant = "default", className = "" 
   if (variant === "feed") {
     const fullText = suffixLabel ? `${mainLabel} ${suffixLabel}` : mainLabel;
     return (
-      <a
-        href={href}
-        target={channel === "phone" ? undefined : "_blank"}
-        rel="noopener noreferrer"
-        onClick={handleClick}
-        onPointerDown={stopPointer}
-        className={`mt-3 inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all duration-150 hover:opacity-[0.92] active:opacity-[0.92] active:scale-[0.99] ${className}`}
-        style={{
-          background: "#374151",
-          color: "#FFFFFF",
-          border: "none",
-          borderRadius: 12,
-          height: 42,
-          paddingInline: 14,
-          fontSize: 15,
-          fontWeight: 600,
-        }}
-        data-testid={testId}
-      >
-        <Icon size={16} style={{ color: iconColor ?? "#FFFFFF" }} />
-        {fullText}
-      </a>
+      <div className={`mt-3 mb-3 flex justify-center ${className}`}>
+        <a
+          href={href}
+          target={channel === "phone" ? undefined : "_blank"}
+          rel="noopener noreferrer"
+          onClick={handleClick}
+          onPointerDown={stopPointer}
+          className="inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all duration-150 hover:opacity-[0.92] active:opacity-[0.92] active:scale-[0.99]"
+          style={{
+            background: "#374151",
+            color: "#FFFFFF",
+            border: "none",
+            borderRadius: 12,
+            height: 42,
+            paddingInline: 14,
+            fontSize: 15,
+            fontWeight: 600,
+            width: "fit-content",
+          }}
+          data-testid={testId}
+        >
+          <Icon size={16} style={{ color: iconColor ?? "#FFFFFF" }} />
+          {fullText}
+        </a>
+      </div>
     );
   }
 
   if (variant === "profile") {
     return (
-      <a
-        href={href}
-        target={channel === "phone" ? undefined : "_blank"}
-        rel="noopener noreferrer"
-        onClick={handleClick}
-        className={`flex items-center justify-center gap-2 w-full transition-all duration-150 hover:opacity-[0.94] active:scale-[0.99] ${className}`}
-        style={{
-          height: 48,
-          background: "#F4F5F7",
-          border: "1px solid #E5E7EB",
-          borderRadius: 14,
-          color: "#111827",
-          fontWeight: 600,
-        }}
-        data-testid={testId}
-      >
-        <Icon size={18} style={{ color: iconColor ?? "#111827" }} />
-        <span className="text-[15px] leading-none">{mainLabel}</span>
-        {suffixLabel && (
-          <span
-            className="text-[14px] leading-none font-medium"
-            style={{ color: "rgba(17, 24, 39, 0.72)" }}
-          >
-            {suffixLabel}
-          </span>
-        )}
-      </a>
+      <div className={`mb-4 flex justify-center ${className}`}>
+        <a
+          href={href}
+          target={channel === "phone" ? undefined : "_blank"}
+          rel="noopener noreferrer"
+          onClick={handleClick}
+          className="inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all duration-150 hover:opacity-[0.94] active:scale-[0.99]"
+          style={{
+            height: 48,
+            paddingInline: 20,
+            background: "#F4F5F7",
+            border: "1px solid #E5E7EB",
+            borderRadius: 14,
+            color: "#111827",
+            fontWeight: 600,
+            width: "fit-content",
+            maxWidth: 320,
+          }}
+          data-testid={testId}
+        >
+          <Icon size={18} style={{ color: iconColor ?? "#111827" }} />
+          <span className="text-[15px] leading-none">{mainLabel}</span>
+          {suffixLabel && (
+            <span
+              className="text-[14px] leading-none"
+              style={{ color: "rgba(17, 24, 39, 0.65)", fontWeight: 500 }}
+            >
+              {suffixLabel}
+            </span>
+          )}
+        </a>
+      </div>
     );
   }
 
