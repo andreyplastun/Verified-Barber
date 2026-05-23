@@ -85,76 +85,59 @@ export function BookingButton({ specialist, variant = "default", className = "" 
   };
   const stopPointer = (e: React.PointerEvent) => e.stopPropagation();
 
-  if (variant === "feed") {
-    const subLabel =
-      channel === "whatsapp" ? "через WhatsApp" :
-      channel === "instagram" ? "через Instagram" :
-      channel === "booking_url" ? "онлайн" :
-      channel === "phone" ? "по телефону" : "";
-    const iconColor =
-      channel === "whatsapp" ? "#25D366" :
-      channel === "instagram" ? "#E4405F" :
-      "#FFFFFF";
-    return (
-      <div
-        className={`mt-3 flex flex-col items-start gap-1 ${className}`}
-        style={{ maxWidth: 280 }}
-      >
-        <a
-          href={href}
-          target={channel === "phone" ? undefined : "_blank"}
-          rel="noopener noreferrer"
-          onClick={handleClick}
-          onPointerDown={stopPointer}
-          className="inline-flex items-center justify-center gap-2 transition-all duration-150 hover:opacity-[0.92] active:opacity-[0.92] active:scale-[0.99]"
-          style={{
-            background: "#374151",
-            color: "#FFFFFF",
-            border: "none",
-            borderRadius: 12,
-            height: 44,
-            paddingInline: 16,
-            fontSize: 15,
-            fontWeight: 600,
-          }}
-          data-testid={testId}
-        >
-          <Icon size={16} style={{ color: iconColor }} />
-          Записаться
-        </a>
-        {subLabel && (
-          <span
-            className="text-muted-foreground"
-            style={{ fontSize: 12, paddingInline: 4 }}
-          >
-            {subLabel}
-          </span>
-        )}
-      </div>
-    );
-  }
+  const mainLabel =
+    channel === "instagram" ? "Написать" :
+    channel === "phone" ? "Позвонить" :
+    "Записаться";
+  const suffixLabel =
+    channel === "booking_url" ? "онлайн" :
+    channel === "whatsapp" ? "в WhatsApp" :
+    channel === "instagram" ? "в Instagram" :
+    "";
+  const iconColor =
+    channel === "whatsapp" ? "#25D366" :
+    channel === "instagram" ? "#E4405F" :
+    undefined;
 
-  if (variant === "profile") {
-    const subLabel =
-      channel === "whatsapp" ? "в WhatsApp" :
-      channel === "instagram" ? "в Instagram" :
-      channel === "booking_url" ? "онлайн" :
-      channel === "phone" ? "по телефону" : "";
-    const iconColor =
-      channel === "whatsapp" ? "#25D366" :
-      channel === "instagram" ? "#E4405F" :
-      channel === "booking_url" ? "#111827" :
-      "#111827";
+  if (variant === "feed") {
+    const fullText = suffixLabel ? `${mainLabel} ${suffixLabel}` : mainLabel;
     return (
       <a
         href={href}
         target={channel === "phone" ? undefined : "_blank"}
         rel="noopener noreferrer"
         onClick={handleClick}
-        className={`flex items-center justify-center gap-2.5 w-full active:scale-[0.99] transition-transform ${className}`}
+        onPointerDown={stopPointer}
+        className={`mt-3 inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all duration-150 hover:opacity-[0.92] active:opacity-[0.92] active:scale-[0.99] ${className}`}
+        style={{
+          background: "#374151",
+          color: "#FFFFFF",
+          border: "none",
+          borderRadius: 12,
+          height: 42,
+          paddingInline: 14,
+          fontSize: 15,
+          fontWeight: 600,
+        }}
+        data-testid={testId}
+      >
+        <Icon size={16} style={{ color: iconColor ?? "#FFFFFF" }} />
+        {fullText}
+      </a>
+    );
+  }
+
+  if (variant === "profile") {
+    return (
+      <a
+        href={href}
+        target={channel === "phone" ? undefined : "_blank"}
+        rel="noopener noreferrer"
+        onClick={handleClick}
+        className={`flex items-center justify-center gap-2 w-full transition-all duration-150 hover:opacity-[0.94] active:scale-[0.99] ${className}`}
         style={{
           height: 48,
-          background: "#F6F7F8",
+          background: "#F4F5F7",
           border: "1px solid #E5E7EB",
           borderRadius: 14,
           color: "#111827",
@@ -162,11 +145,14 @@ export function BookingButton({ specialist, variant = "default", className = "" 
         }}
         data-testid={testId}
       >
-        <Icon size={18} style={{ color: iconColor }} />
-        <span className="text-[15px] leading-none">Записаться</span>
-        {subLabel && (
-          <span className="text-[12px] leading-none text-muted-foreground font-normal">
-            {subLabel}
+        <Icon size={18} style={{ color: iconColor ?? "#111827" }} />
+        <span className="text-[15px] leading-none">{mainLabel}</span>
+        {suffixLabel && (
+          <span
+            className="text-[14px] leading-none font-medium"
+            style={{ color: "rgba(17, 24, 39, 0.72)" }}
+          >
+            {suffixLabel}
           </span>
         )}
       </a>
