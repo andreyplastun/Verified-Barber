@@ -100,31 +100,46 @@ export function BookingButton({ specialist, variant = "default", className = "" 
     undefined;
 
   if (variant === "feed") {
-    const fullText = suffixLabel ? `${mainLabel} ${suffixLabel}` : mainLabel;
     return (
-      <div className={`mt-3 mb-3 flex justify-center ${className}`}>
+      <div className={`mt-3 mb-3 flex justify-start ${className}`}>
         <a
           href={href}
           target={channel === "phone" ? undefined : "_blank"}
           rel="noopener noreferrer"
           onClick={handleClick}
           onPointerDown={stopPointer}
-          className="inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all duration-150 hover:opacity-[0.92] active:opacity-[0.92] active:scale-[0.99]"
+          className="inline-flex items-center gap-2.5 whitespace-nowrap transition-all duration-150 hover:opacity-[0.92] active:opacity-[0.92] active:scale-[0.99]"
           style={{
             background: "#374151",
             color: "#FFFFFF",
             border: "none",
             borderRadius: 12,
-            height: 42,
-            paddingInline: 14,
-            fontSize: 15,
-            fontWeight: 600,
+            paddingInline: 22,
+            paddingBlock: 12,
             width: "fit-content",
+            alignSelf: "flex-start",
           }}
           data-testid={testId}
         >
-          <Icon size={16} style={{ color: iconColor ?? "#FFFFFF" }} />
-          {fullText}
+          <Icon size={16} style={{ color: "currentColor", opacity: 0.75 }} />
+          <span className="inline-flex flex-col items-start leading-tight">
+            <span style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.2 }}>
+              {mainLabel}
+            </span>
+            {suffixLabel && (
+              <span
+                style={{
+                  fontSize: 12,
+                  fontWeight: 400,
+                  lineHeight: 1.2,
+                  color: "rgba(255, 255, 255, 0.7)",
+                  marginTop: 1,
+                }}
+              >
+                {suffixLabel}
+              </span>
+            )}
+          </span>
         </a>
       </div>
     );
