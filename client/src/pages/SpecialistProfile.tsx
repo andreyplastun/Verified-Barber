@@ -250,11 +250,6 @@ export default function SpecialistProfile() {
             </div>
           </div>
 
-          {/* Booking button — directly under rating/price block */}
-          <div className="mt-4">
-            <BookingButton specialist={specialist as any} variant="feed" className="!mt-0" />
-          </div>
-
           {/* Bio section - full width, separated */}
           {specialist.bio && (
             <div className="mt-4 pt-4 border-t border-border">
@@ -277,6 +272,11 @@ export default function SpecialistProfile() {
               <Calendar size={11} />
               Пн-Сб
             </div>
+          </div>
+
+          {/* Booking button — after bio so user reads first, then books */}
+          <div style={{ marginTop: 20 }}>
+            <BookingButton specialist={specialist as any} variant="profile" />
           </div>
         </div>
 

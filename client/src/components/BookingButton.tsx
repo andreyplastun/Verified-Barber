@@ -12,7 +12,7 @@ interface BookingButtonProps {
     whatsapp?: string | null;
     instagram?: string | null;
   };
-  variant?: "default" | "feed";
+  variant?: "default" | "feed" | "profile";
   className?: string;
 }
 
@@ -98,6 +98,45 @@ export function BookingButton({ specialist, variant = "default", className = "" 
       >
         <Icon size={14} />
         {label}
+      </a>
+    );
+  }
+
+  if (variant === "profile") {
+    const subLabel =
+      channel === "whatsapp" ? "в WhatsApp" :
+      channel === "instagram" ? "в Instagram" :
+      channel === "booking_url" ? "онлайн" :
+      channel === "phone" ? "по телефону" : "";
+    const iconColor =
+      channel === "whatsapp" ? "#25D366" :
+      channel === "instagram" ? "#E4405F" :
+      channel === "booking_url" ? "#111827" :
+      "#111827";
+    return (
+      <a
+        href={href}
+        target={channel === "phone" ? undefined : "_blank"}
+        rel="noopener noreferrer"
+        onClick={handleClick}
+        className={`flex items-center justify-center gap-2.5 w-full active:scale-[0.99] transition-transform ${className}`}
+        style={{
+          height: 48,
+          background: "#F6F7F8",
+          border: "1px solid #E5E7EB",
+          borderRadius: 14,
+          color: "#111827",
+          fontWeight: 600,
+        }}
+        data-testid={testId}
+      >
+        <Icon size={18} style={{ color: iconColor }} />
+        <span className="text-[15px] leading-none">Записаться</span>
+        {subLabel && (
+          <span className="text-[12px] leading-none text-muted-foreground font-normal">
+            {subLabel}
+          </span>
+        )}
       </a>
     );
   }
