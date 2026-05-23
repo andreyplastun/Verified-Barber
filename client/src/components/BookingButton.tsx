@@ -114,8 +114,8 @@ export function BookingButton({ specialist, variant = "default", className = "" 
             color: "#FFFFFF",
             border: "none",
             borderRadius: 12,
-            paddingInline: 22,
-            paddingBlock: 12,
+            paddingInline: 20,
+            paddingBlock: 7,
             width: "fit-content",
             alignSelf: "flex-start",
           }}
