@@ -99,7 +99,10 @@ export const specialists = pgTable("specialists", {
   altegioStaffId: integer("altegio_staff_id"), // Altegio team member ID
   altegioCompanyId: integer("altegio_company_id"), // Altegio location/company ID
   altegioConnectionStatus: text("altegio_connection_status").default("disconnected"), // 'connected' | 'error' | 'disconnected'
-  altegioBookingUrl: text("altegio_booking_url"), // Public Altegio widget URL set by specialist — used as primary "Записаться онлайн" channel
+  // Booking channels — used by "Записаться" button with priority: bookingUrl → whatsapp → instagram → phone
+  bookingUrl: text("booking_url"), // Universal booking widget URL (Altegio, YClients, custom — any https link)
+  whatsapp: text("whatsapp"), // Phone number specifically for WhatsApp contact (digits, any format)
+  instagram: text("instagram"), // Instagram handle or full URL
   firstReviewCelebrated: boolean("first_review_celebrated").default(false).notNull(),
   slug: text("slug"), // URL-friendly identifier e.g. "andreybarber"
 });

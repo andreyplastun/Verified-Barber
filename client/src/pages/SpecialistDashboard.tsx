@@ -47,7 +47,9 @@ export default function SpecialistDashboard() {
   const [baseServiceName, setBaseServiceName] = useState('');
   const [baseServicePrice, setBaseServicePrice] = useState('');
   const [savingBaseService, setSavingBaseService] = useState(false);
-  const [altegioBookingUrl, setAltegioBookingUrl] = useState('');
+  const [bookingUrl, setBookingUrl] = useState('');
+  const [whatsapp, setWhatsapp] = useState('');
+  const [instagram, setInstagram] = useState('');
   const [altegioModalOpen, setAltegioModalOpen] = useState(false);
   const [altegioManualMode, setAltegioManualMode] = useState(false);
   const [altegioManualId, setAltegioManualId] = useState('');
@@ -628,7 +630,9 @@ export default function SpecialistDashboard() {
       setWorkAddress((specialist as any).workAddress || '');
       setWorkLat((specialist as any).workLat ?? null);
       setWorkLng((specialist as any).workLng ?? null);
-      setAltegioBookingUrl((specialist as any).altegioBookingUrl || '');
+      setBookingUrl((specialist as any).bookingUrl || '');
+      setWhatsapp((specialist as any).whatsapp || '');
+      setInstagram((specialist as any).instagram || '');
     }
   }, [specialist]);
 
@@ -697,7 +701,7 @@ export default function SpecialistDashboard() {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio, city, subcategory, workAddress, workLat, workLng, altegioBookingUrl }),
+        body: JSON.stringify({ bio, city, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -953,18 +957,31 @@ export default function SpecialistDashboard() {
             })()}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="altegio-booking-url">Ссылка на онлайн-запись (Altegio и др.)</Label>
-            <Input
-              id="altegio-booking-url"
-              type="url"
-              value={altegioBookingUrl}
-              onChange={(e) => setAltegioBookingUrl(e.target.value)}
-              placeholder="https://n123456.alteg.io/..."
-              data-testid="input-altegio-booking-url"
-            />
+            <Label>Контакты для записи</Label>
             <p className="text-xs text-muted-foreground">
-              Если указать — кнопка «Записаться» откроет эту ссылку. Если оставить пустым — кнопка откроет WhatsApp на ваш номер.
+              Кнопка «Записаться» использует первый заполненный канал по приоритету: ссылка → WhatsApp → Instagram → телефон из профиля.
             </p>
+            <Input
+              type="url"
+              value={bookingUrl}
+              onChange={(e) => setBookingUrl(e.target.value)}
+              placeholder="Ссылка на онлайн-запись (Altegio, YClients и т.д.)"
+              data-testid="input-booking-url"
+            />
+            <Input
+              type="tel"
+              value={whatsapp}
+              onChange={(e) => setWhatsapp(e.target.value)}
+              placeholder="WhatsApp: +7 777 123 45 67"
+              data-testid="input-whatsapp"
+            />
+            <Input
+              type="text"
+              value={instagram}
+              onChange={(e) => setInstagram(e.target.value)}
+              placeholder="Instagram: @username или ссылка"
+              data-testid="input-instagram"
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="bio">Краткое описание</Label>
@@ -984,7 +1001,7 @@ export default function SpecialistDashboard() {
               <Button
                 size="sm"
                 onClick={handleSaveBio}
-                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null) && altegioBookingUrl === ((specialist as any)?.altegioBookingUrl || ''))}
+                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null) && bookingUrl === ((specialist as any)?.bookingUrl || '') && whatsapp === ((specialist as any)?.whatsapp || '') && instagram === ((specialist as any)?.instagram || ''))}
                 data-testid="button-save-bio"
               >
                 {savingBio ? 'Сохранение...' : 'Сохранить'}

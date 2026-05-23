@@ -141,7 +141,16 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_staff_id integer;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_company_id integer;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_connection_status text DEFAULT 'disconnected';
-      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_booking_url text;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS booking_url text;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS whatsapp text;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS instagram text;
+      -- Migrate legacy altegio_booking_url → booking_url (only if old column exists, no overwrite)
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='specialists' AND column_name='altegio_booking_url') THEN
+          UPDATE specialists SET booking_url = altegio_booking_url WHERE booking_url IS NULL AND altegio_booking_url IS NOT NULL;
+        END IF;
+      END $$;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_retry_count integer DEFAULT 0;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_last_retry_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS not_completed_at timestamp;

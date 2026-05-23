@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { trackProfileView } from "@/lib/analytics";
 import { useRoute, Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
@@ -91,6 +92,14 @@ export default function SpecialistProfile() {
 
   const [showConfetti, setShowConfetti] = useState(false);
   const confettiTriggeredRef = useRef(false);
+  const profileViewTrackedRef = useRef(false);
+
+  useEffect(() => {
+    if (specialist?.id && !profileViewTrackedRef.current) {
+      profileViewTrackedRef.current = true;
+      trackProfileView(specialist.id);
+    }
+  }, [specialist?.id]);
 
   useEffect(() => {
     if (

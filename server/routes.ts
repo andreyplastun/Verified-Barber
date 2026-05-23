@@ -1644,7 +1644,7 @@ export async function registerRoutes(
       const { eventType, magicLinkId, bookingId, specialistId, sentAt, userAgent, source } = req.body;
       
       // Validate eventType is one of allowed values
-      const allowedEventTypes = ['magic_link_opened', 'review_screen_loaded'];
+      const allowedEventTypes = ['magic_link_opened', 'review_screen_loaded', 'profile_view', 'booking_click'];
       if (!eventType || !allowedEventTypes.includes(eventType)) {
         return res.status(400).json({ message: "Invalid eventType" });
       }
@@ -2560,7 +2560,7 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       const specialistId = Number(req.params.id);
-      const { bio, city, subcategory, workAddress, workLat, workLng, altegioBookingUrl } = req.body;
+      const { bio, city, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram } = req.body;
 
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -2588,23 +2588,44 @@ ${magicLink}`;
       const updates: any = {};
       if (city) updates.city = city;
       if (subcategory !== undefined) updates.subcategory = subcategory || null;
-      if (altegioBookingUrl !== undefined) {
-        if (altegioBookingUrl === null) {
-          updates.altegioBookingUrl = null;
-        } else if (typeof altegioBookingUrl !== 'string') {
-          return res.status(400).json({ message: "altegioBookingUrl must be a string or null" });
-        } else {
-          const trimmed = altegioBookingUrl.trim();
-          if (trimmed === '') {
-            updates.altegioBookingUrl = null;
-          } else if (!/^https?:\/\//i.test(trimmed)) {
-            return res.status(400).json({ message: "Ссылка должна начинаться с http:// или https://" });
-          } else if (trimmed.length > 500) {
-            return res.status(400).json({ message: "Ссылка слишком длинная (максимум 500 символов)" });
-          } else {
-            updates.altegioBookingUrl = trimmed;
+      // Validate optional string field: returns null for empty/null, validated value otherwise, or throws (sends 400)
+      const normalizeOptionalString = (val: any, fieldName: string, maxLen: number, validate?: (v: string) => string | null): string | null | undefined => {
+        if (val === undefined) return undefined;
+        if (val === null) return null;
+        if (typeof val !== 'string') {
+          res.status(400).json({ message: `${fieldName} must be a string or null` });
+          throw new Error('__validation_handled__');
+        }
+        const trimmed = val.trim();
+        if (trimmed === '') return null;
+        if (trimmed.length > maxLen) {
+          res.status(400).json({ message: `${fieldName}: слишком длинно (максимум ${maxLen} символов)` });
+          throw new Error('__validation_handled__');
+        }
+        if (validate) {
+          const err = validate(trimmed);
+          if (err) {
+            res.status(400).json({ message: err });
+            throw new Error('__validation_handled__');
           }
         }
+        return trimmed;
+      };
+
+      try {
+        const bookingUrlNorm = normalizeOptionalString(bookingUrl, 'bookingUrl', 500, (v) =>
+          /^https?:\/\//i.test(v) ? null : "Ссылка должна начинаться с http:// или https://");
+        if (bookingUrlNorm !== undefined) updates.bookingUrl = bookingUrlNorm;
+
+        const whatsappNorm = normalizeOptionalString(whatsapp, 'whatsapp', 32, (v) =>
+          /^\+?[\d\s\-()]{7,}$/.test(v) ? null : "Введите корректный номер для WhatsApp");
+        if (whatsappNorm !== undefined) updates.whatsapp = whatsappNorm;
+
+        const instagramNorm = normalizeOptionalString(instagram, 'instagram', 200);
+        if (instagramNorm !== undefined) updates.instagram = instagramNorm;
+      } catch (e: any) {
+        if (e?.message === '__validation_handled__') return;
+        throw e;
       }
 
       const locationChanging = workLat !== undefined || workLng !== undefined || workAddress !== undefined;
