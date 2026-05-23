@@ -121,7 +121,7 @@ export function BookingButton({ specialist, variant = "default", className = "" 
           }}
           data-testid={testId}
         >
-          <Icon size={16} style={{ color: "currentColor", opacity: 0.75 }} />
+          <Icon size={16} style={{ color: iconColor ?? "#FFFFFF" }} />
           <span className="inline-flex flex-col items-start leading-tight">
             <span style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.2 }}>
               {mainLabel}
