@@ -2,6 +2,7 @@ import { useSpecialists } from "@/hooks/use-specialists";
 import { LegalFooter } from "@/components/LegalFooter";
 import { Link, useLocation, useRoute } from "wouter";
 import { MapPin, ArrowRight, Filter, ChevronDown, Star, Info } from "lucide-react";
+import { BookingButton } from "@/components/BookingButton";
 import { motion } from "framer-motion";
 import { AnimatedRating, AnimatedStar } from "@/components/ui/animations";
 import { useAuth } from "@/contexts/AuthContext";
@@ -263,8 +264,9 @@ export default function SpecialistList() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.05 }}
           >
+            <div className="group bg-card rounded-xl border border-border shadow-sm transition-transform duration-150 p-3">
             <Link href={`/specialist/${specialist.id}`}>
-              <div className="group bg-card rounded-xl border border-border shadow-sm active:scale-[0.99] transition-transform duration-150 p-3">
+              <div className="cursor-pointer active:scale-[0.99]">
                 {/* Top row: Avatar + Basic info + Trust block */}
                 <div className="flex gap-3">
                   {/* Avatar */}
@@ -384,6 +386,8 @@ export default function SpecialistList() {
                 )}
               </div>
             </Link>
+            <BookingButton specialist={specialist as any} variant="feed" />
+            </div>
           </motion.div>
         ))}
 

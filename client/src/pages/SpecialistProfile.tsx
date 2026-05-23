@@ -11,6 +11,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
+import { BookingButton } from "@/components/BookingButton";
 import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn, Confetti } from "@/components/ui/animations";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
 
@@ -238,6 +239,11 @@ export default function SpecialistProfile() {
                 </Popover>
               </motion.div>
             </div>
+          </div>
+
+          {/* Booking button — directly under rating/price block */}
+          <div className="mt-4">
+            <BookingButton specialist={specialist as any} variant="feed" className="!mt-0" />
           </div>
 
           {/* Bio section - full width, separated */}

@@ -141,6 +141,7 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_staff_id integer;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_company_id integer;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_connection_status text DEFAULT 'disconnected';
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_booking_url text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_retry_count integer DEFAULT 0;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_last_retry_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS not_completed_at timestamp;

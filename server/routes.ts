@@ -2560,7 +2560,7 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       const specialistId = Number(req.params.id);
-      const { bio, city, subcategory, workAddress, workLat, workLng } = req.body;
+      const { bio, city, subcategory, workAddress, workLat, workLng, altegioBookingUrl } = req.body;
 
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -2588,6 +2588,24 @@ ${magicLink}`;
       const updates: any = {};
       if (city) updates.city = city;
       if (subcategory !== undefined) updates.subcategory = subcategory || null;
+      if (altegioBookingUrl !== undefined) {
+        if (altegioBookingUrl === null) {
+          updates.altegioBookingUrl = null;
+        } else if (typeof altegioBookingUrl !== 'string') {
+          return res.status(400).json({ message: "altegioBookingUrl must be a string or null" });
+        } else {
+          const trimmed = altegioBookingUrl.trim();
+          if (trimmed === '') {
+            updates.altegioBookingUrl = null;
+          } else if (!/^https?:\/\//i.test(trimmed)) {
+            return res.status(400).json({ message: "Ссылка должна начинаться с http:// или https://" });
+          } else if (trimmed.length > 500) {
+            return res.status(400).json({ message: "Ссылка слишком длинная (максимум 500 символов)" });
+          } else {
+            updates.altegioBookingUrl = trimmed;
+          }
+        }
+      }
 
       const locationChanging = workLat !== undefined || workLng !== undefined || workAddress !== undefined;
       if (locationChanging) {

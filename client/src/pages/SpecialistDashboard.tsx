@@ -47,6 +47,7 @@ export default function SpecialistDashboard() {
   const [baseServiceName, setBaseServiceName] = useState('');
   const [baseServicePrice, setBaseServicePrice] = useState('');
   const [savingBaseService, setSavingBaseService] = useState(false);
+  const [altegioBookingUrl, setAltegioBookingUrl] = useState('');
   const [altegioModalOpen, setAltegioModalOpen] = useState(false);
   const [altegioManualMode, setAltegioManualMode] = useState(false);
   const [altegioManualId, setAltegioManualId] = useState('');
@@ -627,6 +628,7 @@ export default function SpecialistDashboard() {
       setWorkAddress((specialist as any).workAddress || '');
       setWorkLat((specialist as any).workLat ?? null);
       setWorkLng((specialist as any).workLng ?? null);
+      setAltegioBookingUrl((specialist as any).altegioBookingUrl || '');
     }
   }, [specialist]);
 
@@ -695,7 +697,7 @@ export default function SpecialistDashboard() {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio, city, subcategory, workAddress, workLat, workLng }),
+        body: JSON.stringify({ bio, city, subcategory, workAddress, workLat, workLng, altegioBookingUrl }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -951,6 +953,20 @@ export default function SpecialistDashboard() {
             })()}
           </div>
           <div className="space-y-2">
+            <Label htmlFor="altegio-booking-url">Ссылка на онлайн-запись (Altegio и др.)</Label>
+            <Input
+              id="altegio-booking-url"
+              type="url"
+              value={altegioBookingUrl}
+              onChange={(e) => setAltegioBookingUrl(e.target.value)}
+              placeholder="https://n123456.alteg.io/..."
+              data-testid="input-altegio-booking-url"
+            />
+            <p className="text-xs text-muted-foreground">
+              Если указать — кнопка «Записаться» откроет эту ссылку. Если оставить пустым — кнопка откроет WhatsApp на ваш номер.
+            </p>
+          </div>
+          <div className="space-y-2">
             <Label htmlFor="bio">Краткое описание</Label>
             <Textarea
               id="bio"
@@ -968,7 +984,7 @@ export default function SpecialistDashboard() {
               <Button
                 size="sm"
                 onClick={handleSaveBio}
-                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null))}
+                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null) && altegioBookingUrl === ((specialist as any)?.altegioBookingUrl || ''))}
                 data-testid="button-save-bio"
               >
                 {savingBio ? 'Сохранение...' : 'Сохранить'}
