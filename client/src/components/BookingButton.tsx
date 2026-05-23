@@ -86,19 +86,51 @@ export function BookingButton({ specialist, variant = "default", className = "" 
   const stopPointer = (e: React.PointerEvent) => e.stopPropagation();
 
   if (variant === "feed") {
+    const subLabel =
+      channel === "whatsapp" ? "через WhatsApp" :
+      channel === "instagram" ? "через Instagram" :
+      channel === "booking_url" ? "онлайн" :
+      channel === "phone" ? "по телефону" : "";
+    const iconColor =
+      channel === "whatsapp" ? "#25D366" :
+      channel === "instagram" ? "#E4405F" :
+      "#FFFFFF";
     return (
-      <a
-        href={href}
-        target={channel === "phone" ? undefined : "_blank"}
-        rel="noopener noreferrer"
-        onClick={handleClick}
-        onPointerDown={stopPointer}
-        className={`mt-3 flex items-center justify-center gap-2 w-full py-2.5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold active:scale-[0.98] transition-transform ${className}`}
-        data-testid={testId}
+      <div
+        className={`mt-3 flex flex-col items-start gap-1 ${className}`}
+        style={{ maxWidth: 280 }}
       >
-        <Icon size={14} />
-        {label}
-      </a>
+        <a
+          href={href}
+          target={channel === "phone" ? undefined : "_blank"}
+          rel="noopener noreferrer"
+          onClick={handleClick}
+          onPointerDown={stopPointer}
+          className="inline-flex items-center justify-center gap-2 transition-all duration-150 hover:opacity-[0.92] active:opacity-[0.92] active:scale-[0.99]"
+          style={{
+            background: "#374151",
+            color: "#FFFFFF",
+            border: "none",
+            borderRadius: 12,
+            height: 44,
+            paddingInline: 16,
+            fontSize: 15,
+            fontWeight: 600,
+          }}
+          data-testid={testId}
+        >
+          <Icon size={16} style={{ color: iconColor }} />
+          Записаться
+        </a>
+        {subLabel && (
+          <span
+            className="text-muted-foreground"
+            style={{ fontSize: 12, paddingInline: 4 }}
+          >
+            {subLabel}
+          </span>
+        )}
+      </div>
     );
   }
 
