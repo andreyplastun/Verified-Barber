@@ -46,6 +46,11 @@ export const users = pgTable("users", {
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
   onboardingSeenClient: boolean("onboarding_seen_client").default(false).notNull(),
   onboardingSeenPro: boolean("onboarding_seen_pro").default(false).notNull(),
+  // Soft activation: chosen onboarding scenario (altegio | manual | browse)
+  onboardingPath: text("onboarding_path"),
+  onboardingPathChosenAt: timestamp("onboarding_path_chosen_at"),
+  // Notification channel preference (in_app | push). Only in_app used now.
+  notificationChannel: text("notification_channel").default("in_app").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

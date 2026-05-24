@@ -1638,13 +1638,77 @@ export async function registerRoutes(
     }
   });
 
+  // Soft activation: set onboarding path (altegio | manual | browse)
+  app.post("/api/onboarding/path", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const { path } = req.body as { path?: string };
+      if (!path || !["altegio", "manual", "browse"].includes(path)) {
+        return res.status(400).json({ message: "Invalid path" });
+      }
+      const updated = await storage.setUserOnboardingPath(userId, path as 'altegio' | 'manual' | 'browse');
+      if (!updated) return res.status(404).json({ message: "User not found" });
+      res.json(updated);
+    } catch (err: any) {
+      console.error("[ONBOARDING_PATH] error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Soft activation: pick a dynamic "example" specialist for the browse scenario
+  app.get("/api/onboarding/example-specialist", async (_req, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT id, name, image_url, specialty, city, review_count, average_rating
+        FROM specialists
+        WHERE image_url IS NOT NULL
+          AND image_url <> ''
+          AND review_count >= 10
+          AND average_rating > 0
+          AND bio IS NOT NULL AND bio <> ''
+          AND (booking_url IS NOT NULL OR whatsapp IS NOT NULL OR instagram IS NOT NULL OR phone IS NOT NULL)
+          AND is_active = true
+        ORDER BY review_count DESC
+        LIMIT 1
+      `);
+      const row = (result as any).rows?.[0];
+      if (!row) return res.json({ specialist: null });
+      res.json({
+        specialist: {
+          id: row.id,
+          name: row.name,
+          imageUrl: row.image_url,
+          specialty: row.specialty,
+          city: row.city,
+          reviewCount: row.review_count,
+          averageRating: row.average_rating,
+        },
+      });
+    } catch (err: any) {
+      console.error("[EXAMPLE_SPECIALIST] error:", err);
+      res.json({ specialist: null });
+    }
+  });
+
   // Track analytics event (no auth required - fire and forget from client)
   app.post("/api/analytics/event", async (req, res) => {
     try {
       const { eventType, magicLinkId, bookingId, specialistId, sentAt, userAgent, source } = req.body;
       
       // Validate eventType is one of allowed values
-      const allowedEventTypes = ['magic_link_opened', 'review_screen_loaded', 'profile_view', 'booking_click'];
+      const allowedEventTypes = [
+        'magic_link_opened',
+        'review_screen_loaded',
+        'profile_view',
+        'booking_click',
+        // Soft activation events (v117)
+        'activation_step_completed',
+        'activation_banner_click',
+        'activation_banner_shown',
+        'onboarding_path_selected',
+        'activation_completed',
+      ];
       if (!eventType || !allowedEventTypes.includes(eventType)) {
         return res.status(400).json({ message: "Invalid eventType" });
       }

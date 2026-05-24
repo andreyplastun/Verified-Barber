@@ -10,6 +10,7 @@ export interface IStorage {
   getUserByEmail(email: string): Promise<User | undefined>;
   getOrCreateUserByEmail(email: string): Promise<User>;
   updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined>;
+  setUserOnboardingPath(id: string, path: 'altegio' | 'manual' | 'browse'): Promise<User | undefined>;
   completeOnboarding(id: string): Promise<User | undefined>;
   markOnboardingSeen(id: string, type: "client" | "pro"): Promise<User | undefined>;
   getClients(): Promise<User[]>;
@@ -284,6 +285,14 @@ export class DatabaseStorage implements IStorage {
       specialistId: null,
     }).returning();
     return newUser;
+  }
+
+  async setUserOnboardingPath(id: string, path: 'altegio' | 'manual' | 'browse'): Promise<User | undefined> {
+    const [updated] = await db.update(users)
+      .set({ onboardingPath: path, onboardingPathChosenAt: new Date() })
+      .where(eq(users.id, id))
+      .returning();
+    return updated;
   }
 
   async updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined> {

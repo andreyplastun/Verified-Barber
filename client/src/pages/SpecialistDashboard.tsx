@@ -23,6 +23,9 @@ import AltegioErrorScreen, { type AltegioErrorType } from '@/components/AltegioE
 import AltegioSyncBanner, { getBookingSyncBannerConfig, getGlobalAltegioBannerConfig } from '@/components/AltegioSyncBanner';
 import AltegioStatusCard from '@/components/AltegioStatusCard';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import ActivationProgress from '@/components/ActivationProgress';
+import ActivationBanner from '@/components/ActivationBanner';
+import OnboardingPathModal from '@/components/OnboardingPathModal';
 
 export default function SpecialistDashboard() {
   const { currentUser } = useAuth();
@@ -828,6 +831,27 @@ export default function SpecialistDashboard() {
         </Card>
       ) : null}
 
+      <OnboardingPathModal />
+
+      <ActivationBanner
+        specialist={specialist}
+        onCta={() => {
+          const el = document.getElementById('contacts-section') || document.getElementById('bio-section');
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+      />
+
+      <ActivationProgress
+        specialist={specialist}
+        onScrollTo={(anchor) => {
+          const el = document.getElementById(anchor);
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (anchor === 'avatar-section') {
+            setTimeout(() => avatarInputRef.current?.click(), 350);
+          }
+        }}
+      />
+
       <a
         href="https://wa.me/77773000467?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5!%20%D0%A3%20%D0%BC%D0%B5%D0%BD%D1%8F%20%D0%B2%D0%BE%D0%BF%D1%80%D0%BE%D1%81%20%D0%BF%D0%BE%20Rateus."
         target="_blank"
@@ -956,7 +980,7 @@ export default function SpecialistDashboard() {
               );
             })()}
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2" id="contacts-section">
             <Label>Контакты для записи</Label>
             <p className="text-xs text-muted-foreground">
               Кнопка «Записаться» использует первый заполненный канал по приоритету: ссылка → WhatsApp → Instagram → телефон из профиля.
@@ -983,7 +1007,7 @@ export default function SpecialistDashboard() {
               data-testid="input-instagram"
             />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-2" id="bio-section">
             <Label htmlFor="bio">Краткое описание</Label>
             <Textarea
               id="bio"
@@ -1011,7 +1035,7 @@ export default function SpecialistDashboard() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="price-section">
         <CardHeader>
           <CardTitle>Базовая услуга</CardTitle>
         </CardHeader>
@@ -1340,7 +1364,7 @@ export default function SpecialistDashboard() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="avatar-section">
         <CardHeader className="flex flex-row items-center gap-2">
           <Camera className="w-5 h-5" />
           <CardTitle>Фото</CardTitle>

@@ -144,6 +144,10 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS booking_url text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS whatsapp text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS instagram text;
+      -- Soft activation onboarding (v117)
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_path text;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_path_chosen_at timestamp;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_channel text DEFAULT 'in_app' NOT NULL;
       -- Migrate legacy altegio_booking_url → booking_url (only if old column exists, no overwrite)
       DO $$
       BEGIN

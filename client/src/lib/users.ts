@@ -8,6 +8,8 @@ export interface AppUser {
   onboardingCompleted: boolean
   onboardingSeenClient: boolean
   onboardingSeenPro: boolean
+  onboardingPath: 'altegio' | 'manual' | 'browse' | null
+  onboardingPathChosenAt: string | null
   createdAt: string
 }
 
@@ -43,6 +45,8 @@ export async function getAppUser(userId: string): Promise<AppUser | null> {
       onboardingCompleted: data.onboardingCompleted ?? false,
       onboardingSeenClient: data.onboardingSeenClient ?? false,
       onboardingSeenPro: data.onboardingSeenPro ?? false,
+      onboardingPath: data.onboardingPath ?? null,
+      onboardingPathChosenAt: data.onboardingPathChosenAt ?? null,
       createdAt: data.createdAt,
     }
   } catch (err) {
