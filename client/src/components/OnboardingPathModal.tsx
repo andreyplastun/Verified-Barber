@@ -16,6 +16,7 @@ interface ExampleResp {
 
 interface ActivationRow {
   selectedPath: string | null;
+  dismissedAt: string | null;
 }
 
 export default function OnboardingPathModal() {
@@ -41,12 +42,32 @@ export default function OnboardingPathModal() {
     user.role === "specialist" &&
     user.onboardingCompleted === true &&
     activation !== undefined &&
-    !activation.selectedPath;
+    !activation.selectedPath &&
+    !activation.dismissedAt;
 
   const { data: example } = useQuery<ExampleResp>({
     queryKey: ["/api/onboarding/example-specialist"],
     enabled: shouldShow,
+    queryFn: async () => {
+      const res = await fetch("/api/onboarding/example-specialist", {
+        headers: user ? { "x-user-id": user.id } : {},
+      });
+      if (!res.ok) throw new Error("failed");
+      return res.json();
+    },
   });
+
+  const handleDismiss = async () => {
+    if (!user) return;
+    try {
+      await fetch("/api/activation/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-id": user.id },
+      });
+      trackEvent("activation_banner_click", { value: "onboarding_path_dismissed" });
+      await queryClient.invalidateQueries({ queryKey: ["/api/activation/me"] });
+    } catch {}
+  };
 
   useEffect(() => {
     if (shouldShow) {
@@ -86,11 +107,10 @@ export default function OnboardingPathModal() {
   const hasExample = !!example?.specialist;
 
   return (
-    <Dialog open={true} onOpenChange={() => {}}>
+    <Dialog open={true} onOpenChange={(open) => { if (!open) handleDismiss(); }}>
       <DialogContent
         className="sm:max-w-md"
         onPointerDownOutside={e => e.preventDefault()}
-        onEscapeKeyDown={e => e.preventDefault()}
         data-testid="onboarding-path-modal"
       >
         <DialogHeader>

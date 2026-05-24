@@ -1673,6 +1673,21 @@ export async function registerRoutes(
     }
   });
 
+  // Activation: dismiss the path-selection modal without choosing a path
+  app.post("/api/activation/dismiss", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const activation = await storage.upsertSpecialistActivation(userId, {
+        dismissedAt: new Date(),
+      });
+      res.json(activation);
+    } catch (err: any) {
+      console.error("[ACTIVATION_DISMISS] error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Activation: client-computed progress sync (steps + score)
   app.post("/api/activation/sync", async (req, res) => {
     try {
@@ -1721,8 +1736,15 @@ export async function registerRoutes(
   });
 
   // Soft activation: pick a dynamic "example" specialist for the browse scenario
-  app.get("/api/onboarding/example-specialist", async (_req, res) => {
+  app.get("/api/onboarding/example-specialist", async (req, res) => {
     try {
+      // Exclude the requesting user's own specialist so they don't get sent to their own profile
+      const userId = req.headers["x-user-id"] as string | undefined;
+      let excludeSpecialistId: number | null = null;
+      if (userId) {
+        const u = await storage.getUser(userId);
+        if (u?.specialistId) excludeSpecialistId = u.specialistId;
+      }
       const result = await db.execute(sql`
         SELECT id, name, image_url, specialty, city, review_count, average_rating
         FROM specialists
@@ -1733,6 +1755,7 @@ export async function registerRoutes(
           AND bio IS NOT NULL AND bio <> ''
           AND (booking_url IS NOT NULL OR whatsapp IS NOT NULL OR instagram IS NOT NULL OR phone IS NOT NULL)
           AND is_active = true
+          AND (${excludeSpecialistId}::int IS NULL OR id <> ${excludeSpecialistId}::int)
         ORDER BY review_count DESC
         LIMIT 1
       `);
