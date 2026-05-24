@@ -63,7 +63,28 @@ export function InstallBanner() {
   const [animateIn, setAnimateIn] = useState(false);
 
   useEffect(() => {
-    if (!shouldShowBanner()) return;
+    // Auto-detect actual PWA install (Android/Chrome fires this; harmless elsewhere)
+    const onInstalled = () => {
+      localStorage.setItem(STORAGE_KEYS.installed, "true");
+      logEvent("appinstalled_event");
+      setAnimateIn(false);
+      setTimeout(() => setVisible(false), 300);
+    };
+    window.addEventListener("appinstalled", onInstalled);
+
+    // Auto-detect when user opens via installed PWA shortcut (display-mode change)
+    const mql = window.matchMedia("(display-mode: standalone)");
+    const onModeChange = () => {
+      if (mql.matches) onInstalled();
+    };
+    mql.addEventListener?.("change", onModeChange);
+
+    if (!shouldShowBanner()) {
+      return () => {
+        window.removeEventListener("appinstalled", onInstalled);
+        mql.removeEventListener?.("change", onModeChange);
+      };
+    }
 
     const timer = setTimeout(() => {
       setVisible(true);
@@ -77,11 +98,17 @@ export function InstallBanner() {
       });
     }, 2500);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("appinstalled", onInstalled);
+      mql.removeEventListener?.("change", onModeChange);
+    };
   }, []);
 
   const handleDismiss = useCallback(() => {
-    logEvent("banner_dismissed");
+    // X = permanent dismiss. User clearly doesn't want the banner.
+    logEvent("banner_dismissed_permanent");
+    localStorage.setItem(STORAGE_KEYS.dismissed, "permanent");
     setAnimateIn(false);
     setTimeout(() => {
       setVisible(false);
@@ -125,14 +152,23 @@ export function InstallBanner() {
         <div className="mx-auto max-w-lg">
           <div
             className={cn(
-              "mx-2 rounded-t-2xl border-t",
+              "relative mx-2 rounded-t-2xl border-t",
               "bg-background dark:bg-[#111111]",
               "border-[#eeeeee] dark:border-[#222222]",
               "shadow-[0_-4px_16px_rgba(0,0,0,0.08)] dark:shadow-[0_-4px_16px_rgba(0,0,0,0.3)]",
               "px-4 py-3"
             )}
           >
-            <div className="flex items-center gap-3">
+            {/* X moved to top-right corner ABOVE the card so the chat FAB (bottom-20 right-4) cannot cover it */}
+            <button
+              onClick={handleDismiss}
+              className="absolute -top-3 right-3 z-10 w-8 h-8 rounded-full bg-background dark:bg-[#1a1a1a] border border-[#eeeeee] dark:border-[#222222] shadow-md flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Закрыть"
+              data-testid="button-install-dismiss"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-3 pr-2">
               <div className="flex-1 min-w-0">
                 <p className="text-[15px] font-semibold leading-tight text-foreground" data-testid="text-install-title">
                   Добавьте Rateus на главный экран
@@ -141,22 +177,23 @@ export function InstallBanner() {
                   Быстрый доступ к записям, отзывам и рейтингу
                 </p>
               </div>
-              <Button
-                variant="default"
-                className="shrink-0 rounded-xl text-[13px] font-medium"
-                onClick={handleInstallClick}
-                data-testid="button-install-how"
-              >
-                Как установить
-              </Button>
-              <button
-                onClick={handleDismiss}
-                className="shrink-0 p-1.5 rounded-full text-muted-foreground transition-colors"
-                aria-label="Закрыть"
-                data-testid="button-install-dismiss"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex flex-col gap-1 shrink-0">
+                <Button
+                  variant="default"
+                  className="rounded-xl text-[13px] font-medium h-9"
+                  onClick={handleInstallClick}
+                  data-testid="button-install-how"
+                >
+                  Как установить
+                </Button>
+                <button
+                  onClick={handleMarkedInstalled}
+                  className="text-[11px] text-muted-foreground hover:text-foreground underline underline-offset-2"
+                  data-testid="button-install-already"
+                >
+                  Уже установил
+                </button>
+              </div>
             </div>
           </div>
         </div>
