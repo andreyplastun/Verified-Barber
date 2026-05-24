@@ -54,6 +54,20 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Specialist activation state: progress through profile-completion steps.
+// Source of truth for activation; supersedes users.onboardingPath (kept for back-compat).
+export const specialistActivation = pgTable("specialist_activation", {
+  id: serial("id").primaryKey(),
+  userId: uuid("user_id").notNull().unique(),
+  selectedPath: text("selected_path"), // 'altegio' | 'manual' | 'browse' | null
+  completedSteps: text("completed_steps").default("{}").notNull(), // JSON string
+  activationScore: integer("activation_score").default(0).notNull(),
+  completedAt: timestamp("completed_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const specialists = pgTable("specialists", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),

@@ -1638,7 +1638,71 @@ export async function registerRoutes(
     }
   });
 
-  // Soft activation: set onboarding path (altegio | manual | browse)
+  // Activation: get current activation state (creates empty row on first read)
+  app.get("/api/activation/me", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      let activation = await storage.getSpecialistActivation(userId);
+      if (!activation) {
+        activation = await storage.upsertSpecialistActivation(userId, {});
+      }
+      res.json(activation);
+    } catch (err: any) {
+      console.error("[ACTIVATION_GET] error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Activation: choose path (altegio | manual | browse). Also updates legacy users field.
+  app.post("/api/activation/path", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const { path } = req.body as { path?: string };
+      if (!path || !["altegio", "manual", "browse"].includes(path)) {
+        return res.status(400).json({ message: "Invalid path" });
+      }
+      const activation = await storage.upsertSpecialistActivation(userId, { selectedPath: path });
+      // Keep legacy field in sync for back-compat
+      await storage.setUserOnboardingPath(userId, path as 'altegio' | 'manual' | 'browse');
+      res.json(activation);
+    } catch (err: any) {
+      console.error("[ACTIVATION_PATH] error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Activation: client-computed progress sync (steps + score)
+  app.post("/api/activation/sync", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      const { completedSteps, activationScore } = req.body as {
+        completedSteps?: Record<string, boolean>;
+        activationScore?: number;
+      };
+      if (!completedSteps || typeof activationScore !== "number") {
+        return res.status(400).json({ message: "Invalid payload" });
+      }
+      const score = Math.min(100, Math.max(0, Math.round(activationScore)));
+      // Preserve first-activation timestamp: never reset once set
+      const existing = await storage.getSpecialistActivation(userId);
+      const completedAt =
+        score >= 100 ? (existing?.completedAt ?? new Date()) : (existing?.completedAt ?? null);
+      const activation = await storage.upsertSpecialistActivation(userId, {
+        completedSteps,
+        activationScore: score,
+        completedAt,
+      });
+      res.json(activation);
+    } catch (err: any) {
+      console.error("[ACTIVATION_SYNC] error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Legacy alias for clients still hitting the old endpoint
   app.post("/api/onboarding/path", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
@@ -1647,11 +1711,11 @@ export async function registerRoutes(
       if (!path || !["altegio", "manual", "browse"].includes(path)) {
         return res.status(400).json({ message: "Invalid path" });
       }
-      const updated = await storage.setUserOnboardingPath(userId, path as 'altegio' | 'manual' | 'browse');
-      if (!updated) return res.status(404).json({ message: "User not found" });
-      res.json(updated);
+      const activation = await storage.upsertSpecialistActivation(userId, { selectedPath: path });
+      await storage.setUserOnboardingPath(userId, path as 'altegio' | 'manual' | 'browse');
+      res.json(activation);
     } catch (err: any) {
-      console.error("[ONBOARDING_PATH] error:", err);
+      console.error("[ONBOARDING_PATH_LEGACY] error:", err);
       res.status(500).json({ message: err.message });
     }
   });
@@ -1708,6 +1772,10 @@ export async function registerRoutes(
         'activation_banner_shown',
         'onboarding_path_selected',
         'activation_completed',
+        // Activation refactor (v118)
+        'activation_score_changed',
+        'activation_step_viewed',
+        'activation_first_review_started',
       ];
       if (!eventType || !allowedEventTypes.includes(eventType)) {
         return res.status(400).json({ message: "Invalid eventType" });

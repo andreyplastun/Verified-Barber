@@ -148,6 +148,23 @@ app.use((req, res, next) => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_path text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_path_chosen_at timestamp;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS notification_channel text DEFAULT 'in_app' NOT NULL;
+      CREATE TABLE IF NOT EXISTS specialist_activation (
+        id serial PRIMARY KEY,
+        user_id uuid NOT NULL UNIQUE,
+        selected_path text,
+        completed_steps text NOT NULL DEFAULT '{}',
+        activation_score integer NOT NULL DEFAULT 0,
+        completed_at timestamp,
+        dismissed_at timestamp,
+        created_at timestamp NOT NULL DEFAULT now(),
+        updated_at timestamp NOT NULL DEFAULT now()
+      );
+      -- Backfill selected_path from legacy users.onboarding_path (safe, idempotent)
+      INSERT INTO specialist_activation (user_id, selected_path, created_at, updated_at)
+      SELECT u.id, u.onboarding_path, COALESCE(u.onboarding_path_chosen_at, now()), now()
+      FROM users u
+      WHERE u.onboarding_path IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM specialist_activation sa WHERE sa.user_id = u.id);
       -- Migrate legacy altegio_booking_url → booking_url (only if old column exists, no overwrite)
       DO $$
       BEGIN

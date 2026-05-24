@@ -11,6 +11,8 @@ export interface IStorage {
   getOrCreateUserByEmail(email: string): Promise<User>;
   updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined>;
   setUserOnboardingPath(id: string, path: 'altegio' | 'manual' | 'browse'): Promise<User | undefined>;
+  getSpecialistActivation(userId: string): Promise<any | undefined>;
+  upsertSpecialistActivation(userId: string, patch: { selectedPath?: string | null; completedSteps?: Record<string, boolean>; activationScore?: number; completedAt?: Date | null; dismissedAt?: Date | null; }): Promise<any>;
   completeOnboarding(id: string): Promise<User | undefined>;
   markOnboardingSeen(id: string, type: "client" | "pro"): Promise<User | undefined>;
   getClients(): Promise<User[]>;
@@ -293,6 +295,64 @@ export class DatabaseStorage implements IStorage {
       .where(eq(users.id, id))
       .returning();
     return updated;
+  }
+
+  async getSpecialistActivation(userId: string): Promise<any | undefined> {
+    const result = await db.execute(sql`
+      SELECT id, user_id, selected_path, completed_steps, activation_score,
+             completed_at, dismissed_at, created_at, updated_at
+      FROM specialist_activation WHERE user_id = ${userId} LIMIT 1
+    `);
+    const row = (result as any).rows?.[0];
+    if (!row) return undefined;
+    let parsedSteps: Record<string, boolean> = {};
+    try { parsedSteps = JSON.parse(row.completed_steps || "{}"); } catch {}
+    return {
+      id: row.id,
+      userId: row.user_id,
+      selectedPath: row.selected_path,
+      completedSteps: parsedSteps,
+      activationScore: row.activation_score,
+      completedAt: row.completed_at,
+      dismissedAt: row.dismissed_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  async upsertSpecialistActivation(userId: string, patch: { selectedPath?: string | null; completedSteps?: Record<string, boolean>; activationScore?: number; completedAt?: Date | null; dismissedAt?: Date | null; }): Promise<any> {
+    const existing = await this.getSpecialistActivation(userId);
+    if (!existing) {
+      await db.execute(sql`
+        INSERT INTO specialist_activation (user_id, selected_path, completed_steps, activation_score, completed_at, dismissed_at)
+        VALUES (
+          ${userId},
+          ${patch.selectedPath ?? null},
+          ${JSON.stringify(patch.completedSteps ?? {})},
+          ${patch.activationScore ?? 0},
+          ${patch.completedAt ?? null},
+          ${patch.dismissedAt ?? null}
+        )
+        ON CONFLICT (user_id) DO NOTHING
+      `);
+      return this.getSpecialistActivation(userId);
+    }
+    const nextSteps = patch.completedSteps ?? existing.completedSteps;
+    const nextPath = patch.selectedPath !== undefined ? patch.selectedPath : existing.selectedPath;
+    const nextScore = patch.activationScore !== undefined ? patch.activationScore : existing.activationScore;
+    const nextCompletedAt = patch.completedAt !== undefined ? patch.completedAt : existing.completedAt;
+    const nextDismissedAt = patch.dismissedAt !== undefined ? patch.dismissedAt : existing.dismissedAt;
+    await db.execute(sql`
+      UPDATE specialist_activation
+      SET selected_path = ${nextPath},
+          completed_steps = ${JSON.stringify(nextSteps)},
+          activation_score = ${nextScore},
+          completed_at = ${nextCompletedAt},
+          dismissed_at = ${nextDismissedAt},
+          updated_at = now()
+      WHERE user_id = ${userId}
+    `);
+    return this.getSpecialistActivation(userId);
   }
 
   async updateUserRole(id: string, role: string, specialistId?: number): Promise<User | undefined> {

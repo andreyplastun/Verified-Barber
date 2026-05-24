@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { trackEvent } from "@/lib/analytics";
+import { queryClient } from "@/lib/queryClient";
 import { Link2, Plus, Eye } from "lucide-react";
 
 type Path = "altegio" | "manual" | "browse";
@@ -14,17 +14,34 @@ interface ExampleResp {
   specialist: { id: number; name: string } | null;
 }
 
+interface ActivationRow {
+  selectedPath: string | null;
+}
+
 export default function OnboardingPathModal() {
   const { user, refetchUser } = useAuth();
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [submitting, setSubmitting] = useState<Path | null>(null);
 
+  const { data: activation } = useQuery<ActivationRow>({
+    queryKey: ["/api/activation/me"],
+    enabled: !!user && user.role === "specialist" && user.onboardingCompleted === true,
+    queryFn: async () => {
+      const res = await fetch("/api/activation/me", {
+        headers: { "x-user-id": user!.id },
+      });
+      if (!res.ok) throw new Error("failed");
+      return res.json();
+    },
+  });
+
   const shouldShow =
     !!user &&
     user.role === "specialist" &&
     user.onboardingCompleted === true &&
-    user.onboardingPath === null;
+    activation !== undefined &&
+    !activation.selectedPath;
 
   const { data: example } = useQuery<ExampleResp>({
     queryKey: ["/api/onboarding/example-specialist"],
@@ -43,13 +60,14 @@ export default function OnboardingPathModal() {
     if (!user) return;
     setSubmitting(path);
     try {
-      const res = await fetch("/api/onboarding/path", {
+      const res = await fetch("/api/activation/path", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-user-id": user.id },
         body: JSON.stringify({ path }),
       });
       if (!res.ok) throw new Error("Не удалось сохранить выбор");
       trackEvent("onboarding_path_selected", { value: path });
+      await queryClient.invalidateQueries({ queryKey: ["/api/activation/me"] });
       await refetchUser();
       if (path === "altegio") {
         toast({ title: "Подключите Altegio в карточке ниже" });

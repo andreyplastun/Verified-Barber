@@ -1,0 +1,180 @@
+Рефактор активации специалистов перед дальнейшим развитием.
+
+Цель:
+перевести текущий onboarding из набора UI-подсказок в устойчивую activation-систему.
+
+Не ломать текущий UX.
+
+---
+
+1. Вынести состояние активации из users
+
+Не хранить:
+users.onboardingPath
+users.onboardingPathChosenAt
+
+Создать новую сущность:
+
+specialist_activation
+
+поля:
+
+userId (unique)
+selectedPath nullable
+completedSteps jsonb
+activationScore int default 0
+completedAt nullable
+dismissedAt nullable
+createdAt
+updatedAt
+
+completedSteps пример:
+
+{
+ "photo": true,
+ "price": false,
+ "bio": true,
+ "contact": true,
+ "first_review": false
+}
+
+Сделать безопасную миграцию:
+если старые поля заполнены → перенести → старые пока оставить (не удалять).
+
+---
+
+2. Убрать жёсткие 5 шагов
+
+Создать конфиг шагов:
+
+ACTIVATION_STEPS
+
+структура:
+
+key
+weight
+required
+
+Начальный набор:
+
+photo
+weight:20
+required:true
+
+price
+weight:15
+required:true
+
+contact
+weight:20
+required:true
+
+bio
+weight:15
+required:false
+
+first_review
+weight:30
+required:true
+
+Прогресс считать динамически.
+
+Не использовать захардкоженное:
+3/5
+4/5
+5/5
+
+---
+
+3. Добавить activation score
+
+Считать:
+
+score =
+sum(weights completed)
+
+ограничение:
+0–100
+
+UI:
+
+вместо:
+«3 из 5»
+
+показывать:
+
+Профиль готов на XX%
+
+ниже мелко:
+«Ещё N шагов до полного профиля»
+
+если score=100:
+скрыть блок.
+
+---
+
+4. Изменить смысл последнего шага
+
+Сейчас не заканчивать на заполнении профиля.
+
+Последний шаг:
+
+Получите первый отзыв
+
+Описание:
+
+Клиенты начинают выбирать специалистов по отзывам.
+Попросите клиента оставить первый отзыв после визита.
+
+Кнопка:
+Как получить →
+
+Экран:
+1 отметить визит
+2 отправить ссылку
+3 получить первый отзыв
+
+Пока можно без реального сценария —
+только объяснение.
+
+---
+
+5. Метрики
+
+Добавить события:
+
+activation_score_changed
+activation_step_viewed
+activation_first_review_started
+activation_completed
+
+Все через существующую аналитику.
+
+---
+
+6. Совместимость
+
+Текущий UI не ломать.
+
+ActivationProgress оставить.
+
+OnboardingPathModal оставить.
+
+Только заменить источник данных.
+
+---
+
+7. Проверить
+
+новый пользователь
+старый пользователь
+перенос данных
+достижение 100
+пустой профиль
+частично заполненный профиль
+
+Показать после деплоя:
+скрин 0%
+скрин ~60%
+скрин 100%
+таблицу migration результатов.
