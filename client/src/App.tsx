@@ -190,7 +190,7 @@ function AppContent() {
   const { user } = useAuth();
   const hideNavigation = location.startsWith('/r/') || location.startsWith('/claim/') || location.startsWith('/review/');
   const isCriticalFlow = location.startsWith('/r/') || location.startsWith('/review/') || location.startsWith('/book/') || location.startsWith('/claim/');
-  const hideInstallBanner = isCriticalFlow || location === '/auth' || location === '/join' || !user;
+  const hideInstallBanner = isCriticalFlow || location === '/auth' || location === '/join' || !user || user.role === 'admin';
 
   const onboardingType = user?.role === "specialist" ? "pro" : "client";
   const { seen: onboardingSeen, markSeen: markOnboardingSeen } = useOnboardingSeen(onboardingType);

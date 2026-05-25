@@ -4,18 +4,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const STORAGE_KEYS = {
-  views: "installBannerViews",
-  lastShown: "installBannerLastShown",
+  shown: "installBannerEverShown",
   dismissed: "installBannerDismissed",
   installed: "installBannerInstalled",
 };
-
-const DELAY_SCHEDULE = [0, 3, 7, 7, 14, 30];
-
-function getDaysDelay(views: number): number {
-  if (views >= DELAY_SCHEDULE.length) return 30;
-  return DELAY_SCHEDULE[views];
-}
 
 function isStandalone(): boolean {
   return (
@@ -24,26 +16,15 @@ function isStandalone(): boolean {
   );
 }
 
+// Show ONCE per device, EVER. Period.
+// After the first appearance we immediately mark it as permanently dismissed,
+// regardless of how the user closes it (tap X, close tab, swipe browser, etc).
 function shouldShowBanner(): boolean {
   if (isStandalone()) return false;
-
-  const installed = localStorage.getItem(STORAGE_KEYS.installed);
-  if (installed === "true") return false;
-
-  const dismissed = localStorage.getItem(STORAGE_KEYS.dismissed);
-  if (dismissed === "permanent") return false;
-
-  if (sessionStorage.getItem("installBannerShownThisSession") === "true") return false;
-
-  const views = parseInt(localStorage.getItem(STORAGE_KEYS.views) || "0", 10);
-  const lastShown = parseInt(localStorage.getItem(STORAGE_KEYS.lastShown) || "0", 10);
-
-  if (views === 0 && lastShown === 0) return true;
-
-  const daysSinceLastShown = (Date.now() - lastShown) / (1000 * 60 * 60 * 24);
-  const requiredDays = getDaysDelay(views);
-
-  return daysSinceLastShown >= requiredDays;
+  if (localStorage.getItem(STORAGE_KEYS.installed) === "true") return false;
+  if (localStorage.getItem(STORAGE_KEYS.dismissed) === "permanent") return false;
+  if (localStorage.getItem(STORAGE_KEYS.shown) === "true") return false;
+  return true;
 }
 
 function detectPlatform(): "ios" | "android" | "other" {
@@ -88,11 +69,10 @@ export function InstallBanner() {
 
     const timer = setTimeout(() => {
       setVisible(true);
-      const views = parseInt(localStorage.getItem(STORAGE_KEYS.views) || "0", 10);
-      localStorage.setItem(STORAGE_KEYS.views, (views + 1).toString());
-      localStorage.setItem(STORAGE_KEYS.lastShown, Date.now().toString());
-      sessionStorage.setItem("installBannerShownThisSession", "true");
-      logEvent(`banner_shown (view #${views + 1})`);
+      // Mark permanently shown the moment it appears. One-shot.
+      localStorage.setItem(STORAGE_KEYS.shown, "true");
+      localStorage.setItem(STORAGE_KEYS.dismissed, "permanent");
+      logEvent("banner_shown_once_permanent");
       requestAnimationFrame(() => {
         requestAnimationFrame(() => setAnimateIn(true));
       });
