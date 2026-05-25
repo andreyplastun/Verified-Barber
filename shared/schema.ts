@@ -51,6 +51,9 @@ export const users = pgTable("users", {
   onboardingPathChosenAt: timestamp("onboarding_path_chosen_at"),
   // Notification channel preference (in_app | push). Only in_app used now.
   notificationChannel: text("notification_channel").default("in_app").notNull(),
+  // PWA install banner state (server-side persisted, survives Safari ITP clearing localStorage).
+  // JSON shape: { views: number, lastShown: number(ms), dismissed: 'permanent'|null, installed: boolean }
+  installBannerState: text("install_banner_state"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
