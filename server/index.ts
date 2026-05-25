@@ -265,8 +265,6 @@ app.use((req, res, next) => {
         created_at TIMESTAMP DEFAULT NOW()
       );
 
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS install_banner_state TEXT;
-
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS assistbot_message_id TEXT;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0;
