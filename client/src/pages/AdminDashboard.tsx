@@ -33,6 +33,39 @@ type BookingWithDetails = {
   isExpired: boolean;
 };
 
+function DailyLimitInput({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [local, setLocal] = useState<string>(String(value));
+  const [focused, setFocused] = useState(false);
+  if (!focused && local !== String(value)) {
+    setLocal(String(value));
+  }
+  const commit = () => {
+    const v = parseInt(local, 10);
+    if (Number.isFinite(v) && v > 0 && v <= 100 && v !== value) {
+      onCommit(v);
+    } else {
+      setLocal(String(value));
+    }
+  };
+  return (
+    <Input
+      type="number"
+      inputMode="numeric"
+      min={1}
+      max={100}
+      value={local}
+      onFocus={(e) => { setFocused(true); e.currentTarget.select(); }}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => { setFocused(false); commit(); }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") { e.currentTarget.blur(); }
+        if (e.key === "Escape") { setLocal(String(value)); e.currentTarget.blur(); }
+      }}
+      data-testid="input-wa-daily-limit"
+    />
+  );
+}
+
 export default function AdminDashboard() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
@@ -1165,16 +1198,9 @@ export default function AdminDashboard() {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-sm">Лимит / день</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      max={100}
+                    <DailyLimitInput
                       value={waSettings?.dailyLimit || 20}
-                      onChange={(e) => {
-                        const v = parseInt(e.target.value);
-                        if (v > 0) updateWaSettingsMutation.mutate({ dailyLimit: v });
-                      }}
-                      data-testid="input-wa-daily-limit"
+                      onCommit={(v) => updateWaSettingsMutation.mutate({ dailyLimit: v })}
                     />
                   </div>
                 </div>
