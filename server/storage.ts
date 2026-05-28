@@ -135,6 +135,9 @@ export interface IStorage {
   countWaMessagesSentToday(): Promise<number>;
   countWaMessagesSentTodayByType(): Promise<{ primary: number; reminder: number }>;
   countWaMessagesSentYesterdayByType(): Promise<{ primary: number; reminder: number }>;
+  countWaMessagesDeliveredTodayByType(): Promise<{ primary: number; reminder: number }>;
+  countWaMessagesDeliveredYesterdayByType(): Promise<{ primary: number; reminder: number }>;
+  countWaMessagesFailedDeliveryTodayByType(): Promise<{ primary: number; reminder: number }>;
   getLastWaSentTime(): Promise<Date | null>;
   countWaQueuedForWindow(windowStart: Date, windowEnd: Date): Promise<number>;
   getWaMessages(limit: number, offset: number): Promise<{ messages: WaMessage[]; total: number }>;
@@ -1335,6 +1338,58 @@ export class DatabaseStorage implements IStorage {
       .from(waMessages)
       .where(and(
         eq(waMessages.status, "sent"),
+        sql`${waMessages.sentAt} >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'`
+      ))
+      .groupBy(waMessages.messageType);
+    const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);
+    const reminder = Number(result.find(r => r.messageType === "reminder")?.count || 0);
+    return { primary, reminder };
+  }
+
+  async countWaMessagesDeliveredTodayByType(): Promise<{ primary: number; reminder: number }> {
+    const result = await db.select({
+      messageType: waMessages.messageType,
+      count: sql<number>`count(*)`
+    })
+      .from(waMessages)
+      .where(and(
+        eq(waMessages.status, "sent"),
+        eq(waMessages.deliveryStatus, "delivered"),
+        sql`${waMessages.sentAt} >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'`
+      ))
+      .groupBy(waMessages.messageType);
+    const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);
+    const reminder = Number(result.find(r => r.messageType === "reminder")?.count || 0);
+    return { primary, reminder };
+  }
+
+  async countWaMessagesDeliveredYesterdayByType(): Promise<{ primary: number; reminder: number }> {
+    const result = await db.select({
+      messageType: waMessages.messageType,
+      count: sql<number>`count(*)`
+    })
+      .from(waMessages)
+      .where(and(
+        eq(waMessages.status, "sent"),
+        eq(waMessages.deliveryStatus, "delivered"),
+        sql`${waMessages.sentAt} >= ((now() AT TIME ZONE 'Asia/Almaty')::date - INTERVAL '1 day') AT TIME ZONE 'Asia/Almaty'`,
+        sql`${waMessages.sentAt} < (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'`
+      ))
+      .groupBy(waMessages.messageType);
+    const primary = Number(result.find(r => r.messageType === "primary")?.count || 0);
+    const reminder = Number(result.find(r => r.messageType === "reminder")?.count || 0);
+    return { primary, reminder };
+  }
+
+  async countWaMessagesFailedDeliveryTodayByType(): Promise<{ primary: number; reminder: number }> {
+    const result = await db.select({
+      messageType: waMessages.messageType,
+      count: sql<number>`count(*)`
+    })
+      .from(waMessages)
+      .where(and(
+        eq(waMessages.status, "sent"),
+        eq(waMessages.deliveryStatus, "failed"),
         sql`${waMessages.sentAt} >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'`
       ))
       .groupBy(waMessages.messageType);

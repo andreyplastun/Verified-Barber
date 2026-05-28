@@ -4112,24 +4112,52 @@ ${magicLink}`;
       else if (/(fail|error|reject|undeliver|expired|invalid)/i.test(rawStatus)) normalized = "failed";
       else if (/(sent|accept|queue|process|ack)/i.test(rawStatus)) normalized = "sent_to_provider";
 
-      // Match the wa_messages row by extracting bookingId from our own id pattern: rateus_<source>_<bookingId>_<ts>
+      // Match the wa_messages row by parsing our own id pattern.
+      // Format: rateus_<source>_<bookingId>_<timestamp> where source may contain
+      // underscores (queue_primary, queue_reminder, direct_api, resend_reminder, etc.)
+      // and timestamp is Date.now() (>=13 digits). Anchor on the tail so source length
+      // doesn't matter.
       let bookingId: number | null = null;
+      let messageType: string | null = null;
       if (msgUniqueId && typeof msgUniqueId === "string") {
-        const match = msgUniqueId.match(/rateus_[^_]+_(\d+)_/);
-        if (match) bookingId = parseInt(match[1], 10);
+        const typedMatch = msgUniqueId.match(/_(primary|reminder)_(\d+)_(\d{10,})$/);
+        if (typedMatch) {
+          messageType = typedMatch[1];
+          bookingId = parseInt(typedMatch[2], 10);
+        } else {
+          // Fallback: pick the digit-group right before the timestamp
+          const tail = msgUniqueId.match(/_(\d+)_(\d{10,})$/);
+          if (tail) bookingId = parseInt(tail[1], 10);
+        }
       }
 
       if (bookingId) {
-        await db.execute(sql`
-          UPDATE wa_messages
-          SET delivery_status = ${normalized},
-              delivery_received_at = NOW(),
-              delivery_raw = ${rawStr}
-          WHERE booking_id = ${bookingId}
-            AND status = 'sent'
-            AND (delivery_received_at IS NULL OR delivery_status <> 'delivered')
-        `);
-        console.log(`[ASSISTBOT_WEBHOOK] Updated booking=${bookingId} delivery_status=${normalized}`);
+        // Update exactly the row(s) matching booking + messageType (if known) and
+        // not yet finalized as delivered. Avoids one callback corrupting both
+        // primary and follow-up rows for the same booking.
+        if (messageType) {
+          await db.execute(sql`
+            UPDATE wa_messages
+            SET delivery_status = ${normalized},
+                delivery_received_at = NOW(),
+                delivery_raw = ${rawStr}
+            WHERE booking_id = ${bookingId}
+              AND message_type = ${messageType}
+              AND status = 'sent'
+              AND (delivery_received_at IS NULL OR delivery_status <> 'delivered')
+          `);
+        } else {
+          await db.execute(sql`
+            UPDATE wa_messages
+            SET delivery_status = ${normalized},
+                delivery_received_at = NOW(),
+                delivery_raw = ${rawStr}
+            WHERE booking_id = ${bookingId}
+              AND status = 'sent'
+              AND (delivery_received_at IS NULL OR delivery_status <> 'delivered')
+          `);
+        }
+        console.log(`[ASSISTBOT_WEBHOOK] Updated booking=${bookingId} type=${messageType || 'any'} delivery_status=${normalized}`);
       } else {
         console.log(`[ASSISTBOT_WEBHOOK] Could not extract bookingId from id=${msgUniqueId} — body logged only`);
       }
@@ -4326,7 +4354,10 @@ ${magicLink}`;
       const sentToday = await storage.countWaMessagesSentToday();
       const sentTodayByType = await storage.countWaMessagesSentTodayByType();
       const sentYesterdayByType = await storage.countWaMessagesSentYesterdayByType();
-      res.json({ ...result, sentToday, sentTodayByType, sentYesterdayByType });
+      const deliveredTodayByType = await storage.countWaMessagesDeliveredTodayByType();
+      const deliveredYesterdayByType = await storage.countWaMessagesDeliveredYesterdayByType();
+      const failedDeliveryTodayByType = await storage.countWaMessagesFailedDeliveryTodayByType();
+      res.json({ ...result, sentToday, sentTodayByType, sentYesterdayByType, deliveredTodayByType, deliveredYesterdayByType, failedDeliveryTodayByType });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -4339,6 +4370,9 @@ ${magicLink}`;
       const sentToday = await storage.countWaMessagesSentToday();
       const sentTodayByType = await storage.countWaMessagesSentTodayByType();
       const sentYesterdayByType = await storage.countWaMessagesSentYesterdayByType();
+      const deliveredTodayByType = await storage.countWaMessagesDeliveredTodayByType();
+      const deliveredYesterdayByType = await storage.countWaMessagesDeliveredYesterdayByType();
+      const failedDeliveryTodayByType = await storage.countWaMessagesFailedDeliveryTodayByType();
       const settings = await getWaSettings();
       const queueDiag = await db.execute(sql`
         SELECT status, count(*) as cnt FROM wa_messages GROUP BY status
@@ -4368,7 +4402,7 @@ ${magicLink}`;
         nextScheduled: nextScheduled.rows,
         recentFailed: recentFailed.rows,
       };
-      res.json({ sentToday, sentTodayByType, sentYesterdayByType, ...settings, queueStatus });
+      res.json({ sentToday, sentTodayByType, sentYesterdayByType, deliveredTodayByType, deliveredYesterdayByType, failedDeliveryTodayByType, ...settings, queueStatus });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

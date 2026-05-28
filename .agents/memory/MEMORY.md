@@ -1,0 +1,1 @@
+- [WA delivery webhook correlation](wa-delivery-correlation.md) — parse `rateus_<source>_<bookingId>_<ts>` by tail-anchoring on 13-digit timestamp; constrain UPDATE by message_type; show sent vs delivered both.

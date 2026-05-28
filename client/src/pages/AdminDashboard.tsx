@@ -415,7 +415,7 @@ export default function AdminDashboard() {
   });
 
   type QueueStatusType = { byStatus: Record<string, number>; readyNow: number; futureQueued: number; nextScheduled: any[]; recentFailed: any[] };
-  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number; sentToday?: number; sentTodayByType?: { primary: number; reminder: number }; sentYesterdayByType?: { primary: number; reminder: number }; queueStatus?: QueueStatusType };
+  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number; sentToday?: number; sentTodayByType?: { primary: number; reminder: number }; sentYesterdayByType?: { primary: number; reminder: number }; deliveredTodayByType?: { primary: number; reminder: number }; deliveredYesterdayByType?: { primary: number; reminder: number }; failedDeliveryTodayByType?: { primary: number; reminder: number }; queueStatus?: QueueStatusType };
   type WaMessageType = {
     id: number; bookingId: number; customerPhone: string; customerName: string;
     specialistName: string; messageType: string; status: string; templateIndex: number;
@@ -1179,18 +1179,41 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                {waSettings && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Badge variant="secondary" data-testid="badge-wa-sent-today">
-                      Сегодня: {waSettings.sentTodayByType 
-                        ? `${waSettings.sentTodayByType.primary} осн. + ${waSettings.sentTodayByType.reminder} follow-up`
-                        : waSettings.sentToday || 0}
-                    </Badge>
-                    {waSettings.sentYesterdayByType && (waSettings.sentYesterdayByType.primary > 0 || waSettings.sentYesterdayByType.reminder > 0) && (
-                      <Badge variant="outline" data-testid="badge-wa-sent-yesterday">
-                        Вчера: {waSettings.sentYesterdayByType.primary} осн. + {waSettings.sentYesterdayByType.reminder} follow-up
-                      </Badge>
+                {waSettings && (() => {
+                  const sentT = waSettings.sentTodayByType || { primary: 0, reminder: 0 };
+                  const delT = waSettings.deliveredTodayByType || { primary: 0, reminder: 0 };
+                  const failT = waSettings.failedDeliveryTodayByType || { primary: 0, reminder: 0 };
+                  const sentTotal = sentT.primary + sentT.reminder;
+                  const delTotal = delT.primary + delT.reminder;
+                  const pending = sentTotal - delTotal - (failT.primary + failT.reminder);
+                  const ratio = sentTotal > 0 ? delTotal / sentTotal : 1;
+                  const deliveryBroken = sentTotal >= 5 && ratio < 0.3;
+                  const sentY = waSettings.sentYesterdayByType || { primary: 0, reminder: 0 };
+                  const delY = waSettings.deliveredYesterdayByType || { primary: 0, reminder: 0 };
+                  return (
+                  <div className="space-y-2">
+                    {deliveryBroken && (
+                      <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive" data-testid="alert-delivery-broken">
+                        Доставка сломана: отдано в AssistBot {sentTotal}, доставлено WhatsApp-ом {delTotal}. Проверь номер отправителя / провайдера.
+                      </div>
                     )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="secondary" data-testid="badge-wa-sent-today">
+                        Сегодня отдано: {sentT.primary} осн. + {sentT.reminder} follow-up
+                      </Badge>
+                      <Badge
+                        variant={deliveryBroken ? "destructive" : (delTotal >= sentTotal ? "default" : "outline")}
+                        data-testid="badge-wa-delivered-today"
+                      >
+                        Доставлено: {delT.primary} осн. + {delT.reminder} follow-up
+                        {pending > 0 ? ` (ожидает: ${pending})` : ""}
+                        {(failT.primary + failT.reminder) > 0 ? ` (провал: ${failT.primary + failT.reminder})` : ""}
+                      </Badge>
+                      {(sentY.primary + sentY.reminder) > 0 && (
+                        <Badge variant="outline" data-testid="badge-wa-sent-yesterday">
+                          Вчера: {sentY.primary}+{sentY.reminder} отдано / {delY.primary}+{delY.reminder} доставлено
+                        </Badge>
+                      )}
                     <Button
                       size="sm"
                       variant="outline"
@@ -1213,8 +1236,10 @@ export default function AdminDashboard() {
                     >
                       Создать follow-up
                     </Button>
+                    </div>
                   </div>
-                )}
+                  );
+                })()}
               </CardContent>
             </Card>
 
