@@ -515,15 +515,27 @@ export default function AdminDashboard() {
         headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id || "" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) throw new Error("Failed");
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${text || res.statusText}`);
+      }
       return res.json();
     },
-    onSuccess: () => {
-      refetchWaSettings();
+    onMutate: async (patch) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/admin/whatsapp/stats"] });
+      const prev = queryClient.getQueryData<WaSettingsType>(["/api/admin/whatsapp/stats"]);
+      if (prev) {
+        queryClient.setQueryData<WaSettingsType>(["/api/admin/whatsapp/stats"], { ...prev, ...patch });
+      }
+      return { prev };
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/admin/whatsapp/stats"], data);
       toast({ title: "Настройки WhatsApp сохранены" });
     },
-    onError: (err: Error) => {
-      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
+    onError: (err: Error, _vars, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(["/api/admin/whatsapp/stats"], ctx.prev);
+      toast({ title: "Ошибка сохранения", description: err.message, variant: "destructive" });
     },
   });
 
