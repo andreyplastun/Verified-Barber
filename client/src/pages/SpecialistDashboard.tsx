@@ -25,6 +25,7 @@ import AltegioStatusCard from '@/components/AltegioStatusCard';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ActivationProgress from '@/components/ActivationProgress';
 import ActivationBanner from '@/components/ActivationBanner';
+import HelpBanner from '@/components/HelpBanner';
 import OnboardingPathModal from '@/components/OnboardingPathModal';
 
 export default function SpecialistDashboard() {
@@ -797,6 +798,26 @@ export default function SpecialistDashboard() {
 
   return (
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
+      <HelpBanner
+        specialist={specialist}
+        onFillProfile={(anchor) => {
+          if (anchor === 'new-booking-name') {
+            setShowNewBookingForm(true);
+            setTimeout(() => {
+              document
+                .getElementById('new-booking-name')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+            return;
+          }
+          const el = document.getElementById(anchor);
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          if (anchor === 'avatar-section') {
+            setTimeout(() => avatarInputRef.current?.click(), 350);
+          }
+        }}
+      />
+
       {loadingSpecialist ? (
         <Skeleton className="h-32 w-full" />
       ) : specialist ? (
