@@ -25,7 +25,6 @@ import AltegioStatusCard from '@/components/AltegioStatusCard';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ActivationProgress from '@/components/ActivationProgress';
 import ActivationBanner from '@/components/ActivationBanner';
-import HelpBanner from '@/components/HelpBanner';
 import OnboardingPathModal from '@/components/OnboardingPathModal';
 
 export default function SpecialistDashboard() {
@@ -798,23 +797,24 @@ export default function SpecialistDashboard() {
 
   return (
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
-      <HelpBanner
+      <ActivationProgress
         specialist={specialist}
-        onFillProfile={(anchor) => {
-          if (anchor === 'new-booking-name') {
-            setShowNewBookingForm(true);
-            setTimeout(() => {
-              document
-                .getElementById('new-booking-name')
-                ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }, 100);
-            return;
-          }
+        onScrollTo={(anchor) => {
           const el = document.getElementById(anchor);
           el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
           if (anchor === 'avatar-section') {
             setTimeout(() => avatarInputRef.current?.click(), 350);
           }
+        }}
+      />
+
+      <OnboardingPathModal />
+
+      <ActivationBanner
+        specialist={specialist}
+        onCta={() => {
+          const el = document.getElementById('contacts-section') || document.getElementById('bio-section');
+          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }}
       />
 
@@ -851,27 +851,6 @@ export default function SpecialistDashboard() {
           </CardHeader>
         </Card>
       ) : null}
-
-      <OnboardingPathModal />
-
-      <ActivationBanner
-        specialist={specialist}
-        onCta={() => {
-          const el = document.getElementById('contacts-section') || document.getElementById('bio-section');
-          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }}
-      />
-
-      <ActivationProgress
-        specialist={specialist}
-        onScrollTo={(anchor) => {
-          const el = document.getElementById(anchor);
-          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          if (anchor === 'avatar-section') {
-            setTimeout(() => avatarInputRef.current?.click(), 350);
-          }
-        }}
-      />
 
       <a
         href="https://wa.me/77773000467?text=%D0%97%D0%B4%D1%80%D0%B0%D0%B2%D1%81%D1%82%D0%B2%D1%83%D0%B9%D1%82%D0%B5!%20%D0%A3%20%D0%BC%D0%B5%D0%BD%D1%8F%20%D0%B2%D0%BE%D0%BF%D1%80%D0%BE%D1%81%20%D0%BF%D0%BE%20Rateus."

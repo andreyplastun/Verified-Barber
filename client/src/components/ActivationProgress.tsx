@@ -16,6 +16,10 @@ import {
 import type { Specialist } from "@shared/schema";
 import FirstReviewGuide from "./FirstReviewGuide";
 
+const SUPPORT_PHONE = "77773000467";
+const SUPPORT_TEXT =
+  "Здравствуйте. Я зарегистрировался(ась) в Rateus и не понимаю что делать дальше. Помогите, пожалуйста.";
+
 interface ActivationRow {
   selectedPath: string | null;
   completedSteps: CompletedSteps;
@@ -67,6 +71,18 @@ export default function ActivationProgress({ specialist, onScrollTo }: Props) {
     },
   });
 
+  const { data: example } = useQuery<{ specialist: { id: number; name: string } | null }>({
+    queryKey: ["/api/onboarding/example-specialist"],
+    enabled: !!user,
+    queryFn: async () => {
+      const res = await fetch("/api/onboarding/example-specialist", {
+        headers: { "x-user-id": user!.id },
+      });
+      if (!res.ok) throw new Error("failed");
+      return res.json();
+    },
+  });
+
   const steps = useMemo<CompletedSteps>(
     () => (specialist ? deriveSteps(specialist) : {}),
     [specialist],
@@ -74,6 +90,10 @@ export default function ActivationProgress({ specialist, onScrollTo }: Props) {
   const score = useMemo(() => computeActivationScore(steps), [steps]);
   const stepsToReview = useMemo(() => stepsUntilFirstReview(steps), [steps]);
   const hasReview = !!steps.first_review;
+  const firstIncomplete = useMemo<ActivationStepKey | null>(
+    () => ACTIVATION_STEPS.find((s) => !steps[s.key])?.key ?? null,
+    [steps],
+  );
 
   // Sync to server when score changes (guard against duplicate POSTs in flight)
   const inFlightScoreRef = useRef<number | null>(null);
@@ -139,21 +159,32 @@ export default function ActivationProgress({ specialist, onScrollTo }: Props) {
                 className="text-base font-semibold leading-tight"
                 data-testid="text-activation-title"
               >
+                Получите первый отзыв
+              </h3>
+              <p
+                className="text-sm text-muted-foreground mt-0.5"
+                data-testid="text-activation-subtitle"
+              >
                 {hasReview
                   ? "Заполните профиль до конца"
                   : stepsToReview > 0
-                  ? `Осталось ${stepsToReview} ${pluralizeSteps(stepsToReview)} до первого отзыва`
+                  ? `До первого отзыва осталось ${stepsToReview} ${pluralizeSteps(stepsToReview)}`
                   : "Профиль готов — получите первый отзыв"}
-              </h3>
+              </p>
             </div>
           </div>
 
-          <div className="mt-3 h-1.5 w-full rounded-full bg-muted overflow-hidden">
-            <div
-              className="h-full bg-emerald-500 transition-all duration-300"
-              style={{ width: `${score}%` }}
-              data-testid="progress-activation-bar"
-            />
+          <div className="mt-3 flex items-center gap-2">
+            <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 transition-all duration-300"
+                style={{ width: `${score}%` }}
+                data-testid="progress-activation-bar"
+              />
+            </div>
+            <span className="text-xs text-muted-foreground tabular-nums shrink-0" data-testid="text-activation-percent">
+              {score}%
+            </span>
           </div>
 
           <ul className="mt-4 space-y-1">
@@ -198,26 +229,57 @@ export default function ActivationProgress({ specialist, onScrollTo }: Props) {
             })}
           </ul>
 
-          {!steps.first_review && (
-            <div className="mt-3 pt-3 border-t border-border">
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                Клиенты начинают выбирать специалистов по отзывам. Попросите клиента оставить
-                первый отзыв после визита.
-              </p>
-              <Button
-                size="sm"
-                variant="outline"
-                className="mt-2"
-                onClick={() => {
-                  setGuideOpen(true);
-                  trackEvent("activation_first_review_started", { specialistId: specialist.id });
-                }}
-                data-testid="button-first-review-guide"
-              >
-                Как получить →
-              </Button>
-            </div>
+          {firstIncomplete && (
+            <Button
+              className="mt-3 w-full"
+              onClick={() => handleClick(firstIncomplete)}
+              data-testid="button-continue-setup"
+            >
+              Продолжить настройку
+            </Button>
           )}
+
+          <div className="mt-4 pt-3 border-t border-border" data-testid="rateus-flow">
+            <p className="text-xs font-semibold text-foreground mb-2">Как работает Rateus</p>
+            <ol className="space-y-1.5 text-sm">
+              {[
+                "Запись клиента",
+                "Клиент получает ссылку на отзыв",
+                "Оставляет отзыв",
+                "Растёт ваша репутация",
+              ].map((stepText, i, arr) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                  <span className={i === arr.length - 1 ? "font-medium text-foreground" : "text-muted-foreground"}>
+                    {stepText}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </div>
+
+          <div className="mt-3 pt-3 border-t border-border flex flex-wrap items-center gap-x-4 gap-y-1">
+            {example?.specialist && (
+              <a
+                href={`/specialist/${example.specialist.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-medium text-primary hover:underline"
+                data-testid="link-view-example"
+              >
+                Посмотреть пример заполненного профиля
+              </a>
+            )}
+            <a
+              href={`https://wa.me/${SUPPORT_PHONE}?text=${encodeURIComponent(SUPPORT_TEXT)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-muted-foreground hover:text-foreground hover:underline"
+              data-testid="link-activation-support"
+            >
+              Нужна помощь?
+            </a>
+          </div>
         </CardContent>
       </Card>
       <FirstReviewGuide open={guideOpen} onOpenChange={setGuideOpen} />
