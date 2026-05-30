@@ -145,9 +145,6 @@ export default function ActivationProgress({ specialist, onScrollTo }: Props) {
                   ? `Осталось ${stepsToReview} ${pluralizeSteps(stepsToReview)} до первого отзыва`
                   : "Профиль готов — получите первый отзыв"}
               </h3>
-              <p className="text-xs text-muted-foreground mt-0.5" data-testid="text-activation-remaining">
-                Клиентов привлекают отзывы и репутация, а не процент заполнения.
-              </p>
             </div>
           </div>
 
