@@ -699,10 +699,13 @@ export async function registerRoutes(
 
       const { name, email, password, category, subcategory, city, serviceLocation, phone, referredBySpecialistId } = result.data;
 
-      // Check if phone already exists
-      const existingSpecialist = await storage.getSpecialistByPhone(phone);
-      if (existingSpecialist) {
-        return res.status(400).json({ message: "Специалист с таким номером телефона уже зарегистрирован" });
+      // Phone is optional at signup (collected later in profile for WhatsApp link).
+      // Only enforce uniqueness when a phone was actually provided.
+      if (phone && phone.trim()) {
+        const existingSpecialist = await storage.getSpecialistByPhone(phone.trim());
+        if (existingSpecialist) {
+          return res.status(400).json({ message: "Специалист с таким номером телефона уже зарегистрирован" });
+        }
       }
 
       // Check if email already registered
@@ -751,7 +754,7 @@ export async function registerRoutes(
           subcategory: subcategory || null,
           city,
           serviceLocation,
-          phone,
+          phone: phone && phone.trim() ? phone.trim() : null,
           specialty: category,
           bio: "",
           imageUrl: "",

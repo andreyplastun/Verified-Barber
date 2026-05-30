@@ -96,6 +96,25 @@ export default function HelpBanner({ specialist, onFillProfile }: Props) {
                 <span>Получите первый отзыв от клиента.</span>
               </li>
             </ol>
+
+            <div className="mt-4 rounded-lg border border-border bg-background/60 p-3" data-testid="rateus-flow">
+              <p className="text-xs font-semibold text-foreground mb-2">Как работает Rateus</p>
+              <ol className="space-y-1.5 text-sm">
+                {[
+                  "Запись клиента",
+                  "Клиент получает ссылку на отзыв",
+                  "Оставляет отзыв",
+                  "Растёт ваш рейтинг и репутация",
+                ].map((stepText, i, arr) => (
+                  <li key={i} className="flex items-start gap-2">
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                    <span className={i === arr.length - 1 ? "font-medium text-foreground" : "text-muted-foreground"}>
+                      {stepText}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </div>
           </div>
         </div>
 

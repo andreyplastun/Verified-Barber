@@ -369,7 +369,7 @@ export const specialistSignupSchema = z.object({
   subcategory: z.string().optional(),
   city: z.string().default("Алматы"),
   serviceLocation: z.string().min(1, "Укажите место приёма"),
-  phone: z.string().min(10, "Введите корректный номер телефона"),
+  phone: z.string().optional(),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
   referredBySpecialistId: z.number().optional(),
 });

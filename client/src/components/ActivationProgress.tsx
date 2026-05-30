@@ -9,7 +9,7 @@ import { queryClient } from "@/lib/queryClient";
 import {
   ACTIVATION_STEPS,
   computeActivationScore,
-  remainingStepsCount,
+  stepsUntilFirstReview,
   type ActivationStepKey,
   type CompletedSteps,
 } from "@shared/activation";
@@ -72,7 +72,8 @@ export default function ActivationProgress({ specialist, onScrollTo }: Props) {
     [specialist],
   );
   const score = useMemo(() => computeActivationScore(steps), [steps]);
-  const remaining = useMemo(() => remainingStepsCount(steps), [steps]);
+  const stepsToReview = useMemo(() => stepsUntilFirstReview(steps), [steps]);
+  const hasReview = !!steps.first_review;
 
   // Sync to server when score changes (guard against duplicate POSTs in flight)
   const inFlightScoreRef = useRef<number | null>(null);
@@ -138,20 +139,16 @@ export default function ActivationProgress({ specialist, onScrollTo }: Props) {
                 className="text-base font-semibold leading-tight"
                 data-testid="text-activation-title"
               >
-                Профиль готов на {score}%
+                {hasReview
+                  ? "Заполните профиль до конца"
+                  : stepsToReview > 0
+                  ? `Осталось ${stepsToReview} ${pluralizeSteps(stepsToReview)} до первого отзыва`
+                  : "Профиль готов — получите первый отзыв"}
               </h3>
               <p className="text-xs text-muted-foreground mt-0.5" data-testid="text-activation-remaining">
-                {remaining > 0
-                  ? `Ещё ${remaining} ${pluralizeSteps(remaining)} до полного профиля`
-                  : "Все шаги выполнены"}
+                Клиентов привлекают отзывы и репутация, а не процент заполнения.
               </p>
             </div>
-            <span
-              className="shrink-0 text-sm font-semibold tabular-nums px-2.5 py-1 rounded-full bg-muted text-foreground"
-              data-testid="text-activation-score"
-            >
-              {score}%
-            </span>
           </div>
 
           <div className="mt-3 h-1.5 w-full rounded-full bg-muted overflow-hidden">

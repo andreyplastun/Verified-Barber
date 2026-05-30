@@ -35,7 +35,6 @@ const signupSchema = z.object({
   subcategory: z.string().optional(),
   city: z.string().default("Алматы"),
   serviceLocation: z.string().min(1, "Укажите место приёма"),
-  phone: z.string().min(10, "Введите корректный номер телефона"),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
 });
 
@@ -55,7 +54,6 @@ export default function SpecialistSignup() {
       subcategory: "",
       city: "Алматы",
       serviceLocation: "",
-      phone: "",
       consentReviews: false,
     },
   });
@@ -127,6 +125,16 @@ export default function SpecialistSignup() {
           <h1 className="text-xl font-bold" data-testid="text-signup-title">
             Добавить себя как специалиста
           </h1>
+        </div>
+
+        <div className="mb-6 rounded-lg border border-primary/30 bg-primary/5 p-4" data-testid="text-signup-intro">
+          <p className="text-sm text-foreground leading-relaxed">
+            Создайте профиль специалиста для сбора отзывов клиентов и формирования
+            профессиональной репутации.
+          </p>
+          <p className="text-sm text-muted-foreground leading-relaxed mt-2">
+            Запись остаётся через Altegio, WhatsApp или Instagram.
+          </p>
         </div>
 
         <Form {...form}>
@@ -263,24 +271,6 @@ export default function SpecialistSignup() {
                       placeholder="Например: ТЦ Мега, 2 этаж" 
                       {...field} 
                       data-testid="input-location"
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="phone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Телефон</FormLabel>
-                  <FormControl>
-                    <Input 
-                      placeholder="+7 777 123 4567" 
-                      {...field} 
-                      data-testid="input-phone"
                     />
                   </FormControl>
                   <FormMessage />

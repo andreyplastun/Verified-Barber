@@ -1,1 +1,2 @@
 - [WA delivery webhook correlation](wa-delivery-correlation.md) — parse `rateus_<source>_<bookingId>_<ts>` by tail-anchoring on 13-digit timestamp; constrain UPDATE by message_type; show sent vs delivered both.
+- [Onboarding redirect gating](onboarding-redirect-gating.md) — incomplete-onboarding specialists are looped back from `/` and `/specialist-dashboard`; on-onboarding CTAs must link to public ungated routes only.

@@ -1,73 +1,44 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Banknote } from 'lucide-react';
+import { CheckCircle2, Star, ListChecks } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import type { Specialist } from '@shared/schema';
+
+const STEPS = [
+  'Добавьте фото',
+  'Укажите основную услугу и цену',
+  'Добавьте способ записи',
+  'Получите первый отзыв',
+];
+
+function pluralizeReviews(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return 'отзыв';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'отзыва';
+  return 'отзывов';
+}
 
 export default function SpecialistOnboarding() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
-  
-  const [tipsEnabled, setTipsEnabled] = useState(false);
-  const [kaspiPhone, setKaspiPhone] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const handleSaveAndContinue = async () => {
-    console.log('[ONBOARDING] Save clicked, currentUser:', currentUser);
-    if (!currentUser?.id) {
-      console.error('[ONBOARDING] No currentUser.id, aborting');
-      return;
-    }
-    
-    setSaving(true);
-    try {
-      console.log('[ONBOARDING] Calling API for user:', currentUser.id);
-      const res = await fetch(`/api/users/${currentUser.id}/complete-onboarding`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': currentUser.id,
-        },
-        body: JSON.stringify({
-          kaspiPhone: kaspiPhone.trim(),
-          tipsEnabled: tipsEnabled && kaspiPhone.trim().length > 0,
-        }),
-      });
+  // The catalog endpoint returns only active specialists, best profiles first.
+  // Use the top one as a real "example profile" the new specialist can aspire to.
+  const { data: specialists } = useQuery<Specialist[]>({
+    queryKey: ['/api/specialists'],
+  });
+  const example = (specialists || []).find((s) => !!s.imageUrl) || (specialists || [])[0];
+  const exampleRating = example ? (Number(example.trustedRating) / 10) : 0;
+  const exampleReviews = example?.reviewCount || 0;
 
-      console.log('[ONBOARDING] Response status:', res.status);
-      if (!res.ok) {
-        const error = await res.json();
-        console.error('[ONBOARDING] API error:', error);
-        throw new Error(error.message || 'Failed to save');
-      }
-
-      const result = await res.json();
-      console.log('[ONBOARDING] Success, result:', result);
-      toast({
-        title: 'Настройки сохранены',
-        description: tipsEnabled && kaspiPhone.trim() ? 'Чаевые включены' : 'Вы можете включить чаевые позже в профиле',
-      });
-      
-      // Hard redirect to force full state refresh
-      window.location.href = '/specialist-dashboard';
-    } catch (err: any) {
-      toast({
-        title: 'Ошибка',
-        description: err.message,
-        variant: 'destructive',
-      });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSkip = async () => {
+  const handleStart = async () => {
     if (!currentUser?.id) return;
-    
+
     setSaving(true);
     try {
       const res = await fetch(`/api/users/${currentUser.id}/complete-onboarding`, {
@@ -96,7 +67,6 @@ export default function SpecialistOnboarding() {
         description: err.message,
         variant: 'destructive',
       });
-    } finally {
       setSaving(false);
     }
   };
@@ -105,70 +75,91 @@ export default function SpecialistOnboarding() {
     <div className="min-h-screen bg-background p-4 flex flex-col items-center justify-center">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center space-y-2">
-          <div className="w-16 h-16 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Banknote className="w-8 h-8 text-amber-600" />
-          </div>
           <h1 className="text-2xl font-bold" data-testid="text-onboarding-title">
-            Получайте чаевые от клиентов
+            Добро пожаловать в Rateus
           </h1>
           <p className="text-muted-foreground text-sm">
-            Клиенты смогут оставить чаевые после отзыва.
-            <br />
-            Деньги поступают напрямую вам через Kaspi.
+            Rateus помогает собирать отзывы клиентов и формировать вашу
+            профессиональную репутацию.
           </p>
         </div>
 
         <Card>
-          <CardContent className="pt-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="tips-toggle" className="text-base font-medium cursor-pointer">
-                Включить приём чаевых
-              </Label>
-              <Switch
-                id="tips-toggle"
-                checked={tipsEnabled}
-                onCheckedChange={setTipsEnabled}
-                data-testid="switch-tips-enabled"
-              />
-            </div>
+          <CardContent className="pt-6 space-y-3">
+            <p className="text-sm font-medium text-foreground">
+              Чтобы начать получать отзывы:
+            </p>
+            <ul className="space-y-2.5">
+              {STEPS.map((step, i) => (
+                <li key={i} className="flex items-center gap-3" data-testid={`onboarding-step-${i}`}>
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                  <span className="text-sm text-foreground">{step}</span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
 
-            {tipsEnabled && (
-              <div className="space-y-2 pt-2">
-                <Label htmlFor="kaspi-phone">Номер Kaspi</Label>
-                <Input
-                  id="kaspi-phone"
-                  type="tel"
-                  placeholder="Номер телефона Kaspi"
-                  value={kaspiPhone}
-                  onChange={(e) => setKaspiPhone(e.target.value)}
-                  maxLength={20}
-                  data-testid="input-kaspi-phone"
+        <Card className="border-primary/30 bg-primary/5" data-testid="card-example-profile">
+          <CardContent className="pt-5 pb-5">
+            <p className="text-xs text-muted-foreground mb-3">Пример профиля специалиста</p>
+            <div className="flex items-center gap-4">
+              {example?.imageUrl ? (
+                <img
+                  src={example.imageUrl}
+                  alt={example.name}
+                  className="w-14 h-14 rounded-full object-cover shrink-0"
                 />
+              ) : (
+                <div className="w-14 h-14 rounded-full bg-primary/15 flex items-center justify-center text-lg font-bold text-primary shrink-0">
+                  {(example?.name || 'Ж').charAt(0)}
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-foreground truncate" data-testid="text-example-name">
+                  {example?.name || 'Жасур'}
+                </p>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="flex items-center gap-1 text-sm">
+                    <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                    {example && exampleRating > 0 ? exampleRating.toFixed(1) : '5.0'}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {example ? `${exampleReviews} ${pluralizeReviews(exampleReviews)}` : '19 отзывов'}
+                  </span>
+                </div>
               </div>
+            </div>
+            {example && (
+              <a
+                href={`/specialist/${example.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="link-view-example"
+              >
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full mt-4"
+                  data-testid="button-view-example"
+                >
+                  Посмотреть пример профиля
+                </Button>
+              </a>
             )}
           </CardContent>
         </Card>
 
-        <div className="space-y-3">
-          <Button
-            className="w-full"
-            size="lg"
-            onClick={handleSaveAndContinue}
-            disabled={saving || (tipsEnabled && !kaspiPhone.trim())}
-            data-testid="button-save-continue"
-          >
-            {saving ? 'Сохранение...' : 'Сохранить и продолжить'}
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={handleSkip}
-            disabled={saving}
-            data-testid="button-skip"
-          >
-            Пропустить
-          </Button>
-        </div>
+        <Button
+          className="w-full gap-1.5"
+          size="lg"
+          onClick={handleStart}
+          disabled={saving}
+          data-testid="button-fill-profile"
+        >
+          <ListChecks className="w-4 h-4" />
+          {saving ? 'Загрузка...' : 'Заполнить профиль'}
+        </Button>
       </div>
     </div>
   );
