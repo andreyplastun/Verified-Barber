@@ -1,3 +1,4 @@
 - [WA delivery webhook correlation](wa-delivery-correlation.md) — parse `rateus_<source>_<bookingId>_<ts>` by tail-anchoring on 13-digit timestamp; constrain UPDATE by message_type; show sent vs delivered both.
+- [Altegio public booking URL](altegio-booking-url.md) — client booking page is `https://n{companyId}.alteg.io/`; not stored/derivable from code or company API.
 - [Altegio staff vs masters filtering](altegio-staff-master-filter.md) — book_staff over-imports admins; a real master = ≥1 service via book_services?staff_id; filter fail-open.
 - [Onboarding redirect gating](onboarding-redirect-gating.md) — incomplete-onboarding specialists are looped back from `/` and `/specialist-dashboard`; on-onboarding CTAs must link to public ungated routes only.

@@ -799,6 +799,15 @@ export default function SpecialistDashboard() {
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
       <ActivationProgress
         specialist={specialist}
+        createdVisits={bookings?.length ?? 0}
+        onAddClient={() => {
+          setShowNewBookingForm(true);
+          setTimeout(() => {
+            const el = document.getElementById('bookings-section');
+            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            (document.getElementById('new-booking-name') as HTMLInputElement | null)?.focus();
+          }, 100);
+        }}
         onScrollTo={(anchor) => {
           const el = document.getElementById(anchor);
           el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -982,16 +991,56 @@ export default function SpecialistDashboard() {
           </div>
           <div className="space-y-2" id="contacts-section">
             <Label>Контакты для записи</Label>
-            <p className="text-xs text-muted-foreground">
-              Кнопка «Записаться» использует первый заполненный канал по приоритету: ссылка → WhatsApp → Instagram → телефон из профиля.
-            </p>
-            <Input
-              type="url"
-              value={bookingUrl}
-              onChange={(e) => setBookingUrl(e.target.value)}
-              placeholder="Ссылка на онлайн-запись (Altegio, YClients и т.д.)"
-              data-testid="input-booking-url"
-            />
+            {isAltegioConnected ? (
+              <div
+                className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 space-y-3"
+                data-testid="card-altegio-connected"
+              >
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Онлайн-запись подключена</p>
+                    <p className="text-xs text-muted-foreground">Источник: Altegio</p>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Мы автоматически получили ссылку на онлайн-запись из Altegio. Клиенты смогут записываться через кнопку «Записаться».
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {(specialist as any)?.altegioCompanyId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(`https://n${(specialist as any).altegioCompanyId}.alteg.io/`, '_blank', 'noopener,noreferrer')}
+                      data-testid="button-open-altegio-booking"
+                    >
+                      Открыть ссылку записи
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(`/specialist/${specialist!.id}`, '_blank', 'noopener,noreferrer')}
+                    data-testid="button-view-public-profile"
+                  >
+                    Посмотреть как видят клиенты
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Кнопка «Записаться» использует первый заполненный канал по приоритету: ссылка → WhatsApp → Instagram → телефон из профиля.
+                </p>
+                <Input
+                  type="url"
+                  value={bookingUrl}
+                  onChange={(e) => setBookingUrl(e.target.value)}
+                  placeholder="Ссылка на онлайн-запись (Altegio, YClients и т.д.)"
+                  data-testid="input-booking-url"
+                />
+              </>
+            )}
             <Input
               type="tel"
               value={whatsapp}
@@ -1499,7 +1548,7 @@ export default function SpecialistDashboard() {
       )}
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card>
+        <Card id="bookings-section">
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5" />
