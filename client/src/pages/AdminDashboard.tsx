@@ -1219,37 +1219,16 @@ export default function AdminDashboard() {
 
                 {waSettings && (() => {
                   const sentT = waSettings.sentTodayByType || { primary: 0, reminder: 0 };
-                  const delT = waSettings.deliveredTodayByType || { primary: 0, reminder: 0 };
-                  const failT = waSettings.failedDeliveryTodayByType || { primary: 0, reminder: 0 };
-                  const sentTotal = sentT.primary + sentT.reminder;
-                  const delTotal = delT.primary + delT.reminder;
-                  const pending = sentTotal - delTotal - (failT.primary + failT.reminder);
-                  const ratio = sentTotal > 0 ? delTotal / sentTotal : 1;
-                  const deliveryBroken = sentTotal >= 5 && ratio < 0.3;
                   const sentY = waSettings.sentYesterdayByType || { primary: 0, reminder: 0 };
-                  const delY = waSettings.deliveredYesterdayByType || { primary: 0, reminder: 0 };
                   return (
                   <div className="space-y-2">
-                    {deliveryBroken && (
-                      <div className="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive" data-testid="alert-delivery-broken">
-                        Доставка сломана: отдано в AssistBot {sentTotal}, доставлено WhatsApp-ом {delTotal}. Проверь номер отправителя / провайдера.
-                      </div>
-                    )}
                     <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant="secondary" data-testid="badge-wa-sent-today">
                         Сегодня отдано: {sentT.primary} осн. + {sentT.reminder} follow-up
                       </Badge>
-                      <Badge
-                        variant={deliveryBroken ? "destructive" : (delTotal >= sentTotal ? "default" : "outline")}
-                        data-testid="badge-wa-delivered-today"
-                      >
-                        Доставлено: {delT.primary} осн. + {delT.reminder} follow-up
-                        {pending > 0 ? ` (ожидает: ${pending})` : ""}
-                        {(failT.primary + failT.reminder) > 0 ? ` (провал: ${failT.primary + failT.reminder})` : ""}
-                      </Badge>
                       {(sentY.primary + sentY.reminder) > 0 && (
                         <Badge variant="outline" data-testid="badge-wa-sent-yesterday">
-                          Вчера: {sentY.primary}+{sentY.reminder} отдано / {delY.primary}+{delY.reminder} доставлено
+                          Вчера отдано: {sentY.primary} осн. + {sentY.reminder} follow-up
                         </Badge>
                       )}
                     <Button
