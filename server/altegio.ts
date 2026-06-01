@@ -295,6 +295,35 @@ async function fetchAllCompanyIds(): Promise<number[]> {
   }
 }
 
+// Returns the number of bookable services attached to a staff member in Altegio,
+// or null if it could not be determined (API/network error). Used to distinguish
+// real masters (who have services) from administrators / non-masters (0 services).
+async function fetchStaffServiceCount(config: AltegioConfig, companyId: number, staffId: number): Promise<number | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const response = await fetch(`${ALTEGIO_BASE_URL}/book_services/${companyId}?staff_id=${staffId}`, {
+      method: "GET",
+      headers: getHeaders(config),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    let result: any = null;
+    try { result = await response.json(); } catch {}
+
+    if (response.ok && result?.success) {
+      const services = result.data?.services ?? (Array.isArray(result.data) ? result.data : []);
+      return Array.isArray(services) ? services.length : 0;
+    }
+    // Could not determine (non-success response) -> null (fail open)
+    return null;
+  } catch (err: any) {
+    console.warn(`[ALTEGIO] Service count check failed for staff ${staffId} (company ${companyId}): ${err.message}`);
+    return null;
+  }
+}
+
 export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff?: Array<{ id: number; name: string; avatar: string | null; specialization: string | null; companyId: number }>; companyId?: number; error?: string; errorType?: AltegioErrorType }> {
   const config = getConfig();
   if (!config) {
@@ -326,14 +355,26 @@ export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff
       try { result = await response.json(); } catch {}
 
       if (response.ok && result?.success) {
-        const staffList = (result.data || []).map((s: any) => ({
+        const rawStaff = (result.data || []).map((s: any) => ({
           id: s.id,
           name: s.name,
           avatar: s.avatar || null,
           specialization: s.specialization || null,
           companyId: cid,
         }));
-        console.log(`[ALTEGIO] Staff list loaded for company ${cid}: ${staffList.length} members`);
+
+        // Filter out non-masters (administrators etc.): keep only staff who have at
+        // least one bookable service in Altegio. If the count can't be determined
+        // (API error -> null), keep the staff to avoid dropping real masters.
+        const serviceCounts = await Promise.all(
+          rawStaff.map((s: any) => fetchStaffServiceCount(config, cid, s.id))
+        );
+        const staffList = rawStaff.filter((_: any, i: number) => serviceCounts[i] !== 0);
+        const skipped = rawStaff.filter((_: any, i: number) => serviceCounts[i] === 0);
+        if (skipped.length > 0) {
+          console.log(`[ALTEGIO] Skipped ${skipped.length} staff without services for company ${cid}: ${skipped.map((s: any) => `${s.name} (id=${s.id})`).join(", ")}`);
+        }
+        console.log(`[ALTEGIO] Staff list loaded for company ${cid}: ${staffList.length} members with services (of ${rawStaff.length} total)`);
         allStaff.push(...staffList);
       } else {
         const errorType = classifyAltegioError(response.status, result);
