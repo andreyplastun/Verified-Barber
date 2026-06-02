@@ -64,6 +64,7 @@ export default function SpecialistDashboard() {
   const [newBookingDate, setNewBookingDate] = useState('');
   const [newBookingTime, setNewBookingTime] = useState('');
   const [rateLimitWarningOpen, setRateLimitWarningOpen] = useState(false);
+  const [showFirstVisitSuccess, setShowFirstVisitSuccess] = useState(false);
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -110,6 +111,20 @@ export default function SpecialistDashboard() {
   });
 
   const isAltegioConnected = !!(specialist as any)?.altegioStaffId;
+
+  const isNewSpecialist =
+    !loadingBookings &&
+    !loadingSpecialist &&
+    !isAltegioConnected &&
+    (bookings?.length ?? 0) === 0 &&
+    ((specialist as any)?.reviewCount ?? 0) === 0;
+
+  const prefillVisitNow = () => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    setNewBookingDate((d) => d || `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
+    setNewBookingTime((t) => t || `${pad(now.getHours())}:${pad(now.getMinutes())}`);
+  };
 
   const [altegioErrorDismissed, setAltegioErrorDismissed] = useState(false);
   const [altegioRetrying, setAltegioRetrying] = useState(false);
@@ -565,10 +580,12 @@ export default function SpecialistDashboard() {
         setRateLimitWarningOpen(true);
         return;
       }
+      const wasFirstVisit = !loadingBookings && (bookings?.length ?? 0) === 0 && !isAltegioConnected;
+      if (wasFirstVisit) setShowFirstVisitSuccess(true);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       queryClient.refetchQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'], type: 'all' });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-      toast({ title: 'Запись создана', description: `${data.customerName || 'Клиент'} — ${data.id ? '#' + data.id : ''}` });
+      toast({ title: wasFirstVisit ? 'Клиент добавлен' : 'Запись создана', description: `${data.customerName || 'Клиент'} — ${data.id ? '#' + data.id : ''}` });
       setShowNewBookingForm(false);
       setNewBookingName('');
       setNewBookingPhone('');
@@ -576,7 +593,7 @@ export default function SpecialistDashboard() {
       setNewBookingTime('');
     },
     onError: (err: Error) => {
-      toast({ title: 'Ошибка создания записи', description: err.message, variant: 'destructive' });
+      toast({ title: isNewSpecialist ? 'Не удалось добавить клиента' : 'Ошибка создания записи', description: err.message, variant: 'destructive' });
     },
   });
 
@@ -802,6 +819,7 @@ export default function SpecialistDashboard() {
         createdVisits={bookings?.length ?? 0}
         onAddClient={() => {
           setShowNewBookingForm(true);
+          if (isNewSpecialist) prefillVisitNow();
           setTimeout(() => {
             const el = document.getElementById('bookings-section');
             el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -822,6 +840,15 @@ export default function SpecialistDashboard() {
       <ActivationBanner
         specialist={specialist}
         onCta={() => {
+          if (isNewSpecialist) {
+            setShowNewBookingForm(true);
+            prefillVisitNow();
+            setTimeout(() => {
+              document.getElementById('bookings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              (document.getElementById('new-booking-name') as HTMLInputElement | null)?.focus();
+            }, 100);
+            return;
+          }
           const el = document.getElementById('contacts-section') || document.getElementById('bio-section');
           el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }}
@@ -1552,7 +1579,7 @@ export default function SpecialistDashboard() {
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5" />
-              <CardTitle>Предстоящие записи</CardTitle>
+              <CardTitle>{isNewSpecialist ? "Добавьте клиента для получения отзыва" : "Предстоящие записи"}</CardTitle>
             </div>
             <div className="flex items-center gap-2">
               {activeBookings.length > 0 && (
@@ -1563,17 +1590,57 @@ export default function SpecialistDashboard() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => setShowNewBookingForm(!showNewBookingForm)}
+                onClick={() => {
+                  const next = !showNewBookingForm;
+                  setShowNewBookingForm(next);
+                  if (next && isNewSpecialist) prefillVisitNow();
+                }}
                 data-testid="button-new-booking"
               >
                 <Plus className="w-4 h-4 mr-1" />
-                Записать
+                {isNewSpecialist ? "Добавить первого клиента" : "Записать"}
               </Button>
             </div>
           </CardHeader>
           <CardContent>
+            {showFirstVisitSuccess && (
+              <div
+                className="mb-4 rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-4"
+                data-testid="first-visit-success"
+              >
+                <p className="text-sm font-semibold text-foreground">Клиент добавлен</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  После завершения визита клиент автоматически получит ссылку на отзыв.
+                </p>
+                <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+                  Важно: без завершения визита ссылка на отзыв не отправляется.
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setShowFirstVisitSuccess(false)}
+                  data-testid="button-first-visit-ack"
+                >
+                  Понятно
+                </Button>
+              </div>
+            )}
             {showNewBookingForm && (
               <div className="mb-4 p-3 rounded-md bg-muted/50 space-y-3" data-testid="form-new-booking">
+                {isNewSpecialist && (
+                  <div className="rounded-md border border-border bg-background p-3" data-testid="new-booking-howto">
+                    <p className="text-sm font-semibold text-foreground mb-1.5">Как это работает</p>
+                    <ol className="space-y-1 text-sm text-muted-foreground list-decimal list-inside">
+                      <li>Добавьте клиента</li>
+                      <li>После оказания услуги завершите визит</li>
+                      <li>Клиент автоматически получит ссылку на отзыв</li>
+                      <li>Отзыв появится в вашем профиле</li>
+                    </ol>
+                    <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
+                      Важно: без завершения визита ссылка на отзыв не отправляется.
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-2">
                   <Label htmlFor="new-booking-name">Имя клиента *</Label>
                   <Input
@@ -1652,6 +1719,11 @@ export default function SpecialistDashboard() {
                     />
                   </div>
                 </div>
+                {isNewSpecialist && (
+                  <p className="text-xs text-muted-foreground" data-testid="text-visit-date-hint">
+                    Уже обслужили клиента? Оставьте сегодняшнюю дату и время, затем завершите визит — клиент получит ссылку на отзыв.
+                  </p>
+                )}
                 <div className="flex gap-2">
                   <Button
                     size="sm"
@@ -1678,7 +1750,7 @@ export default function SpecialistDashboard() {
                     data-testid="button-create-booking"
                   >
                     {createBookingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-                    Создать запись
+                    {isNewSpecialist ? "Добавить клиента" : "Создать запись"}
                   </Button>
                   <Button
                     size="sm"
@@ -1697,7 +1769,9 @@ export default function SpecialistDashboard() {
                 <Skeleton className="h-16 w-full" />
               </div>
             ) : activeBookings.length === 0 && !showNewBookingForm ? (
-              <p className="text-muted-foreground text-sm">Нет предстоящих записей</p>
+              <p className="text-muted-foreground text-sm">
+                {isNewSpecialist ? "Пока нет клиентов. Добавьте первого, чтобы получить отзыв." : "Нет предстоящих записей"}
+              </p>
             ) : (
               <div className="space-y-3 max-h-[600px] overflow-y-auto pr-1">
                 {activeBookings.map((booking) => {

@@ -21,7 +21,7 @@ export const ACTIVATION_STEPS: ActivationStepConfig[] = [
   { key: "photo", weight: 20, required: true, label: "Добавить фото" },
   { key: "price", weight: 15, required: true, label: "Указать основную услугу и цену" },
   { key: "contact", weight: 20, required: true, label: "Добавить способ записи" },
-  { key: "add_client", weight: 0, required: true, label: "Создать первый визит" },
+  { key: "add_client", weight: 0, required: true, label: "Добавить первого клиента" },
   { key: "first_review", weight: 30, required: true, label: "Получить первый отзыв" },
   { key: "bio", weight: 15, required: false, label: "Добавить описание" },
 ];
