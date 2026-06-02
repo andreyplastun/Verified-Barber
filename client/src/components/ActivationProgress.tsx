@@ -186,14 +186,14 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
   const subtitle = isAltegio
     ? "Запись работает автоматически. Осталось получить первые отзывы."
     : firstReviewLocked
-    ? "Добавьте клиента → отправьте ссылку → получите первый отзыв"
+    ? "Создайте первый визит — после завершения клиент получит ссылку на отзыв"
     : hasReview
     ? "Заполните профиль до конца"
     : createdVisits > 0
     ? "Ожидаем отзыв клиента"
     : stepsToReview > 0
     ? `До первого отзыва осталось ${stepsToReview} ${pluralizeSteps(stepsToReview)}`
-    : "Добавьте клиента и отправьте ему ссылку на отзыв";
+    : "Создайте первый визит, чтобы получить первый отзыв";
 
   return (
     <>
@@ -206,8 +206,8 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
             >
               <p className="text-sm font-semibold text-foreground mb-2">Как получить первый отзыв</p>
               <ol className="space-y-1.5 text-sm text-muted-foreground list-decimal list-inside">
-                <li>Добавьте клиента</li>
-                <li>После визита отправьте ему ссылку на отзыв</li>
+                <li>Создайте визит клиента</li>
+                <li>После завершения визита клиент получит ссылку на отзыв</li>
                 <li>Клиент оставит отзыв</li>
                 <li>Отзыв появится в вашем профиле</li>
               </ol>
@@ -216,7 +216,7 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
                 onClick={handleAddClient}
                 data-testid="button-add-first-client"
               >
-                Добавить первого клиента
+                Создать первый визит
               </Button>
             </div>
           )}
@@ -227,7 +227,7 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
                 className="text-base font-semibold leading-tight"
                 data-testid="text-activation-title"
               >
-                {isAltegio ? "Запись подключена — получите отзывы" : "Как получить первый отзыв"}
+                {isAltegio ? "Запись подключена — получите отзывы" : "Шаги до первого отзыва"}
               </h3>
               <p
                 className="text-sm text-muted-foreground mt-0.5"
@@ -265,7 +265,7 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
                 isContact && isAltegio && done
                   ? "Источник: Altegio"
                   : isFirstReview && locked
-                  ? "Сначала добавьте первого клиента"
+                  ? "Сначала создайте первый визит"
                   : isFirstReview && !done && !isAltegio && createdVisits > 0
                   ? "Ожидаем отзыв клиента"
                   : null;
@@ -337,7 +337,7 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
               onClick={() => handleClick(firstIncomplete)}
               data-testid="button-continue-setup"
             >
-              {firstIncomplete === "add_client" ? "Добавить первого клиента" : "Продолжить настройку"}
+              {firstIncomplete === "add_client" ? "Создать первый визит" : "Продолжить настройку"}
             </Button>
           )}
 

@@ -34,8 +34,8 @@ export default function ActivationBanner({ specialist, onCta }: Props) {
     return ageDays < 1
       ? {
           stage: "welcome" as const,
-          title: "Профиль создан. Осталось получить первый отзыв.",
-          cta: "Продолжить настройку",
+          title: "Следующий шаг — создайте первый визит, чтобы получить первый отзыв.",
+          cta: "Создать первый визит",
         }
       : {
           stage: "week" as const,
