@@ -24,7 +24,6 @@ import AltegioSyncBanner, { getBookingSyncBannerConfig, getGlobalAltegioBannerCo
 import AltegioStatusCard from '@/components/AltegioStatusCard';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ActivationProgress from '@/components/ActivationProgress';
-import ActivationBanner from '@/components/ActivationBanner';
 import OnboardingPathModal from '@/components/OnboardingPathModal';
 
 export default function SpecialistDashboard() {
@@ -837,23 +836,6 @@ export default function SpecialistDashboard() {
 
       <OnboardingPathModal />
 
-      <ActivationBanner
-        specialist={specialist}
-        onCta={() => {
-          if (isNewSpecialist) {
-            setShowNewBookingForm(true);
-            prefillVisitNow();
-            setTimeout(() => {
-              document.getElementById('bookings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-              (document.getElementById('new-booking-name') as HTMLInputElement | null)?.focus();
-            }, 100);
-            return;
-          }
-          const el = document.getElementById('contacts-section') || document.getElementById('bio-section');
-          el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }}
-      />
-
       {loadingSpecialist ? (
         <Skeleton className="h-32 w-full" />
       ) : specialist ? (
@@ -1627,20 +1609,6 @@ export default function SpecialistDashboard() {
             )}
             {showNewBookingForm && (
               <div className="mb-4 p-3 rounded-md bg-muted/50 space-y-3" data-testid="form-new-booking">
-                {isNewSpecialist && (
-                  <div className="rounded-md border border-border bg-background p-3" data-testid="new-booking-howto">
-                    <p className="text-sm font-semibold text-foreground mb-1.5">Как это работает</p>
-                    <ol className="space-y-1 text-sm text-muted-foreground list-decimal list-inside">
-                      <li>Добавьте клиента</li>
-                      <li>После оказания услуги завершите визит</li>
-                      <li>Клиент автоматически получит ссылку на отзыв</li>
-                      <li>Отзыв появится в вашем профиле</li>
-                    </ol>
-                    <p className="mt-2 text-xs font-medium text-amber-700 dark:text-amber-400">
-                      Важно: без завершения визита ссылка на отзыв не отправляется.
-                    </p>
-                  </div>
-                )}
                 <div className="space-y-2">
                   <Label htmlFor="new-booking-name">Имя клиента *</Label>
                   <Input

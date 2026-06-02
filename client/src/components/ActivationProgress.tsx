@@ -105,14 +105,12 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
   const stepsToReview = useMemo(() => stepsUntilFirstReview(steps), [steps]);
   const hasReview = !!steps.first_review;
   const visibleSteps = useMemo(() => getVisibleSteps({ isAltegio }), [isAltegio]);
-  const firstIncomplete = useMemo<ActivationStepKey | null>(
-    () =>
-      visibleSteps.find((s) => {
-        if (s.key === "first_review" && firstReviewLocked) return false;
-        return !steps[s.key];
-      })?.key ?? null,
-    [visibleSteps, steps, firstReviewLocked],
+  const completedCount = useMemo(
+    () => visibleSteps.filter((s) => !!steps[s.key]).length,
+    [visibleSteps, steps],
   );
+  const totalCount = visibleSteps.length;
+  const stepPct = totalCount ? Math.round((completedCount / totalCount) * 100) : 0;
 
   // Sync to server when score changes (guard against duplicate POSTs in flight)
   const inFlightScoreRef = useRef<number | null>(null);
@@ -230,28 +228,30 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
                 className="text-base font-semibold leading-tight"
                 data-testid="text-activation-title"
               >
-                {isAltegio ? "Запись подключена — получите отзывы" : "Шаги до первого отзыва"}
+                {isAltegio ? "Запись подключена — получите отзывы" : "Подготовка профиля"}
               </h3>
-              <p
-                className="text-sm text-muted-foreground mt-0.5"
-                data-testid="text-activation-subtitle"
-              >
-                {subtitle}
-              </p>
+              {isAltegio && (
+                <p
+                  className="text-sm text-muted-foreground mt-0.5"
+                  data-testid="text-activation-subtitle"
+                >
+                  {subtitle}
+                </p>
+              )}
             </div>
           </div>
 
-          <div className="mt-3 flex items-center gap-2">
-            <div className="h-1.5 flex-1 rounded-full bg-muted overflow-hidden">
+          <div className="mt-3">
+            <p className="text-xs text-muted-foreground mb-1.5" data-testid="text-activation-progress">
+              {`Выполнено ${completedCount} из ${totalCount} ${pluralizeSteps(totalCount)}`}
+            </p>
+            <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
               <div
                 className="h-full bg-emerald-500 transition-all duration-300"
-                style={{ width: `${score}%` }}
+                style={{ width: `${stepPct}%` }}
                 data-testid="progress-activation-bar"
               />
             </div>
-            <span className="text-xs text-muted-foreground tabular-nums shrink-0" data-testid="text-activation-percent">
-              {score}%
-            </span>
           </div>
 
           <ul className="mt-4 space-y-1">
@@ -332,16 +332,6 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
                 Посмотреть как видят клиенты
               </button>
             </div>
-          )}
-
-          {firstIncomplete && (
-            <Button
-              className="mt-3 w-full"
-              onClick={() => handleClick(firstIncomplete)}
-              data-testid="button-continue-setup"
-            >
-              {firstIncomplete === "add_client" ? "Добавить первого клиента" : "Продолжить настройку"}
-            </Button>
           )}
 
           {!showAddClientGuide && (
