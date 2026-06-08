@@ -57,7 +57,7 @@ export default function SpecialistDashboard() {
   const [altegioManualId, setAltegioManualId] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
   const [altegioConnecting, setAltegioConnecting] = useState(false);
-  const [altegioCompanyMode, setAltegioCompanyMode] = useState(false);
+  const [altegioStaffMode, setAltegioStaffMode] = useState(false);
   const [altegioCompanyInput, setAltegioCompanyInput] = useState('');
   const [showNewBookingForm, setShowNewBookingForm] = useState(false);
   const [newBookingName, setNewBookingName] = useState('');
@@ -194,8 +194,14 @@ export default function SpecialistDashboard() {
     setSelectedStaffId(null);
     setAltegioManualMode(false);
     setAltegioManualId('');
-    setAltegioCompanyMode(false);
+    setAltegioStaffMode(false);
     setAltegioCompanyInput('');
+  };
+
+  const handleEnterStaffMode = () => {
+    setAltegioStaffMode(true);
+    setAltegioManualMode(false);
+    setSelectedStaffId(null);
     refetchStaff();
   };
 
@@ -289,13 +295,13 @@ export default function SpecialistDashboard() {
 
   const altegioAutoSelectedRef = useRef(false);
   useEffect(() => {
-    if (altegioStaffData?.staff && altegioStaffData.staff.length === 1 && altegioModalOpen && !altegioAutoSelectedRef.current && !altegioConnecting) {
+    if (altegioStaffData?.staff && altegioStaffData.staff.length === 1 && altegioModalOpen && altegioStaffMode && !altegioAutoSelectedRef.current && !altegioConnecting) {
       altegioAutoSelectedRef.current = true;
       const single = altegioStaffData.staff[0];
       handleAltegioSelectStaff(single.id, altegioStaffData.companyId);
       console.log('[ALTEGIO] Auto-selected single staff');
     }
-  }, [altegioStaffData, altegioModalOpen]);
+  }, [altegioStaffData, altegioModalOpen, altegioStaffMode]);
 
   useEffect(() => {
     if (!altegioModalOpen) {
@@ -1270,49 +1276,7 @@ export default function SpecialistDashboard() {
 
       <Dialog open={altegioModalOpen} onOpenChange={setAltegioModalOpen}>
         <DialogContent className="max-w-md">
-          {altegioCompanyMode ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Подключить по ссылке Altegio</DialogTitle>
-                <DialogDescription>
-                  Для частных специалистов. Вставьте ссылку на вашу онлайн-запись Altegio (например https://n123456.alteg.io) или ID компании.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="altegioCompanyInput">Ссылка или ID компании</Label>
-                  <Input
-                    id="altegioCompanyInput"
-                    value={altegioCompanyInput}
-                    onChange={(e) => setAltegioCompanyInput(e.target.value)}
-                    placeholder="https://n123456.alteg.io"
-                    data-testid="input-altegio-company"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Сначала установите приложение «rateus_reviews» в своём Altegio и нажмите «Подключить». Затем вставьте сюда ссылку — отзывы начнут приходить автоматически.
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1"
-                    onClick={handleAltegioConnectCompany}
-                    disabled={!altegioCompanyInput.trim() || altegioConnecting}
-                    data-testid="button-altegio-company-save"
-                  >
-                    {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                    Подключить
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setAltegioCompanyMode(false)}
-                    data-testid="button-altegio-company-cancel"
-                  >
-                    Назад
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : altegioManualMode ? (
+          {altegioManualMode ? (
             <>
               <DialogHeader>
                 <DialogTitle>Указать ID сотрудника</DialogTitle>
@@ -1352,7 +1316,7 @@ export default function SpecialistDashboard() {
                 </div>
               </div>
             </>
-          ) : (
+          ) : altegioStaffMode ? (
             <>
               <DialogHeader>
                 <DialogTitle>Кто вы в Altegio?</DialogTitle>
@@ -1374,10 +1338,10 @@ export default function SpecialistDashboard() {
                   </Button>
                   <button
                     className="text-sm text-primary underline w-full text-center"
-                    onClick={() => setAltegioCompanyMode(true)}
-                    data-testid="button-altegio-individual-error"
+                    onClick={() => setAltegioStaffMode(false)}
+                    data-testid="button-altegio-back-to-link-error"
                   >
-                    Я частный специалист — подключить по ссылке
+                    Назад — подключить по ссылке
                   </button>
                 </div>
               ) : altegioStaffData?.staff && altegioStaffData.staff.length === 0 ? (
@@ -1386,10 +1350,10 @@ export default function SpecialistDashboard() {
                   <p className="text-xs text-muted-foreground">Добавьте сотрудника в Altegio и повторите подключение</p>
                   <button
                     className="text-sm text-primary underline w-full text-center pt-2"
-                    onClick={() => setAltegioCompanyMode(true)}
-                    data-testid="button-altegio-individual-empty"
+                    onClick={() => setAltegioStaffMode(false)}
+                    data-testid="button-altegio-back-to-link-empty"
                   >
-                    Я частный специалист — подключить по ссылке
+                    Назад — подключить по ссылке
                   </button>
                 </div>
               ) : (
@@ -1446,13 +1410,53 @@ export default function SpecialistDashboard() {
                   </button>
                   <button
                     className="text-sm text-primary underline w-full text-center"
-                    onClick={() => setAltegioCompanyMode(true)}
-                    data-testid="button-altegio-individual"
+                    onClick={() => setAltegioStaffMode(false)}
+                    data-testid="button-altegio-back-to-link"
                   >
-                    Я частный специалист — подключить по ссылке
+                    Назад — подключить по ссылке
                   </button>
                 </div>
               )}
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>Подключить Altegio</DialogTitle>
+                <DialogDescription>
+                  Вставьте ссылку на вашу онлайн-запись Altegio (например https://n123456.alteg.io) или ID компании.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="altegioCompanyInput">Ссылка или ID компании</Label>
+                  <Input
+                    id="altegioCompanyInput"
+                    value={altegioCompanyInput}
+                    onChange={(e) => setAltegioCompanyInput(e.target.value)}
+                    placeholder="https://n123456.alteg.io"
+                    data-testid="input-altegio-company"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Сначала установите приложение «rateus_reviews» в своём Altegio и нажмите «Подключить». Затем вставьте сюда ссылку — отзывы начнут приходить автоматически.
+                  </p>
+                </div>
+                <Button
+                  className="w-full"
+                  onClick={handleAltegioConnectCompany}
+                  disabled={!altegioCompanyInput.trim() || altegioConnecting}
+                  data-testid="button-altegio-company-save"
+                >
+                  {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                  Подключить
+                </Button>
+                <button
+                  className="text-sm text-muted-foreground underline w-full text-center"
+                  onClick={handleEnterStaffMode}
+                  data-testid="button-altegio-staff-mode"
+                >
+                  Я сотрудник салона — выбрать из списка
+                </button>
+              </div>
             </>
           )}
         </DialogContent>
