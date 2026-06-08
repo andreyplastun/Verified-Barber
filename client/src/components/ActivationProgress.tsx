@@ -69,7 +69,8 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
   const completedFiredRef = useRef(false);
   const viewedRef = useRef(false);
 
-  const isAltegio = !!(specialist as any)?.altegioStaffId;
+  const isAltegio = !!(specialist as any)?.altegioStaffId ||
+    (!!(specialist as any)?.altegioCompanyId && (specialist as any)?.altegioConnectionStatus === 'connected');
   const firstReviewLocked = !isAltegio && createdVisits === 0;
   const showAddClientGuide = !isAltegio && createdVisits === 0;
 
@@ -181,6 +182,16 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
     if (anchor && onScrollTo) onScrollTo(anchor);
   };
 
+  const title = isAltegio
+    ? "Запись подключена — получите отзывы"
+    : hasReview
+    ? "Заполните профиль до конца"
+    : stepsToReview > 0
+    ? `Осталось ${stepsToReview} ${pluralizeSteps(stepsToReview)} до первого отзыва`
+    : createdVisits > 0
+    ? "Ожидаем отзыв клиента"
+    : "Почти готово — добавьте первого клиента";
+
   const subtitle = isAltegio
     ? "Запись работает автоматически. Осталось получить первые отзывы."
     : firstReviewLocked
@@ -228,7 +239,7 @@ export default function ActivationProgress({ specialist, onScrollTo, createdVisi
                 className="text-base font-semibold leading-tight"
                 data-testid="text-activation-title"
               >
-                {isAltegio ? "Запись подключена — получите отзывы" : "Подготовка профиля"}
+                {title}
               </h3>
               {isAltegio && (
                 <p

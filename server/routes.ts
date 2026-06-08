@@ -128,26 +128,54 @@ async function sendReviewLinkDirect(booking: any, link: string, source: string):
   return waResult.success;
 }
 
+// Resolves a Rateus specialist for an incoming Altegio webhook.
+// Priority: 1) exact staff+company, 2) staff only, 3) company only for solo
+// specialists who connected via company link (altegioCompanyId set, altegioStaffId null).
+// `companyOnly=true` signals the caller may auto-fill the specialist's altegioStaffId.
+async function resolveAltegioSpecialist(
+  staffId: number | null,
+  companyId: number | null,
+): Promise<{ specialist: any | null; companyOnly: boolean }> {
+  const { STAFF_ID_ALIASES } = await import('./altegio');
+  let effectiveStaffId: number | null = staffId || null;
+  let effectiveCompanyId: number | null = companyId || null;
+  if (staffId) {
+    const alias = STAFF_ID_ALIASES[staffId];
+    if (alias) {
+      effectiveStaffId = alias.primaryStaffId;
+      effectiveCompanyId = alias.primaryCompanyId;
+    }
+  }
+  const all = await storage.getSpecialists();
+  // 1. Exact staff + company — most specific, always trusted.
+  if (effectiveStaffId && effectiveCompanyId) {
+    const m = all.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId);
+    if (m) return { specialist: m, companyOnly: false };
+  }
+  // 2. Company-only solo specialist (link-connected, staffId not yet bound).
+  //    Must be exactly one candidate to stay deterministic; otherwise skip (no guessing).
+  if (effectiveCompanyId) {
+    const candidates = all.filter((s: any) => s.altegioCompanyId === effectiveCompanyId && !s.altegioStaffId);
+    if (candidates.length === 1) return { specialist: candidates[0], companyOnly: true };
+    if (candidates.length > 1) {
+      console.warn(`[ALTEGIO] Ambiguous company-only mapping for company ${effectiveCompanyId}: ${candidates.length} candidates — skipping company fallback`);
+    }
+  }
+  // 3. Staff-only fallback (legacy: webhook missing or with mismatched company).
+  if (effectiveStaffId) {
+    const m = all.find((s: any) => s.altegioStaffId === effectiveStaffId);
+    if (m) return { specialist: m, companyOnly: false };
+  }
+  return { specialist: null, companyOnly: false };
+}
+
 export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, source: string, opts?: { altegioStaffId?: number; altegioCompanyId?: number }): Promise<boolean> {
   try {
     let booking = await storage.getBooking(bookingId);
     const specAction = isSpecialistAction(source);
 
     if (opts?.altegioStaffId && booking && opts.altegioStaffId !== (booking as any).altegioStaffId) {
-      const { STAFF_ID_ALIASES } = await import('./altegio');
-      let effectiveStaffId = opts.altegioStaffId;
-      let effectiveCompanyId = opts.altegioCompanyId || null;
-      const alias = STAFF_ID_ALIASES[opts.altegioStaffId];
-      if (alias) {
-        effectiveStaffId = alias.primaryStaffId;
-        effectiveCompanyId = alias.primaryCompanyId;
-      }
-      const allSpecs = await storage.getSpecialists();
-      const connSpecs = allSpecs.filter((s: any) => s.altegioStaffId && s.altegioCompanyId);
-      const matchedSpec = effectiveCompanyId
-        ? connSpecs.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
-        : null;
-      const newSpec = matchedSpec || connSpecs.find((s: any) => s.altegioStaffId === effectiveStaffId);
+      const { specialist: newSpec } = await resolveAltegioSpecialist(opts.altegioStaffId, opts.altegioCompanyId || null);
       if (newSpec && newSpec.id !== booking.specialistId) {
         console.log(`[MAGIC_LINK_REASSIGN] booking=${bookingId} specialist ${booking.specialistId} → ${newSpec.id} (${newSpec.name}) at completion time, staff_id=${opts.altegioStaffId}`);
         await storage.updateBooking(bookingId, {
@@ -3398,18 +3426,40 @@ ${magicLink}`;
         return res.status(403).json({ message: "Forbidden" });
       }
 
-      const { altegioStaffId, altegioCompanyId } = req.body;
-      if (!altegioStaffId || typeof altegioStaffId !== "number") {
-        return res.status(400).json({ message: "altegioStaffId обязателен" });
+      const { altegioStaffId, altegioCompanyId, altegioLink } = req.body;
+
+      // Individual specialist flow: connect by company id / personal Altegio link (no staff list).
+      let companyId: number | null = typeof altegioCompanyId === "number" && altegioCompanyId > 0 ? altegioCompanyId : null;
+      if (!companyId && typeof altegioLink === "string" && altegioLink.trim()) {
+        const link = altegioLink.trim();
+        let m: RegExpMatchArray | null = null;
+        if (/alteg\.io/i.test(link)) {
+          m = link.match(/[nb](\d{3,})\.alteg\.io/i) || link.match(/(?:company|companies)\/(\d{3,})/i);
+        } else if (/^\d{3,}$/.test(link)) {
+          m = link.match(/^(\d{3,})$/);
+        }
+        if (m) companyId = parseInt(m[1], 10);
       }
 
-      await storage.updateSpecialist(user.specialistId, {
-        altegioStaffId,
-        altegioCompanyId: altegioCompanyId || null,
-        altegioConnectionStatus: "connected",
-      } as any);
-
-      console.log(`[ALTEGIO] Staff selected: specialist=${user.specialistId}, altegioStaffId=${altegioStaffId}, companyId=${altegioCompanyId}`);
+      if (altegioStaffId && typeof altegioStaffId === "number") {
+        // Staff-list flow (salon with shared token)
+        await storage.updateSpecialist(user.specialistId, {
+          altegioStaffId,
+          altegioCompanyId: companyId,
+          altegioConnectionStatus: "connected",
+        } as any);
+        console.log(`[ALTEGIO] Staff selected: specialist=${user.specialistId}, altegioStaffId=${altegioStaffId}, companyId=${companyId}`);
+      } else if (companyId) {
+        // Individual specialist: bind company only, staffId auto-filled on first webhook
+        await storage.updateSpecialist(user.specialistId, {
+          altegioStaffId: null,
+          altegioCompanyId: companyId,
+          altegioConnectionStatus: "connected",
+        } as any);
+        console.log(`[ALTEGIO] Company connected (individual): specialist=${user.specialistId}, companyId=${companyId}`);
+      } else {
+        return res.status(400).json({ message: "Укажите company_id или ссылку Altegio" });
+      }
 
       const updated = await storage.getSpecialist(user.specialistId);
       res.json(updated);
@@ -3620,21 +3670,15 @@ ${magicLink}`;
           }
 
           let specialistId: number | null = null;
-          if (staffId) {
-            const { STAFF_ID_ALIASES } = await import('./altegio');
-            let effectiveStaffId = staffId;
-            let effectiveCompanyId = companyId;
-            const alias = STAFF_ID_ALIASES[staffId];
-            if (alias) {
-              effectiveStaffId = alias.primaryStaffId;
-              effectiveCompanyId = alias.primaryCompanyId;
+          if (staffId || companyId) {
+            const { specialist: resolved, companyOnly } = await resolveAltegioSpecialist(staffId, companyId);
+            if (resolved) {
+              specialistId = resolved.id;
+              if (companyOnly && staffId && !resolved.altegioStaffId) {
+                await storage.updateSpecialist(resolved.id, { altegioStaffId: staffId } as any);
+                console.log(`[ALTEGIO] Auto-filled staffId=${staffId} for solo specialist ${resolved.id} (company ${companyId})`);
+              }
             }
-            const allSpecialists = await storage.getSpecialists();
-            const matched = effectiveCompanyId
-              ? allSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
-              : null;
-            const fallback = matched || allSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId);
-            if (fallback) specialistId = fallback.id;
           }
           if (!specialistId) {
             console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId} — SKIPPING booking creation for appointment ${altegioId} (was: defaulting to id=1)`);
@@ -3676,21 +3720,15 @@ ${magicLink}`;
             const isNewVisitCompleted = attendance === 1 || attendance === "1";
             console.warn(`[ALTEGIO] Appointment ${altegioId} not found for update, creating new (attendance=${attendance}, completed=${isNewVisitCompleted})`);
             let specialistId: number | null = null;
-            if (staffId) {
-              const { STAFF_ID_ALIASES } = await import('./altegio');
-              let effectiveStaffId = staffId;
-              let effectiveCompanyId = companyId;
-              const alias = STAFF_ID_ALIASES[staffId];
-              if (alias) {
-                effectiveStaffId = alias.primaryStaffId;
-                effectiveCompanyId = alias.primaryCompanyId;
+            if (staffId || companyId) {
+              const { specialist: resolved, companyOnly } = await resolveAltegioSpecialist(staffId, companyId);
+              if (resolved) {
+                specialistId = resolved.id;
+                if (companyOnly && staffId && !resolved.altegioStaffId) {
+                  await storage.updateSpecialist(resolved.id, { altegioStaffId: staffId } as any);
+                  console.log(`[ALTEGIO] Auto-filled staffId=${staffId} for solo specialist ${resolved.id} (company ${companyId})`);
+                }
               }
-              const allSpecialists = await storage.getSpecialists();
-              const matched = effectiveCompanyId
-                ? allSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId && s.altegioCompanyId === effectiveCompanyId)
-                : null;
-              const fallback = matched || allSpecialists.find((s: any) => s.altegioStaffId === effectiveStaffId);
-              if (fallback) specialistId = fallback.id;
             }
             if (!specialistId) {
               console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId} — SKIPPING booking creation for appointment ${altegioId} (was: defaulting to id=1)`);

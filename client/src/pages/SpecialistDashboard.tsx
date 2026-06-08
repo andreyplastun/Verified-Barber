@@ -57,6 +57,8 @@ export default function SpecialistDashboard() {
   const [altegioManualId, setAltegioManualId] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
   const [altegioConnecting, setAltegioConnecting] = useState(false);
+  const [altegioCompanyMode, setAltegioCompanyMode] = useState(false);
+  const [altegioCompanyInput, setAltegioCompanyInput] = useState('');
   const [showNewBookingForm, setShowNewBookingForm] = useState(false);
   const [newBookingName, setNewBookingName] = useState('');
   const [newBookingPhone, setNewBookingPhone] = useState('');
@@ -109,7 +111,8 @@ export default function SpecialistDashboard() {
     enabled: !!specialistId,
   });
 
-  const isAltegioConnected = !!(specialist as any)?.altegioStaffId;
+  const isAltegioConnected = !!(specialist as any)?.altegioStaffId ||
+    (!!(specialist as any)?.altegioCompanyId && (specialist as any)?.altegioConnectionStatus === 'connected');
 
   const isNewSpecialist =
     !loadingBookings &&
@@ -191,7 +194,40 @@ export default function SpecialistDashboard() {
     setSelectedStaffId(null);
     setAltegioManualMode(false);
     setAltegioManualId('');
+    setAltegioCompanyMode(false);
+    setAltegioCompanyInput('');
     refetchStaff();
+  };
+
+  const handleAltegioConnectCompany = async () => {
+    if (!currentUser?.id) return;
+    const raw = altegioCompanyInput.trim();
+    if (!raw) {
+      toast({ title: 'Введите ссылку или ID компании', variant: 'destructive' });
+      return;
+    }
+    setAltegioConnecting(true);
+    try {
+      const res = await fetch('/api/altegio/connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': currentUser.id,
+        },
+        body: JSON.stringify({ altegioLink: raw }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Попробуйте ещё раз');
+      }
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      setAltegioModalOpen(false);
+      toast({ title: 'Altegio подключён', description: 'Синхронизация визитов активна' });
+    } catch (err: any) {
+      toast({ title: 'Не удалось подключить Altegio', description: err.message, variant: 'destructive' });
+    } finally {
+      setAltegioConnecting(false);
+    }
   };
 
   const handleAltegioSelectStaff = async (staffId: number, companyId: number) => {
@@ -1234,7 +1270,49 @@ export default function SpecialistDashboard() {
 
       <Dialog open={altegioModalOpen} onOpenChange={setAltegioModalOpen}>
         <DialogContent className="max-w-md">
-          {altegioManualMode ? (
+          {altegioCompanyMode ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Подключить по ссылке Altegio</DialogTitle>
+                <DialogDescription>
+                  Для частных специалистов. Вставьте ссылку на вашу онлайн-запись Altegio (например https://n123456.alteg.io) или ID компании.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="altegioCompanyInput">Ссылка или ID компании</Label>
+                  <Input
+                    id="altegioCompanyInput"
+                    value={altegioCompanyInput}
+                    onChange={(e) => setAltegioCompanyInput(e.target.value)}
+                    placeholder="https://n123456.alteg.io"
+                    data-testid="input-altegio-company"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Сначала установите приложение «rateus_reviews» в своём Altegio и нажмите «Подключить». Затем вставьте сюда ссылку — отзывы начнут приходить автоматически.
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    className="flex-1"
+                    onClick={handleAltegioConnectCompany}
+                    disabled={!altegioCompanyInput.trim() || altegioConnecting}
+                    data-testid="button-altegio-company-save"
+                  >
+                    {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Подключить
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setAltegioCompanyMode(false)}
+                    data-testid="button-altegio-company-cancel"
+                  >
+                    Назад
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : altegioManualMode ? (
             <>
               <DialogHeader>
                 <DialogTitle>Указать ID сотрудника</DialogTitle>
@@ -1294,11 +1372,25 @@ export default function SpecialistDashboard() {
                   <Button variant="outline" size="sm" onClick={() => refetchStaff()} data-testid="button-altegio-retry">
                     Повторить
                   </Button>
+                  <button
+                    className="text-sm text-primary underline w-full text-center"
+                    onClick={() => setAltegioCompanyMode(true)}
+                    data-testid="button-altegio-individual-error"
+                  >
+                    Я частный специалист — подключить по ссылке
+                  </button>
                 </div>
               ) : altegioStaffData?.staff && altegioStaffData.staff.length === 0 ? (
                 <div className="text-center py-6 space-y-2">
                   <p className="text-sm font-medium">В Altegio нет сотрудников</p>
                   <p className="text-xs text-muted-foreground">Добавьте сотрудника в Altegio и повторите подключение</p>
+                  <button
+                    className="text-sm text-primary underline w-full text-center pt-2"
+                    onClick={() => setAltegioCompanyMode(true)}
+                    data-testid="button-altegio-individual-empty"
+                  >
+                    Я частный специалист — подключить по ссылке
+                  </button>
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -1351,6 +1443,13 @@ export default function SpecialistDashboard() {
                     data-testid="button-altegio-not-found"
                   >
                     Не нашли себя?
+                  </button>
+                  <button
+                    className="text-sm text-primary underline w-full text-center"
+                    onClick={() => setAltegioCompanyMode(true)}
+                    data-testid="button-altegio-individual"
+                  >
+                    Я частный специалист — подключить по ссылке
                   </button>
                 </div>
               )}
