@@ -1192,12 +1192,27 @@ export default function SpecialistDashboard() {
           <DialogHeader>
             <DialogTitle>Подключить Altegio</DialogTitle>
             <DialogDescription>
-              Вставьте ссылку на вашу онлайн-запись Altegio (например https://n123456.alteg.io) или ID компании.
+              Два шага: сначала разрешите приложение в Altegio, затем вставьте ссылку на вашу онлайн-запись.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-2">
+              <p className="text-sm font-medium">Шаг 1. Разрешите приложение в Altegio</p>
+              <p className="text-xs text-muted-foreground">
+                Приложение закрытое — в каталоге Altegio его не найти. Откройте ссылку ниже (нужно быть залогиненным в Altegio) и нажмите «Подключить» в открывшемся окне Altegio.
+              </p>
+              <a
+                href="https://app.alteg.io/e/mp_1368_trustwho_reviews/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center text-sm font-medium text-primary underline underline-offset-2 break-all"
+                data-testid="link-altegio-install"
+              >
+                Открыть установку приложения в Altegio
+              </a>
+            </div>
             <div className="space-y-2">
-              <Label htmlFor="altegioCompanyInput">Ссылка или ID компании</Label>
+              <Label htmlFor="altegioCompanyInput">Шаг 2. Ваша ссылка или ID компании</Label>
               <Input
                 id="altegioCompanyInput"
                 value={altegioCompanyInput}
@@ -1206,7 +1221,7 @@ export default function SpecialistDashboard() {
                 data-testid="input-altegio-company"
               />
               <p className="text-xs text-muted-foreground">
-                Установите приложение «rateus_reviews» в своём Altegio, затем вставьте сюда ссылку на онлайн-запись и нажмите «Подключить» — отзывы начнут приходить автоматически.
+                Вставьте ссылку на вашу онлайн-запись Altegio (например https://n123456.alteg.io) или ID компании и нажмите «Подключить» — отзывы начнут приходить автоматически.
               </p>
             </div>
             <Button
