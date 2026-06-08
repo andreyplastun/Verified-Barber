@@ -17,7 +17,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import type { Specialist, Booking, Review, SpecialistPhoto } from '@shared/schema';
 import AltegioErrorScreen, { type AltegioErrorType } from '@/components/AltegioErrorScreen';
 import AltegioSyncBanner, { getBookingSyncBannerConfig, getGlobalAltegioBannerConfig } from '@/components/AltegioSyncBanner';
@@ -53,11 +52,7 @@ export default function SpecialistDashboard() {
   const [whatsapp, setWhatsapp] = useState('');
   const [instagram, setInstagram] = useState('');
   const [altegioModalOpen, setAltegioModalOpen] = useState(false);
-  const [altegioManualMode, setAltegioManualMode] = useState(false);
-  const [altegioManualId, setAltegioManualId] = useState('');
-  const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
   const [altegioConnecting, setAltegioConnecting] = useState(false);
-  const [altegioStaffMode, setAltegioStaffMode] = useState(false);
   const [altegioCompanyInput, setAltegioCompanyInput] = useState('');
   const [showNewBookingForm, setShowNewBookingForm] = useState(false);
   const [newBookingName, setNewBookingName] = useState('');
@@ -173,36 +168,9 @@ export default function SpecialistDashboard() {
     }
   }, [altegioHealth?.ok]);
 
-  const { data: altegioStaffData, isLoading: loadingAltegioStaff, error: altegioStaffError, refetch: refetchStaff } = useQuery<{ staff: Array<{ id: number; name: string; avatar: string | null; specialization: string | null }>; companyId: number }>({
-    queryKey: ['/api/altegio/staff'],
-    queryFn: async () => {
-      if (!currentUser?.id) throw new Error('Not authorized');
-      const res = await fetch('/api/altegio/staff', {
-        headers: { 'x-user-id': currentUser.id },
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Не удалось загрузить сотрудников');
-      }
-      return res.json();
-    },
-    enabled: false,
-  });
-
   const handleAltegioConnect = async () => {
     setAltegioModalOpen(true);
-    setSelectedStaffId(null);
-    setAltegioManualMode(false);
-    setAltegioManualId('');
-    setAltegioStaffMode(false);
     setAltegioCompanyInput('');
-  };
-
-  const handleEnterStaffMode = () => {
-    setAltegioStaffMode(true);
-    setAltegioManualMode(false);
-    setSelectedStaffId(null);
-    refetchStaff();
   };
 
   const handleAltegioConnectCompany = async () => {
@@ -236,45 +204,6 @@ export default function SpecialistDashboard() {
     }
   };
 
-  const handleAltegioSelectStaff = async (staffId: number, companyId: number) => {
-    if (!currentUser?.id) return;
-    setAltegioConnecting(true);
-    try {
-      const res = await fetch('/api/altegio/connect', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-id': currentUser.id,
-        },
-        body: JSON.stringify({ altegioStaffId: staffId, altegioCompanyId: companyId }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Попробуйте ещё раз');
-      }
-      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-      setAltegioModalOpen(false);
-      toast({ title: 'Altegio подключён', description: 'Синхронизация визитов активна' });
-    } catch (err: any) {
-      toast({ title: 'Не удалось подключить Altegio', description: err.message, variant: 'destructive' });
-    } finally {
-      setAltegioConnecting(false);
-    }
-  };
-
-  const handleAltegioManualSave = async () => {
-    const id = parseInt(altegioManualId, 10);
-    if (!id || isNaN(id)) {
-      toast({ title: 'Введите корректный ID', variant: 'destructive' });
-      return;
-    }
-    if (!altegioStaffData?.companyId) {
-      toast({ title: 'Не удалось определить компанию Altegio', description: 'Попробуйте ещё раз', variant: 'destructive' });
-      return;
-    }
-    await handleAltegioSelectStaff(id, altegioStaffData.companyId);
-  };
-
   const handleAltegioDisconnect = async () => {
     if (!currentUser?.id) return;
     try {
@@ -292,22 +221,6 @@ export default function SpecialistDashboard() {
       toast({ title: 'Не удалось отключить Altegio', description: err.message, variant: 'destructive' });
     }
   };
-
-  const altegioAutoSelectedRef = useRef(false);
-  useEffect(() => {
-    if (altegioStaffData?.staff && altegioStaffData.staff.length === 1 && altegioModalOpen && altegioStaffMode && !altegioAutoSelectedRef.current && !altegioConnecting) {
-      altegioAutoSelectedRef.current = true;
-      const single = altegioStaffData.staff[0];
-      handleAltegioSelectStaff(single.id, altegioStaffData.companyId);
-      console.log('[ALTEGIO] Auto-selected single staff');
-    }
-  }, [altegioStaffData, altegioModalOpen, altegioStaffMode]);
-
-  useEffect(() => {
-    if (!altegioModalOpen) {
-      altegioAutoSelectedRef.current = false;
-    }
-  }, [altegioModalOpen]);
 
   const uploadPhoto = async (file: File, photoType: 'avatar' | 'work') => {
     if (!specialistId || !currentUser?.id) return;
@@ -1276,189 +1189,36 @@ export default function SpecialistDashboard() {
 
       <Dialog open={altegioModalOpen} onOpenChange={setAltegioModalOpen}>
         <DialogContent className="max-w-md">
-          {altegioManualMode ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Указать ID сотрудника</DialogTitle>
-                <DialogDescription>
-                  Введите ваш ID сотрудника из Altegio вручную
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="altegioManualId">altegio_staff_id</Label>
-                  <Input
-                    id="altegioManualId"
-                    type="number"
-                    value={altegioManualId}
-                    onChange={(e) => setAltegioManualId(e.target.value)}
-                    placeholder="Например: 12345"
-                    data-testid="input-altegio-manual-id"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1"
-                    onClick={handleAltegioManualSave}
-                    disabled={!altegioManualId.trim() || altegioConnecting}
-                    data-testid="button-altegio-manual-save"
-                  >
-                    {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                    Сохранить
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setAltegioManualMode(false)}
-                    data-testid="button-altegio-manual-cancel"
-                  >
-                    Назад
-                  </Button>
-                </div>
-              </div>
-            </>
-          ) : altegioStaffMode ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>Кто вы в Altegio?</DialogTitle>
-                <DialogDescription>
-                  Выберите себя из списка сотрудников
-                </DialogDescription>
-              </DialogHeader>
-              {loadingAltegioStaff ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : altegioStaffError ? (
-                <div className="text-center py-6 space-y-3">
-                  <AlertTriangle className="w-8 h-8 text-amber-500 mx-auto" />
-                  <p className="text-sm font-medium">Не удалось загрузить сотрудников</p>
-                  <p className="text-xs text-muted-foreground">{(altegioStaffError as Error).message}</p>
-                  <Button variant="outline" size="sm" onClick={() => refetchStaff()} data-testid="button-altegio-retry">
-                    Повторить
-                  </Button>
-                  <button
-                    className="text-sm text-primary underline w-full text-center"
-                    onClick={() => setAltegioStaffMode(false)}
-                    data-testid="button-altegio-back-to-link-error"
-                  >
-                    Назад — подключить по ссылке
-                  </button>
-                </div>
-              ) : altegioStaffData?.staff && altegioStaffData.staff.length === 0 ? (
-                <div className="text-center py-6 space-y-2">
-                  <p className="text-sm font-medium">В Altegio нет сотрудников</p>
-                  <p className="text-xs text-muted-foreground">Добавьте сотрудника в Altegio и повторите подключение</p>
-                  <button
-                    className="text-sm text-primary underline w-full text-center pt-2"
-                    onClick={() => setAltegioStaffMode(false)}
-                    data-testid="button-altegio-back-to-link-empty"
-                  >
-                    Назад — подключить по ссылке
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {altegioStaffData?.staff?.map((staff) => (
-                      <div
-                        key={staff.id}
-                        className={`flex items-center gap-3 p-3 rounded-md cursor-pointer transition-colors ${
-                          selectedStaffId === staff.id
-                            ? 'bg-primary/10 ring-1 ring-primary'
-                            : 'bg-muted/50 hover-elevate'
-                        }`}
-                        onClick={() => setSelectedStaffId(staff.id)}
-                        data-testid={`staff-item-${staff.id}`}
-                      >
-                        <Avatar className="h-10 w-10">
-                          {staff.avatar ? (
-                            <AvatarImage src={staff.avatar} alt={staff.name} />
-                          ) : null}
-                          <AvatarFallback>{staff.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{staff.name}</p>
-                          {staff.specialization && (
-                            <p className="text-xs text-muted-foreground">{staff.specialization}</p>
-                          )}
-                        </div>
-                        {selectedStaffId === staff.id && (
-                          <CircleCheck className="w-5 h-5 text-primary" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <Button
-                    className="w-full"
-                    onClick={() => {
-                      if (selectedStaffId && altegioStaffData?.companyId) {
-                        handleAltegioSelectStaff(selectedStaffId, altegioStaffData.companyId);
-                      }
-                    }}
-                    disabled={!selectedStaffId || altegioConnecting}
-                    data-testid="button-altegio-select-confirm"
-                  >
-                    {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                    Выбрать
-                  </Button>
-                  <button
-                    className="text-sm text-muted-foreground underline w-full text-center"
-                    onClick={() => setAltegioManualMode(true)}
-                    data-testid="button-altegio-not-found"
-                  >
-                    Не нашли себя?
-                  </button>
-                  <button
-                    className="text-sm text-primary underline w-full text-center"
-                    onClick={() => setAltegioStaffMode(false)}
-                    data-testid="button-altegio-back-to-link"
-                  >
-                    Назад — подключить по ссылке
-                  </button>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <DialogHeader>
-                <DialogTitle>Подключить Altegio</DialogTitle>
-                <DialogDescription>
-                  Вставьте ссылку на вашу онлайн-запись Altegio (например https://n123456.alteg.io) или ID компании.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="altegioCompanyInput">Ссылка или ID компании</Label>
-                  <Input
-                    id="altegioCompanyInput"
-                    value={altegioCompanyInput}
-                    onChange={(e) => setAltegioCompanyInput(e.target.value)}
-                    placeholder="https://n123456.alteg.io"
-                    data-testid="input-altegio-company"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Сначала установите приложение «rateus_reviews» в своём Altegio и нажмите «Подключить». Затем вставьте сюда ссылку — отзывы начнут приходить автоматически.
-                  </p>
-                </div>
-                <Button
-                  className="w-full"
-                  onClick={handleAltegioConnectCompany}
-                  disabled={!altegioCompanyInput.trim() || altegioConnecting}
-                  data-testid="button-altegio-company-save"
-                >
-                  {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                  Подключить
-                </Button>
-                <button
-                  className="text-sm text-muted-foreground underline w-full text-center"
-                  onClick={handleEnterStaffMode}
-                  data-testid="button-altegio-staff-mode"
-                >
-                  Я сотрудник салона — выбрать из списка
-                </button>
-              </div>
-            </>
-          )}
+          <DialogHeader>
+            <DialogTitle>Подключить Altegio</DialogTitle>
+            <DialogDescription>
+              Вставьте ссылку на вашу онлайн-запись Altegio (например https://n123456.alteg.io) или ID компании.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="altegioCompanyInput">Ссылка или ID компании</Label>
+              <Input
+                id="altegioCompanyInput"
+                value={altegioCompanyInput}
+                onChange={(e) => setAltegioCompanyInput(e.target.value)}
+                placeholder="https://n123456.alteg.io"
+                data-testid="input-altegio-company"
+              />
+              <p className="text-xs text-muted-foreground">
+                Установите приложение «rateus_reviews» в своём Altegio, затем вставьте сюда ссылку на онлайн-запись и нажмите «Подключить» — отзывы начнут приходить автоматически.
+              </p>
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleAltegioConnectCompany}
+              disabled={!altegioCompanyInput.trim() || altegioConnecting}
+              data-testid="button-altegio-company-save"
+            >
+              {altegioConnecting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Подключить
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
