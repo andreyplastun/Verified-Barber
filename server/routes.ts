@@ -128,6 +128,12 @@ async function sendReviewLinkDirect(booking: any, link: string, source: string):
   return waResult.success;
 }
 
+// Company-level Altegio connection check. Must mirror frontend isAltegioConnected.
+function specialistHasAltegio(specialist: any): boolean {
+  return !!specialist?.altegioStaffId ||
+    (!!specialist?.altegioCompanyId && specialist?.altegioConnectionStatus === "connected");
+}
+
 // Resolves a Rateus specialist for an incoming Altegio webhook.
 // Priority: 1) exact staff+company, 2) staff only, 3) company only for solo
 // specialists who connected via company link (altegioCompanyId set, altegioStaffId null).
@@ -1071,6 +1077,13 @@ export async function registerRoutes(
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
+    if ((booking as any).bookingSource === "specialist_manual" && (booking as any).visitTrustWeight == null) {
+      const specialist = await storage.getSpecialist(booking.specialistId);
+      const trustWeight = specialistHasAltegio(specialist) ? 0.3 : 0.6;
+      await storage.updateBooking(id, { visitTrustWeight: trustWeight } as any);
+      (booking as any).visitTrustWeight = trustWeight;
+      console.log(`[ANTIFRAUD] booking=${id} specialist=${booking.specialistId}: manual booking completed via legacy endpoint, trustWeight=${trustWeight}`);
+    }
     res.json(booking);
   });
 
@@ -1377,6 +1390,13 @@ export async function registerRoutes(
       
       if (!booking) {
         return res.status(404).json({ message: "Booking not found" });
+      }
+
+      if ((booking as any).bookingSource === "specialist_manual" && (booking as any).visitTrustWeight == null) {
+        const specialist = await storage.getSpecialist(booking.specialistId);
+        const trustWeight = specialistHasAltegio(specialist) ? 0.3 : 0.6;
+        await storage.updateBooking(id, { visitTrustWeight: trustWeight } as any);
+        console.log(`[ANTIFRAUD] booking=${id} specialist=${booking.specialistId}: manual booking completed via admin, trustWeight=${trustWeight}`);
       }
 
       if (isAltegioConfigured() && existingBooking && existingBooking.updatedFrom !== "altegio") {
@@ -2340,8 +2360,8 @@ ${magicLink}`;
 
       const specialist = await storage.getSpecialist(booking.specialistId);
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";
-      const hasAltegio = !!(specialist as any)?.altegioStaffId;
-      const trustWeight = isManualBooking ? (hasAltegio ? 0 : 0.6) : 1.05;
+      const hasAltegio = specialistHasAltegio(specialist);
+      const trustWeight = isManualBooking ? (hasAltegio ? 0.3 : 0.6) : 1.05;
 
       const finalBooking = await storage.updateBooking(bookingId, {
         status: "completed",
@@ -2351,7 +2371,7 @@ ${magicLink}`;
       } as any);
 
       if (isManualBooking && hasAltegio) {
-        console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking with Altegio connected, trustWeight=0`);
+        console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking with Altegio connected, trustWeight=${trustWeight}`);
       }
 
       await storage.incrementVerifiedVisitScore(booking.specialistId, 2);
@@ -2411,8 +2431,8 @@ ${magicLink}`;
 
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";
       const specialist = await storage.getSpecialist(booking.specialistId);
-      const hasAltegio = !!(specialist as any)?.altegioStaffId;
-      const trustWeight = isManualBooking ? (hasAltegio ? 0 : 0.6) : 1.0;
+      const hasAltegio = specialistHasAltegio(specialist);
+      const trustWeight = isManualBooking ? (hasAltegio ? 0.3 : 0.6) : 1.0;
 
       const updated = await storage.updateBooking(bookingId, {
         status: "completed",
@@ -2421,7 +2441,7 @@ ${magicLink}`;
       } as any);
 
       if (isManualBooking && hasAltegio) {
-        console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking with Altegio connected, trustWeight=0`);
+        console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking with Altegio connected, trustWeight=${trustWeight}`);
       }
 
       await storage.incrementVerifiedVisitScore(booking.specialistId, 1);
@@ -2556,10 +2576,16 @@ ${magicLink}`;
       return { success: true, magicLinkCreated: false, reason: 'DUPLICATE_ALTEGIO_OP' };
     }
 
+    let paidTrustWeight = 1.05;
+    if ((booking as any).bookingSource === 'specialist_manual') {
+      const specialist = await storage.getSpecialist(booking.specialistId);
+      paidTrustWeight = specialistHasAltegio(specialist) ? 0.3 : 0.6;
+      console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking paid via ${source}, trustWeight=${paidTrustWeight}`);
+    }
     const updateData: any = {
       paymentStatus: 'paid',
       paymentReceivedAt: new Date(),
-      visitTrustWeight: 1.05,
+      visitTrustWeight: paidTrustWeight,
     };
     if (opts?.externalPaymentId) updateData.externalPaymentId = opts.externalPaymentId;
     if (opts?.altegioOperationId) updateData.altegioOperationId = opts.altegioOperationId;

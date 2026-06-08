@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays, MapPin, Navigation, MessageCircle } from 'lucide-react';
+import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays, MapPin, Navigation, MessageCircle, X } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -61,6 +61,7 @@ export default function SpecialistDashboard() {
   const [newBookingTime, setNewBookingTime] = useState('');
   const [rateLimitWarningOpen, setRateLimitWarningOpen] = useState(false);
   const [showFirstVisitSuccess, setShowFirstVisitSuccess] = useState(false);
+  const [manualVisitInfoDismissed, setManualVisitInfoDismissed] = useState(false);
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -1480,6 +1481,37 @@ export default function SpecialistDashboard() {
                   className="mt-3"
                   onClick={() => setShowFirstVisitSuccess(false)}
                   data-testid="button-first-visit-ack"
+                >
+                  Понятно
+                </Button>
+              </div>
+            )}
+            {showNewBookingForm && isAltegioConnected && !manualVisitInfoDismissed && (
+              <div
+                className="mb-4 rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 p-4 relative"
+                data-testid="manual-visit-altegio-info"
+              >
+                <button
+                  type="button"
+                  onClick={() => setManualVisitInfoDismissed(true)}
+                  className="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+                  aria-label="Закрыть"
+                  data-testid="button-close-manual-visit-info"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+                <p className="text-sm font-semibold text-foreground pr-6">У вас подключён Altegio</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Отзывы по вручную созданным визитам учитываются ограниченно.
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Для максимального доверия и полного веса отзывов используйте визиты из Altegio.
+                </p>
+                <Button
+                  size="sm"
+                  className="mt-3"
+                  onClick={() => setManualVisitInfoDismissed(true)}
+                  data-testid="button-manual-visit-info-ack"
                 >
                   Понятно
                 </Button>
