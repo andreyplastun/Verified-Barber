@@ -144,6 +144,7 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS booking_url text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS whatsapp text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS instagram text;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS country text NOT NULL DEFAULT 'KZ';
       -- Soft activation onboarding (v117)
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_path text;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_path_chosen_at timestamp;

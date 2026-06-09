@@ -337,7 +337,12 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number, 
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
-  const phoneFormatted = cleanPhone.startsWith("7") ? `+${cleanPhone}` : `+7${cleanPhone}`;
+  // Keep country code as-is for KZ (+7) and UZ (+998); only prepend +7 for bare local KZ numbers.
+  const phoneFormatted = cleanPhone.startsWith("998")
+    ? `+${cleanPhone}`
+    : cleanPhone.startsWith("7")
+    ? `+${cleanPhone}`
+    : `+7${cleanPhone}`;
 
   const messageUniqueId = `rateus_${source}_${bookingId}_${Date.now()}`;
   const payload = {

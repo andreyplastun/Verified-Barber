@@ -731,7 +731,7 @@ export async function registerRoutes(
         });
       }
 
-      const { name, email, password, category, subcategory, city, serviceLocation, phone, referredBySpecialistId } = result.data;
+      const { name, email, password, category, subcategory, city, country, serviceLocation, phone, referredBySpecialistId } = result.data;
 
       // Phone is optional at signup (collected later in profile for WhatsApp link).
       // Only enforce uniqueness when a phone was actually provided.
@@ -787,6 +787,7 @@ export async function registerRoutes(
           category: category as any,
           subcategory: subcategory || null,
           city,
+          country,
           serviceLocation,
           phone: phone && phone.trim() ? phone.trim() : null,
           specialty: category,

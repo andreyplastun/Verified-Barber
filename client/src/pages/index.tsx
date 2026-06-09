@@ -44,6 +44,7 @@ export default function SpecialistList() {
   const [sortBy, setSortBy] = useState<SortOption>('default');
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [countryFilter, setCountryFilter] = useState<string>('all');
   const [cityFilter, setCityFilter] = useState<string>('all');
   const [districtFilter, setDistrictFilter] = useState<string>('all');
   
@@ -66,6 +67,11 @@ export default function SpecialistList() {
     // Apply category filter
     if (categoryFilter !== 'all') {
       result = result.filter(s => (s as any).category === categoryFilter);
+    }
+    
+    // Apply country filter
+    if (countryFilter !== 'all') {
+      result = result.filter(s => ((s as any).country || 'KZ') === countryFilter);
     }
     
     // Apply city filter
@@ -109,7 +115,7 @@ export default function SpecialistList() {
     }
     
     return result;
-  }, [specialists, sortBy, ratingFilter, categoryFilter, cityFilter, districtFilter]);
+  }, [specialists, sortBy, ratingFilter, categoryFilter, countryFilter, cityFilter, districtFilter]);
 
   if (loading) {
     return <div className="p-5 text-muted-foreground">Загрузка...</div>;
@@ -168,6 +174,21 @@ export default function SpecialistList() {
                       {categoryLabels[cat] || cat}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {/* Country filter */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground w-20">Страна:</span>
+              <Select value={countryFilter} onValueChange={(v) => { setCountryFilter(v); setCityFilter('all'); setDistrictFilter('all'); }}>
+                <SelectTrigger className="h-8 text-xs flex-1" data-testid="select-country">
+                  <SelectValue placeholder="Все страны" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Все страны</SelectItem>
+                  <SelectItem value="KZ">Казахстан</SelectItem>
+                  <SelectItem value="UZ">Узбекистан</SelectItem>
                 </SelectContent>
               </Select>
             </div>

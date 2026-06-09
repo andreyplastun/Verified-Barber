@@ -7,13 +7,26 @@ const VALID_KZ_MOBILE_PREFIXES = new Set([
   "771", "775", "776", "777", "778",
 ]);
 
+// Uzbekistan mobile operator codes (2 digits after country code 998)
+const VALID_UZ_MOBILE_PREFIXES = new Set([
+  "20", "33", "50", "55", "77", "88", "90", "91", "93", "94", "95", "97", "98", "99",
+]);
+
+// Validates Kazakhstan (+7, 11 digits) OR Uzbekistan (+998, 12 digits) mobile numbers.
 export function isValidKzPhone(normalizedPhone: string | null): boolean {
   if (!normalizedPhone) return false;
   const digits = normalizedPhone.replace(/\D/g, "");
-  if (digits.length !== 11) return false;
-  if (!digits.startsWith("7")) return false;
-  const prefix3 = digits.substring(1, 4);
-  return VALID_KZ_MOBILE_PREFIXES.has(prefix3);
+  // Kazakhstan: +7 XXX XXXXXXX
+  if (digits.length === 11 && digits.startsWith("7")) {
+    const prefix3 = digits.substring(1, 4);
+    return VALID_KZ_MOBILE_PREFIXES.has(prefix3);
+  }
+  // Uzbekistan: +998 XX XXXXXXX
+  if (digits.length === 12 && digits.startsWith("998")) {
+    const operator = digits.substring(3, 5);
+    return VALID_UZ_MOBILE_PREFIXES.has(operator);
+  }
+  return false;
 }
 
 export function normalizePhone(phone: string | null | undefined): string | null {
@@ -27,6 +40,10 @@ export function normalizePhone(phone: string | null | undefined): string | null 
   }
   if (digits.startsWith("7") && digits.length === 11) {
     return "+7" + digits.slice(1);
+  }
+  // Uzbekistan: +998 XX XXXXXXX (12 digits)
+  if (digits.startsWith("998") && digits.length === 12) {
+    return "+" + digits;
   }
   if (!digits.startsWith("+")) {
     return "+" + digits;

@@ -93,6 +93,7 @@ export const specialists = pgTable("specialists", {
   subcategory: text("subcategory"), // Optional, e.g. "dermatology", "fitness"
   // Location fields
   city: text("city").default("Алматы").notNull(),
+  country: text("country").default("KZ").notNull(), // Country code: 'KZ' (Казахстан) | 'UZ' (Узбекистан)
   district: text("district"), // Optional, e.g. "Бостандыкский район"
   locationNote: text("location_note"), // Private note, not public address
   workAddress: text("work_address"), // Address entered by specialist
@@ -368,6 +369,7 @@ export const specialistSignupSchema = z.object({
   category: z.enum(["barber", "manicure", "cosmetology", "doctor", "trainer", "auto_service"]),
   subcategory: z.string().optional(),
   city: z.string().default("Алматы"),
+  country: z.enum(["KZ", "UZ"]).default("KZ"),
   serviceLocation: z.string().min(1, "Укажите место приёма"),
   phone: z.string().optional(),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),

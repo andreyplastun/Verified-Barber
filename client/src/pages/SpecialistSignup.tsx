@@ -34,6 +34,7 @@ const signupSchema = z.object({
   category: z.enum(["barber", "manicure", "cosmetology", "doctor", "trainer", "auto_service"]),
   subcategory: z.string().optional(),
   city: z.string().default("Алматы"),
+  country: z.enum(["KZ", "UZ"]).default("KZ"),
   serviceLocation: z.string().min(1, "Укажите место приёма"),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
 });
@@ -53,6 +54,7 @@ export default function SpecialistSignup() {
       category: "barber",
       subcategory: "",
       city: "Алматы",
+      country: "KZ",
       serviceLocation: "",
       consentReviews: false,
     },
@@ -233,6 +235,28 @@ export default function SpecialistSignup() {
                       data-testid="input-subcategory"
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="country"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Страна</FormLabel>
+                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                    <FormControl>
+                      <SelectTrigger data-testid="select-country">
+                        <SelectValue placeholder="Выберите страну" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="KZ" data-testid="option-country-KZ">Казахстан</SelectItem>
+                      <SelectItem value="UZ" data-testid="option-country-UZ">Узбекистан</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}
