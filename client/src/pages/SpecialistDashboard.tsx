@@ -35,6 +35,7 @@ export default function SpecialistDashboard() {
   const [bio, setBio] = useState('');
   const [subcategory, setSubcategory] = useState('');
   const [city, setCity] = useState('Алматы');
+  const [country, setCountry] = useState('KZ');
   const [savingBio, setSavingBio] = useState(false);
   const [workAddress, setWorkAddress] = useState('');
   const [workLat, setWorkLat] = useState<number | null>(null);
@@ -608,6 +609,7 @@ export default function SpecialistDashboard() {
       setBookingUrl((specialist as any).bookingUrl || '');
       setWhatsapp((specialist as any).whatsapp || '');
       setInstagram((specialist as any).instagram || '');
+      setCountry((specialist as any).country || 'KZ');
     }
   }, [specialist]);
 
@@ -676,7 +678,7 @@ export default function SpecialistDashboard() {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio, city, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram }),
+        body: JSON.stringify({ bio, city, country, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -841,6 +843,18 @@ export default function SpecialistDashboard() {
           <CardTitle>О барбере</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          <div className="space-y-2">
+            <Label htmlFor="country">Страна</Label>
+            <Select value={country} onValueChange={setCountry} data-testid="select-specialist-country">
+              <SelectTrigger data-testid="select-trigger-country">
+                <SelectValue placeholder="Выберите страну" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="KZ">Казахстан</SelectItem>
+                <SelectItem value="UZ">Узбекистан</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="city">Город</Label>
             <Select value={city} onValueChange={setCity} data-testid="select-specialist-city">

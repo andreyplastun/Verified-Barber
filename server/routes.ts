@@ -2773,7 +2773,7 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       const specialistId = Number(req.params.id);
-      const { bio, city, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram } = req.body;
+      const { bio, city, country, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram } = req.body;
 
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -2792,6 +2792,11 @@ ${magicLink}`;
         return res.status(400).json({ message: "Invalid city" });
       }
 
+      const validCountries = ['KZ', 'UZ'];
+      if (country !== undefined && !validCountries.includes(country)) {
+        return res.status(400).json({ message: "Invalid country" });
+      }
+
       const canEdit = await checkSpecialistOwner(userId, specialistId);
       if (!canEdit) {
         return res.status(403).json({ message: "Forbidden" });
@@ -2800,6 +2805,7 @@ ${magicLink}`;
       await storage.updateSpecialistBio(specialistId, bio);
       const updates: any = {};
       if (city) updates.city = city;
+      if (country) updates.country = country;
       if (subcategory !== undefined) updates.subcategory = subcategory || null;
       // Validate optional string field: returns null for empty/null, validated value otherwise, or throws (sends 400)
       const normalizeOptionalString = (val: any, fieldName: string, maxLen: number, validate?: (v: string) => string | null): string | null | undefined => {
