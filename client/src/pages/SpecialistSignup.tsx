@@ -246,7 +246,7 @@ export default function SpecialistSignup() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>Страна</FormLabel>
-                  <Select onValueChange={field.onChange} defaultValue={field.value}>
+                  <Select onValueChange={(val) => { field.onChange(val); form.setValue("city", val === "UZ" ? "Ташкент" : "Алматы"); }} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger data-testid="select-country">
                         <SelectValue placeholder="Выберите страну" />
@@ -275,8 +275,9 @@ export default function SpecialistSignup() {
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="Алматы">Алматы</SelectItem>
-                      <SelectItem value="Астана">Астана</SelectItem>
+                      {(form.watch("country") === "UZ" ? ["Ташкент"] : ["Алматы", "Астана", "Караганда"]).map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />

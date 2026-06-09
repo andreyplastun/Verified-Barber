@@ -2787,7 +2787,7 @@ ${magicLink}`;
         return res.status(400).json({ message: "Bio must be a string with max 180 characters" });
       }
 
-      const validCities = ['Алматы', 'Астана', 'Караганда'];
+      const validCities = ['Алматы', 'Астана', 'Караганда', 'Ташкент'];
       if (city !== undefined && (!validCities.includes(city))) {
         return res.status(400).json({ message: "Invalid city" });
       }

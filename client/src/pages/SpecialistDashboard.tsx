@@ -845,7 +845,7 @@ export default function SpecialistDashboard() {
         <CardContent className="space-y-3">
           <div className="space-y-2">
             <Label htmlFor="country">Страна</Label>
-            <Select value={country} onValueChange={setCountry} data-testid="select-specialist-country">
+            <Select value={country} onValueChange={(val) => { setCountry(val); const opts = val === 'UZ' ? ['Ташкент'] : ['Алматы', 'Астана', 'Караганда']; if (!opts.includes(city)) setCity(opts[0]); }} data-testid="select-specialist-country">
               <SelectTrigger data-testid="select-trigger-country">
                 <SelectValue placeholder="Выберите страну" />
               </SelectTrigger>
@@ -862,9 +862,9 @@ export default function SpecialistDashboard() {
                 <SelectValue placeholder="Выберите город" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="Алматы">Алматы</SelectItem>
-                <SelectItem value="Астана">Астана</SelectItem>
-                <SelectItem value="Караганда">Караганда</SelectItem>
+                {(country === 'UZ' ? ['Ташкент'] : ['Алматы', 'Астана', 'Караганда']).map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
