@@ -493,8 +493,7 @@ app.use((req, res, next) => {
           try {
             const booking = await storage.getBooking(row.id);
             if (booking) {
-              const { tryCreateMagicLinkForCompletedVisit } = await import("./whatsapp.js");
-              await tryCreateMagicLinkForCompletedVisit(booking, storage, "payment_timeout");
+              await tryCreateMagicLinkForCompletedVisit(row.id, "payment_timeout");
             }
           } catch (mlErr) {
             console.error(`[VISIT_STATUS_AUTO] magic link creation failed for booking ${row.id}:`, mlErr);

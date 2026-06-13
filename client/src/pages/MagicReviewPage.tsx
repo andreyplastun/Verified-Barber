@@ -161,6 +161,7 @@ function toDativeCase(name: string): string {
 
 interface MagicLinkData {
   valid: boolean;
+  token?: string;
   magicLinkId: number;
   userId: string | null;
   bookingId: number;

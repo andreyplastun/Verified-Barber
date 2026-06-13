@@ -88,7 +88,7 @@ async function sendReviewLinkDirect(booking: any, link: string, source: string):
   let phone = booking.normalizedPhone || booking.customerPhone || null;
   if (!phone && booking.clientId) {
     const clientUser = await storage.getUser(booking.clientId);
-    if (clientUser?.phone) phone = clientUser.phone;
+    if ((clientUser as any)?.phone) phone = (clientUser as any).phone;
   }
   if (!phone) {
     console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} NO_PHONE`);
@@ -287,8 +287,8 @@ export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, sou
     let customerPhone = booking.normalizedPhone || booking.customerPhone || null;
     if (!customerPhone && hasClientId) {
       const clientUser = await storage.getUser(booking.clientId!);
-      if (clientUser?.phone) {
-        customerPhone = clientUser.phone;
+      if ((clientUser as any)?.phone) {
+        customerPhone = (clientUser as any).phone;
         console.log(`[MAGIC_LINK] booking=${bookingId}: phone from user profile: ${customerPhone}`);
       }
     }
@@ -2026,7 +2026,7 @@ export async function registerRoutes(
       const isAltegio = booking.bookingSource === "altegio";
       const reviewSource = isAltegio ? "altegio" : "manual";
 
-      let textWeightResult = { textWeight: 1.0, reason: undefined as string | undefined };
+      let textWeightResult: { textWeight: number; reason?: string } = { textWeight: 1.0 };
       let newWeight = 1.0;
       let repeatWeight = 1.0;
 

@@ -61,6 +61,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         onboardingCompleted: userWithRole.onboardingCompleted ?? false,
         onboardingSeenClient: userWithRole.onboardingSeenClient ?? false,
         onboardingSeenPro: userWithRole.onboardingSeenPro ?? false,
+        onboardingPath: userWithRole.onboardingPath ?? null,
+        onboardingPathChosenAt: userWithRole.onboardingPathChosenAt ?? null,
         createdAt: userWithRole.createdAt ?? "",
       });
       return userWithRole;
@@ -81,6 +83,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         onboardingCompleted: userWithRole.onboardingCompleted ?? false,
         onboardingSeenClient: userWithRole.onboardingSeenClient ?? false,
         onboardingSeenPro: userWithRole.onboardingSeenPro ?? false,
+        onboardingPath: userWithRole.onboardingPath ?? null,
+        onboardingPathChosenAt: userWithRole.onboardingPathChosenAt ?? null,
         createdAt: userWithRole.createdAt ?? "",
       };
       setUser(userData);

@@ -432,7 +432,7 @@ export class DatabaseStorage implements IStorage {
       if (statusFilter === "pending") {
         query = query.where(sql`${bookings.status} IN ('scheduled', 'ready_to_complete', 'payment_pending')`) as any;
       } else {
-        query = query.where(eq(bookings.status, statusFilter)) as any;
+        query = query.where(eq(bookings.status, statusFilter as any)) as any;
       }
     }
     const allBookings = limit ? await query.limit(limit) : await query;
