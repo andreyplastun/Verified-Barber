@@ -6,3 +6,4 @@
 - [Onboarding redirect gating](onboarding-redirect-gating.md) — incomplete-onboarding specialists are looped back from `/` and `/specialist-dashboard`; on-onboarding CTAs must link to public ungated routes only.
 - [Production DB location](prod-db-location.md) — rateus prod DB is external Supabase Postgres (run SQL in Supabase SQL Editor), NOT Railway; Railway hosts only the app; dev DB (helium) has no prod rows.
 - [Altegio connected predicate](altegio-connected-predicate.md) — "connected" = altegioStaffId OR (altegioCompanyId + status connected); keep identical across components; webhook resolver needs unique company-only match.
+- [Altegio subscription 403 + marketplace gap](altegio-subscription-and-marketplace.md) — records API 403 "renew subscription" = master's Altegio unpaid (book_staff/company still 200); marketplace-installed cos never in /companies?my=1, so they rely only on webhooks.
