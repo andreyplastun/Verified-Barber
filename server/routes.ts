@@ -3,14 +3,14 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata, waMessages } from "@shared/schema";
+import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata, waMessages, altegioWebhookLog } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
 import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig } from "./altegio";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
 import { appConfig } from "@shared/schema";
 import { enqueueReviewMessage, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
 
@@ -3632,12 +3632,45 @@ ${magicLink}`;
   // Altegio Webhook
   // ==========================================
   app.post("/api/altegio/webhook", async (req, res) => {
+    // Diagnostic: log EVERY incoming hit (even rejected/skipped) so we can verify
+    // whether Altegio events actually arrive and where they get dropped.
+    let webhookLogId: number | null = null;
+    const markWebhookOutcome = async (outcome: string, matchedSpecialistId?: number | null) => {
+      if (!webhookLogId) return;
+      try {
+        await db.update(altegioWebhookLog)
+          .set({ outcome, matchedSpecialistId: matchedSpecialistId ?? null })
+          .where(eq(altegioWebhookLog.id, webhookLogId));
+      } catch {}
+    };
     try {
+      try {
+        const rb = req.body || {};
+        const d = rb?.data || rb || {};
+        const sigPresent = !!(req.headers["x-altegio-signature"] || (req.query as any)?.secret);
+        const inserted = await db.insert(altegioWebhookLog).values({
+          resource: rb?.resource ?? null,
+          status: rb?.status ?? null,
+          eventType: rb?.event ?? rb?.event_type ?? null,
+          companyId: d?.company_id ?? rb?.company_id ?? null,
+          staffId: d?.staff_id ?? d?.employee_id ?? null,
+          appointmentId: d?.id ?? rb?.resource_id ?? null,
+          clientPhone: (d?.client?.phone || d?.client_phone || null),
+          outcome: "received",
+          signaturePresent: sigPresent,
+          rawBody: JSON.stringify(rb).slice(0, 4000),
+        }).returning({ id: altegioWebhookLog.id });
+        webhookLogId = inserted[0]?.id ?? null;
+      } catch (logErr: any) {
+        console.warn("[ALTEGIO] webhook log insert failed:", logErr?.message);
+      }
+
       const webhookSecret = process.env.ALTEGIO_WEBHOOK_SECRET;
       if (webhookSecret) {
         const signature = req.headers["x-altegio-signature"] || req.query.secret;
         if (signature !== webhookSecret) {
           console.warn("[ALTEGIO] Unauthorized webhook attempt, signature mismatch");
+          await markWebhookOutcome("signature_mismatch");
           return res.json({ status: "ok" });
         }
       }
@@ -3663,12 +3696,14 @@ ${magicLink}`;
           console.log(`[ALTEGIO] Financial operation webhook: resource=${resource}, status=${status}`);
         } else {
           console.log(`[ALTEGIO] Non-record webhook: resource=${resource}, status=${status}, skipping`);
+          await markWebhookOutcome("non_record_skip");
           return res.json({ status: "ok" });
         }
       }
 
       if (!eventType) {
         console.warn("[ALTEGIO] Webhook received without event type:", JSON.stringify(body).slice(0, 500));
+        await markWebhookOutcome("no_event_type");
         return res.json({ status: "ok" });
       }
 
@@ -3688,6 +3723,7 @@ ${magicLink}`;
 
       if (!altegioId) {
         console.warn("[ALTEGIO] No appointment ID in payload");
+        await markWebhookOutcome("no_appointment_id");
         return res.json({ status: "ok" });
       }
 
@@ -3699,6 +3735,7 @@ ${magicLink}`;
         case "create": {
           if (existing) {
             console.log(`[ALTEGIO] Appointment ${altegioId} already exists as booking ${existing.id}, skipping create`);
+            await markWebhookOutcome("already_exists", existing.specialistId);
             break;
           }
 
@@ -3715,6 +3752,7 @@ ${magicLink}`;
           }
           if (!specialistId) {
             console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId} — SKIPPING booking creation for appointment ${altegioId} (was: defaulting to id=1)`);
+            await markWebhookOutcome("no_specialist_mapped");
             break;
           }
 
@@ -3743,6 +3781,7 @@ ${magicLink}`;
             bookingSource: "altegio",
           });
           console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}, newClient=${identity.isNewClient}`);
+          await markWebhookOutcome("booking_created", specialistId);
           break;
         }
 
@@ -3765,6 +3804,7 @@ ${magicLink}`;
             }
             if (!specialistId) {
               console.warn(`[ALTEGIO] No specialist mapped for staffId=${staffId}, companyId=${companyId} — SKIPPING booking creation for appointment ${altegioId} (was: defaulting to id=1)`);
+              await markWebhookOutcome("no_specialist_mapped");
               break;
             }
             const appointmentTime = datetime ? new Date(datetime) : new Date();

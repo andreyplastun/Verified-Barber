@@ -463,6 +463,24 @@ export const waOptOuts = pgTable("wa_opt_outs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Diagnostic log of every incoming Altegio webhook hit (even rejected/skipped),
+// so we can verify whether events actually arrive and where they are dropped.
+export const altegioWebhookLog = pgTable("altegio_webhook_log", {
+  id: serial("id").primaryKey(),
+  receivedAt: timestamp("received_at").defaultNow(),
+  resource: text("resource"),
+  status: text("status"),
+  eventType: text("event_type"),
+  companyId: integer("company_id"),
+  staffId: integer("staff_id"),
+  appointmentId: integer("appointment_id"),
+  clientPhone: text("client_phone"),
+  matchedSpecialistId: integer("matched_specialist_id"),
+  outcome: text("outcome"),
+  signaturePresent: boolean("signature_present"),
+  rawBody: text("raw_body"),
+});
+
 export const locations = pgTable("locations", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),

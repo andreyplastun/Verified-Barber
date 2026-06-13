@@ -239,6 +239,21 @@ app.use((req, res, next) => {
         END IF;
       END $$;
 
+      CREATE TABLE IF NOT EXISTS altegio_webhook_log (
+        id serial PRIMARY KEY,
+        received_at timestamp DEFAULT now(),
+        resource text,
+        status text,
+        event_type text,
+        company_id integer,
+        staff_id integer,
+        appointment_id integer,
+        client_phone text,
+        matched_specialist_id integer,
+        outcome text,
+        signature_present boolean,
+        raw_body text
+      );
       CREATE TABLE IF NOT EXISTS wa_messages (
         id SERIAL PRIMARY KEY,
         booking_id INTEGER NOT NULL,
