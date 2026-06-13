@@ -4,4 +4,5 @@
 - [New-specialist review framing](onboarding-new-specialist-framing.md) — dashboard booking copy branches on `isNewSpecialist`; avoid "запись" for new users, keep "complete the visit" warning visible.
 - [Altegio staff vs masters filtering](altegio-staff-master-filter.md) — book_staff over-imports admins; a real master = ≥1 service via book_services?staff_id; filter fail-open.
 - [Onboarding redirect gating](onboarding-redirect-gating.md) — incomplete-onboarding specialists are looped back from `/` and `/specialist-dashboard`; on-onboarding CTAs must link to public ungated routes only.
+- [Production DB location](prod-db-location.md) — rateus prod DB is external Supabase Postgres (run SQL in Supabase SQL Editor), NOT Railway; Railway hosts only the app; dev DB (helium) has no prod rows.
 - [Altegio connected predicate](altegio-connected-predicate.md) — "connected" = altegioStaffId OR (altegioCompanyId + status connected); keep identical across components; webhook resolver needs unique company-only match.
