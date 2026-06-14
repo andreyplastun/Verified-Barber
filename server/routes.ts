@@ -7,7 +7,7 @@ import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Re
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
-import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig, resolveCompanyIdFromBookform, verifyAltegioCompany } from "./altegio";
+import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig, resolveBookform, verifyAltegioCompany } from "./altegio";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
@@ -3483,12 +3483,14 @@ ${magicLink}`;
         }
       }
 
+      let resolvedStaffId: number | null = null; // locked master extracted from a personal booking form
       if (bookformId && !companyId) {
-        const resolved = await resolveCompanyIdFromBookform(bookformId);
+        const resolved = await resolveBookform(bookformId);
         if (resolved) {
-          companyId = resolved;
+          companyId = resolved.companyId;
+          resolvedStaffId = resolved.staffId;
           companyFromLink = true;
-          console.log(`[ALTEGIO] Resolved bookform ${bookformId} -> company_id ${companyId}`);
+          console.log(`[ALTEGIO] Resolved bookform ${bookformId} -> company_id ${companyId}${resolvedStaffId ? `, locked master staff_id ${resolvedStaffId}` : ` (no locked master)`}`);
         } else if (bookformFromSubdomain) {
           // n<id>.alteg.io that doesn't resolve to a bookform — the link is invalid.
           return res.status(400).json({ message: "Не удалось определить салон по этой ссылке. Проверьте ссылку на онлайн-запись Altegio." });
@@ -3515,14 +3517,22 @@ ${magicLink}`;
         }
       }
 
-      if (altegioStaffId && typeof altegioStaffId === "number") {
-        // Staff-list flow (salon with shared token)
+      // Prefer an explicitly selected staff id (salon staff-list flow), otherwise use the master
+      // locked into the personal booking form. This binds directly to the barber so other masters
+      // in the same salon don't create ambiguity.
+      const effectiveStaffId =
+        (typeof altegioStaffId === "number" && altegioStaffId > 0) ? altegioStaffId
+        : (resolvedStaffId && resolvedStaffId > 0) ? resolvedStaffId
+        : null;
+
+      if (effectiveStaffId && companyId) {
+        // Bind to a specific master (explicit staff selection or a personal booking form).
         await storage.updateSpecialist(user.specialistId, {
-          altegioStaffId,
+          altegioStaffId: effectiveStaffId,
           altegioCompanyId: companyId,
           altegioConnectionStatus: "connected",
         } as any);
-        console.log(`[ALTEGIO] Staff selected: specialist=${user.specialistId}, altegioStaffId=${altegioStaffId}, companyId=${companyId}`);
+        console.log(`[ALTEGIO] Connected to master: specialist=${user.specialistId}, altegioStaffId=${effectiveStaffId}, companyId=${companyId}${resolvedStaffId && effectiveStaffId === resolvedStaffId ? " (from personal booking form)" : ""}`);
       } else if (companyId) {
         // Individual specialist: bind company only, staffId auto-filled on first webhook
         await storage.updateSpecialist(user.specialistId, {

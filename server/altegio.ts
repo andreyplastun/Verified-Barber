@@ -128,13 +128,25 @@ export interface AltegioResolvedCompany {
   staff: Array<{ id: number; name: string; specialization: string | null }>;
 }
 
+export interface ResolvedBookform {
+  companyId: number;
+  /**
+   * If the booking form locks the master step to a single professional
+   * (steps[].step === "master", hidden === true, default > 0), this is that
+   * staff_id. A personal link like n<id>.alteg.io that leads straight to one
+   * barber carries his staff_id here, so we can bind directly to him instead of
+   * the whole company. null when the form lets the client pick any master.
+   */
+  staffId: number | null;
+}
+
 /**
  * The number in a public booking link (n<NUMBER>.alteg.io) is a BOOKFORM id,
  * NOT the Altegio company_id. This resolves a bookform id to the real company_id
- * via GET /bookform/{id} -> data.company_id.
+ * AND the locked master (if any) via GET /bookform/{id}.
  * Returns null if the id is not a valid bookform.
  */
-export async function resolveCompanyIdFromBookform(bookformId: number): Promise<number | null> {
+export async function resolveBookform(bookformId: number): Promise<ResolvedBookform | null> {
   const config = getConfig();
   if (!config) return null;
   try {
@@ -144,10 +156,20 @@ export async function resolveCompanyIdFromBookform(bookformId: number): Promise<
     });
     if (!response.ok) return null;
     const json: any = await response.json().catch(() => null);
-    const companyId = json?.data?.company_id;
-    return typeof companyId === "number" && companyId > 0 ? companyId : null;
+    const data = json?.data;
+    const companyId = data?.company_id;
+    if (typeof companyId !== "number" || companyId <= 0) return null;
+    let staffId: number | null = null;
+    const masterStep = Array.isArray(data?.steps)
+      ? data.steps.find((s: any) => s?.step === "master")
+      : null;
+    const masterHidden = masterStep && (masterStep.hidden === true || masterStep.hidden === 1);
+    if (masterHidden && typeof masterStep.default === "number" && masterStep.default > 0) {
+      staffId = masterStep.default;
+    }
+    return { companyId, staffId };
   } catch (err) {
-    console.warn(`[ALTEGIO] resolveCompanyIdFromBookform(${bookformId}) failed:`, err);
+    console.warn(`[ALTEGIO] resolveBookform(${bookformId}) failed:`, err);
     return null;
   }
 }
