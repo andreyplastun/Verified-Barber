@@ -3525,12 +3525,20 @@ ${magicLink}`;
         : (resolvedStaffId && resolvedStaffId > 0) ? resolvedStaffId
         : null;
 
+      // The public "Записаться" button must point to the SPECIALIST's actual booking form, which
+      // is the bookform link (n<bookformId>.alteg.io) — NOT n<companyId> (that is not a valid form).
+      // Persist it so the display link is correct independently of the company_id we matched on.
+      const bookingUrlToStore: string | null = bookformId
+        ? `https://n${bookformId}.alteg.io/`
+        : (typeof altegioLink === "string" && /alteg\.io/i.test(altegioLink) ? altegioLink.trim() : null);
+
       if (effectiveStaffId && companyId) {
         // Bind to a specific master (explicit staff selection or a personal booking form).
         await storage.updateSpecialist(user.specialistId, {
           altegioStaffId: effectiveStaffId,
           altegioCompanyId: companyId,
           altegioConnectionStatus: "connected",
+          ...(bookingUrlToStore ? { bookingUrl: bookingUrlToStore } : {}),
         } as any);
         console.log(`[ALTEGIO] Connected to master: specialist=${user.specialistId}, altegioStaffId=${effectiveStaffId}, companyId=${companyId}${resolvedStaffId && effectiveStaffId === resolvedStaffId ? " (from personal booking form)" : ""}`);
       } else if (companyId) {
@@ -3539,6 +3547,7 @@ ${magicLink}`;
           altegioStaffId: null,
           altegioCompanyId: companyId,
           altegioConnectionStatus: "connected",
+          ...(bookingUrlToStore ? { bookingUrl: bookingUrlToStore } : {}),
         } as any);
         console.log(`[ALTEGIO] Company connected (individual): specialist=${user.specialistId}, companyId=${companyId}`);
       } else {

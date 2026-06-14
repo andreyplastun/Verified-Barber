@@ -986,11 +986,11 @@ export default function SpecialistDashboard() {
                   Мы автоматически получили ссылку на онлайн-запись из Altegio. Клиенты смогут записываться через кнопку «Записаться».
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {(specialist as any)?.altegioCompanyId && (
+                  {((specialist as any)?.bookingUrl || (specialist as any)?.altegioCompanyId) && (
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => window.open(`https://n${(specialist as any).altegioCompanyId}.alteg.io/`, '_blank', 'noopener,noreferrer')}
+                      onClick={() => window.open((specialist as any).bookingUrl || `https://n${(specialist as any).altegioCompanyId}.alteg.io/`, '_blank', 'noopener,noreferrer')}
                       data-testid="button-open-altegio-booking"
                     >
                       Открыть ссылку записи
@@ -1227,7 +1227,7 @@ export default function SpecialistDashboard() {
               </a>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="altegioCompanyInput">Шаг 2. Ваша ссылка или ID компании</Label>
+              <Label htmlFor="altegioCompanyInput">Шаг 2. Ваша персональная ссылка записи</Label>
               <Input
                 id="altegioCompanyInput"
                 value={altegioCompanyInput}
@@ -1236,7 +1236,7 @@ export default function SpecialistDashboard() {
                 data-testid="input-altegio-company"
               />
               <p className="text-xs text-muted-foreground">
-                Вставьте ссылку на вашу онлайн-запись Altegio (например https://n123456.alteg.io) или ID компании и нажмите «Подключить» — отзывы начнут приходить автоматически.
+                Лучше всего вставить <span className="font-medium text-foreground">«Ссылку сотрудника»</span> — она ведёт прямо к вам, и мы привяжем отзывы именно к вам (другие мастера салона не помешают). В Altegio: «Онлайн-запись» → «Ссылки для онлайн-записи» → «Новая ссылка» → «Ссылка сотрудника». Подойдёт и общая ссылка салона, и ID компании.
               </p>
             </div>
             <Button
