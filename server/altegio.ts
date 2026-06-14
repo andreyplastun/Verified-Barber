@@ -120,6 +120,72 @@ function getHeaders(config: AltegioConfig) {
   };
 }
 
+export interface AltegioResolvedCompany {
+  companyId: number;
+  title: string;
+  city: string;
+  active: boolean;
+  staff: Array<{ id: number; name: string; specialization: string | null }>;
+}
+
+/**
+ * The number in a public booking link (n<NUMBER>.alteg.io) is a BOOKFORM id,
+ * NOT the Altegio company_id. This resolves a bookform id to the real company_id
+ * via GET /bookform/{id} -> data.company_id.
+ * Returns null if the id is not a valid bookform.
+ */
+export async function resolveCompanyIdFromBookform(bookformId: number): Promise<number | null> {
+  const config = getConfig();
+  if (!config) return null;
+  try {
+    const response = await fetch(`${ALTEGIO_BASE_URL}/bookform/${bookformId}`, {
+      method: "GET",
+      headers: getHeaders(config),
+    });
+    if (!response.ok) return null;
+    const json: any = await response.json().catch(() => null);
+    const companyId = json?.data?.company_id;
+    return typeof companyId === "number" && companyId > 0 ? companyId : null;
+  } catch (err) {
+    console.warn(`[ALTEGIO] resolveCompanyIdFromBookform(${bookformId}) failed:`, err);
+    return null;
+  }
+}
+
+/**
+ * Verify a company_id is real and reachable, returning title/city/active + staff
+ * so the specialist can confirm "this is my salon" before we save the connection.
+ * Returns null if the company cannot be read.
+ */
+export async function verifyAltegioCompany(companyId: number): Promise<AltegioResolvedCompany | null> {
+  const config = getConfig();
+  if (!config) return null;
+  try {
+    const [companyRes, staffRes] = await Promise.all([
+      fetch(`${ALTEGIO_BASE_URL}/company/${companyId}`, { headers: getHeaders(config) }),
+      fetch(`${ALTEGIO_BASE_URL}/book_staff/${companyId}`, { headers: getHeaders(config) }),
+    ]);
+    if (!companyRes.ok) return null;
+    const cJson: any = await companyRes.json().catch(() => null);
+    const c = cJson?.data;
+    if (!c?.id) return null;
+    const sJson: any = staffRes.ok ? await staffRes.json().catch(() => null) : null;
+    const staff = Array.isArray(sJson?.data)
+      ? sJson.data.map((s: any) => ({ id: s.id, name: s.name, specialization: s.specialization ?? null }))
+      : [];
+    return {
+      companyId: c.id,
+      title: c.public_title || c.title || "",
+      city: c.city || "",
+      active: c.active === 1 || c.active === true,
+      staff,
+    };
+  } catch (err) {
+    console.warn(`[ALTEGIO] verifyAltegioCompany(${companyId}) failed:`, err);
+    return null;
+  }
+}
+
 export type AltegioErrorType = 
   | "token_expired"
   | "access_revoked"

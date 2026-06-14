@@ -7,7 +7,7 @@ import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Re
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
-import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig } from "./altegio";
+import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig, resolveCompanyIdFromBookform, verifyAltegioCompany } from "./altegio";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
@@ -3463,15 +3463,56 @@ ${magicLink}`;
 
       // Individual specialist flow: connect by company id / personal Altegio link (no staff list).
       let companyId: number | null = typeof altegioCompanyId === "number" && altegioCompanyId > 0 ? altegioCompanyId : null;
+      // IMPORTANT: the number in a public booking link (n<NUMBER>.alteg.io) is a BOOKFORM id,
+      // NOT the company_id. Webhooks arrive with the real company_id, so we must resolve it
+      // via GET /bookform/{id} -> company_id, otherwise the connection can never match.
+      let bookformId: number | null = null;
+      let bookformFromSubdomain = false;
+      let companyFromLink = false; // when true, the id is link-derived → verification is mandatory (fail-closed)
       if (!companyId && typeof altegioLink === "string" && altegioLink.trim()) {
         const link = altegioLink.trim();
-        let m: RegExpMatchArray | null = null;
         if (/alteg\.io/i.test(link)) {
-          m = link.match(/[nb](\d{3,})\.alteg\.io/i) || link.match(/(?:company|companies)\/(\d{3,})/i);
+          const nMatch = link.match(/n(\d{3,})\.alteg\.io/i);          // n<id> = bookform id
+          const compMatch = link.match(/(?:company|companies)\/(\d{3,})/i); // explicit company id
+          const bMatch = link.match(/b(\d{3,})\.alteg\.io/i);          // legacy company-subdomain
+          if (nMatch) { bookformId = parseInt(nMatch[1], 10); bookformFromSubdomain = true; }
+          else if (compMatch) { companyId = parseInt(compMatch[1], 10); companyFromLink = true; }
+          else if (bMatch) { companyId = parseInt(bMatch[1], 10); companyFromLink = true; }
         } else if (/^\d{3,}$/.test(link)) {
-          m = link.match(/^(\d{3,})$/);
+          bookformId = parseInt(link, 10); // bare number — try as bookform, fall back to company id (still verified below)
         }
-        if (m) companyId = parseInt(m[1], 10);
+      }
+
+      if (bookformId && !companyId) {
+        const resolved = await resolveCompanyIdFromBookform(bookformId);
+        if (resolved) {
+          companyId = resolved;
+          companyFromLink = true;
+          console.log(`[ALTEGIO] Resolved bookform ${bookformId} -> company_id ${companyId}`);
+        } else if (bookformFromSubdomain) {
+          // n<id>.alteg.io that doesn't resolve to a bookform — the link is invalid.
+          return res.status(400).json({ message: "Не удалось определить салон по этой ссылке. Проверьте ссылку на онлайн-запись Altegio." });
+        } else {
+          // bare number that isn't a bookform — treat as a candidate company id, but it MUST verify below.
+          companyId = bookformId;
+          companyFromLink = true;
+          console.log(`[ALTEGIO] bookform ${bookformId} did not resolve; treating as candidate company_id (will verify)`);
+        }
+      }
+
+      // Verify the resolved company is real before saving. For link-derived ids this is FAIL-CLOSED:
+      // an unverifiable id is rejected so we never silently store a wrong company_id again.
+      let resolvedCompany: Awaited<ReturnType<typeof verifyAltegioCompany>> = null;
+      if (companyId) {
+        resolvedCompany = await verifyAltegioCompany(companyId);
+        if (resolvedCompany) {
+          console.log(`[ALTEGIO] Verified company ${companyId}: "${resolvedCompany.title}" / ${resolvedCompany.city} / active=${resolvedCompany.active} / staff=${resolvedCompany.staff.length}`);
+        } else if (companyFromLink) {
+          return res.status(400).json({ message: "Не удалось подтвердить салон Altegio по этой ссылке. Проверьте ссылку на онлайн-запись Altegio." });
+        } else {
+          // Explicitly-supplied company id or staff-list flow (owned salon) — keep lenient to avoid breaking on a transient API hiccup.
+          console.warn(`[ALTEGIO] Could not verify company ${companyId} (explicit id / staff flow, proceeding anyway)`);
+        }
       }
 
       if (altegioStaffId && typeof altegioStaffId === "number") {
@@ -3495,7 +3536,7 @@ ${magicLink}`;
       }
 
       const updated = await storage.getSpecialist(user.specialistId);
-      res.json(updated);
+      res.json({ ...updated, resolvedCompany });
     } catch (err: any) {
       console.error("[ALTEGIO] Connect error:", err);
       res.status(500).json({ message: err.message });

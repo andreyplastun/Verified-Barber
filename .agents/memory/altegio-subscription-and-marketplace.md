@@ -1,21 +1,24 @@
 ---
-name: Altegio records-403 + marketplace-installed company discovery gap
-description: Why a marketplace-connected independent master can show "connected" yet sync nothing — records-API 403 is an ownership/scope limit (NOT proof of unpaid subscription), and the company-discovery gap forces webhook-only delivery.
+name: Altegio connect — bookform-id vs company_id, and webhook-only masters
+description: Why a marketplace-connected master shows "connected" yet syncs nothing — the booking-link number is a BOOKFORM id (not company_id), and our token can't poll non-owned companies so they are webhook-only.
 ---
 
-# Altegio: records-403 meaning and the marketplace-install discovery gap
+# Altegio: the booking-link number is a bookform id, not a company_id
 
-When debugging "specialist connected Altegio but no visits/reviews come through", probe the Altegio REST API directly with the platform partner+user token before blaming app code:
-`Authorization: Bearer <ALTEGIO_PARTNER_TOKEN>, User <ALTEGIO_USER_TOKEN>`, base `https://api.alteg.io/api/v1`.
+**ROOT CAUSE (proven 2026-06-13).** A master's public online-booking link `https://n<NUMBER>.alteg.io/` contains a **bookform id**, NOT the Altegio `company_id`. The old connect flow regex-extracted that number and stored it as `altegioCompanyId`, so it could never match the real `company_id` that arrives in webhooks → every link-connected master silently broken.
 
-Two findings (finding #1 CORRECTED 2026-06-13):
+Resolve the real company_id with the partner token:
+`GET https://api.alteg.io/api/v1/bookform/<NUMBER>` → `data.company_id`.
+Auth header for all calls: `Authorization: Bearer <ALTEGIO_PARTNER_TOKEN>, User <ALTEGIO_USER_TOKEN>`, `Accept: application/vnd.api.v2+json`.
 
-1. **`GET /records/<companyId>` 403 does NOT prove the location is unpaid/inactive.**
-   For companies we do NOT own under our user token, `book_staff` / `book_services` / `book_dates` return 200 (booking works, location is live) while `GET /records/<companyId>` returns 403 *"renew the subscription for the location with id <companyId>"*. This is a **management-API access/ownership scope limit** for non-owned companies, not a reliable billing signal. Confirmed live: company 1358410 ("Александр Дементьев") — records 403 AND another non-owned company 1237213 also 403, yet the master confirmed `https://n1358410.alteg.io/` is his and fully bookable. Company titles returned by the API were misleading too (do not use them to judge ownership).
-   **Why:** earlier this 403 was wrongly read as "subscription unpaid" and nearly surfaced to the user as a billing error — that conclusion was false. Do NOT show "ваш Altegio неактивен / подписка не оплачена" based on a records-403 alone.
-   **How to apply:** for marketplace-connected masters, the **primary (and only) data channel is incoming webhooks** — we cannot read their records via API anyway. So debugging belongs at the webhook layer, not the records API. Diagnose via the `altegio_webhook_log` table (logs every POST to `/api/altegio/webhook` with an `outcome`): if there are zero rows after a test booking, events are NOT arriving and the fix is Altegio-side (app `mp_1368_trustwho_reviews` actually installed on his company + correct webhook URL in the app settings). The webhook handler code itself is correct (maps company → specialist via `resolveAltegioSpecialist`, creates booking + magic link). Pasting the booking link into our connect card does nothing on Altegio's side.
+Worked example: link `n1358410.alteg.io` → `bookform/1358410` → **company_id 1166849** = "Blue.Dot Barber Boutique", Алматы, active=1, Самал-2 18 (specialist "Александр Дементьев" = staff_id 2830167). Note `company/1358410` resolves to a totally unrelated salon ("Вася Барбер", Киев, active=0) — that's why reading `company/<linkNumber>` looked like garbage; the number was never a company id.
 
-2. **Marketplace-installed companies are NOT returned by `/companies?my=1`.**
-   `fetchAllCompanyIds()` discovers branches via `/companies?my=1`, which only lists companies **owned by our user token**, never companies that merely installed our marketplace app. So independent masters who connected via the marketplace app are unreachable by the background `records`-polling sync — they rely **entirely on incoming webhooks**, with no polling safety net if a webhook is missed.
+**How to apply:** in connect, branch on link shape — `n<id>.alteg.io` = bookform (must resolve via /bookform; if it doesn't resolve the link is invalid), `company/<id>` = explicit company id, `b<id>.alteg.io` = legacy company subdomain, bare number = try bookform then fall back to company id. After resolving, verify with `GET /company/<id>` (+ `/book_staff/<id>`) and show title/city/staff so the master confirms "это мой салон" before saving. Implemented as `resolveCompanyIdFromBookform()` + `verifyAltegioCompany()` in `server/altegio.ts`.
 
-**Connect-flow gap:** `/api/altegio/connect` does ZERO validation — it regex-extracts the first number from the pasted string and saves it as `connected` with no existence/ownership/access check, so a wrong company_id can silently enter and then never match any webhook. Worth adding validation, but do NOT mutate prod connection data without the user's explicit OK.
+# These masters are webhook-only (no polling fallback)
+
+Our partner+user token can read `company/<id>` and `book_staff/<id>` for ANY company globally, BUT for companies we don't **own** it returns 403 "Not enough rights" on `records/<id>` and `hooks_settings/<id>`, and `companies?my=1` lists only our 7 owned branches (25692, 28196, 37245, 64381, 86692, 469919, 766817). So:
+- Owned branches "work" because the background sync **polls** them directly (`my=1` → `records`) — NOT because of the marketplace webhook. This masked the broken connect flow for years.
+- A marketplace-connected outside master can ONLY be reached via **incoming webhooks**. We cannot poll their records and cannot register a webhook for them via API. So fixing the stored company_id is necessary but NOT sufficient — the marketplace app must actually be installed on their company AND its webhook URL configured (in the Altegio developer cabinet for app `mp_1368_trustwho_reviews`). Verify arrival via the `altegio_webhook_log` table after a real test booking.
+
+**Why:** confirmed live — `records/1166849` and `hooks_settings/25692` both 403; 1166849 absent from `my=1`. The diagnostic `altegio_webhook_log` exists precisely to tell "events arrived but mismatched id" vs "events never arrived".
