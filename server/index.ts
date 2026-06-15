@@ -142,6 +142,18 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_company_id integer;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_connection_status text DEFAULT 'disconnected';
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS booking_url text;
+      CREATE TABLE IF NOT EXISTS rating_theme (
+        id serial PRIMARY KEY,
+        enabled boolean NOT NULL DEFAULT false,
+        icon_type text NOT NULL DEFAULT 'emoji',
+        emoji text,
+        image_url text,
+        color text DEFAULT '#facc15',
+        label text,
+        start_date timestamp,
+        end_date timestamp,
+        updated_at timestamp DEFAULT now()
+      );
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS whatsapp text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS instagram text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS country text NOT NULL DEFAULT 'KZ';

@@ -1,4 +1,4 @@
-import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, reviewGeodata, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest } from "@shared/schema";
+import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, gte, asc, sql } from "drizzle-orm";
@@ -16,6 +16,10 @@ export interface IStorage {
   completeOnboarding(id: string): Promise<User | undefined>;
   markOnboardingSeen(id: string, type: "client" | "pro"): Promise<User | undefined>;
   getClients(): Promise<User[]>;
+
+  // Rating theme
+  getRatingTheme(): Promise<RatingTheme | undefined>;
+  upsertRatingTheme(data: Partial<InsertRatingTheme>): Promise<RatingTheme>;
   getBookingsWithDetails(limit?: number, statusFilter?: string): Promise<any[]>;
   getBookingStats(): Promise<{ total: number; pending: number; completed: number; scheduled: number; readyToComplete: number; paymentPending: number }>;
   
@@ -494,6 +498,28 @@ export class DatabaseStorage implements IStorage {
   async getSpecialists(): Promise<Specialist[]> {
     // Return all specialists - filtering by status/isActive is done in routes
     return await db.select().from(specialists);
+  }
+
+  async getRatingTheme(): Promise<RatingTheme | undefined> {
+    const [row] = await db.select().from(ratingTheme).where(eq(ratingTheme.id, 1));
+    return row;
+  }
+
+  async upsertRatingTheme(data: Partial<InsertRatingTheme>): Promise<RatingTheme> {
+    const existing = await this.getRatingTheme();
+    if (existing) {
+      const [row] = await db
+        .update(ratingTheme)
+        .set({ ...data, updatedAt: new Date() } as any)
+        .where(eq(ratingTheme.id, 1))
+        .returning();
+      return row;
+    }
+    const [row] = await db
+      .insert(ratingTheme)
+      .values({ id: 1, ...data } as any)
+      .returning();
+    return row;
   }
 
   async getSpecialist(id: number): Promise<Specialist | undefined> {

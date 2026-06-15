@@ -556,3 +556,25 @@ export type CreateReviewRequest = z.infer<typeof insertReviewSchema>;
 export type SpecialistWithReviews = Specialist & {
   recentReviews?: Review[];
 };
+
+// === RATING THEME (seasonal swap of the star icon, e.g. footballs during the World Cup) ===
+export const ratingTheme = pgTable("rating_theme", {
+  id: serial("id").primaryKey(),
+  enabled: boolean("enabled").notNull().default(false),
+  iconType: text("icon_type").notNull().default("emoji"), // 'emoji' | 'image'
+  emoji: text("emoji"),
+  imageUrl: text("image_url"),
+  color: text("color").default("#facc15"),
+  label: text("label"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertRatingThemeSchema = createInsertSchema(ratingTheme).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export type RatingTheme = typeof ratingTheme.$inferSelect;
+export type InsertRatingTheme = z.infer<typeof insertRatingThemeSchema>;

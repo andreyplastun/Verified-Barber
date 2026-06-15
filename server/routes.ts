@@ -4482,6 +4482,69 @@ ${magicLink}`;
     }
   });
 
+  // RATING THEME (seasonal icon swap)
+  app.get("/api/rating-theme", async (_req, res) => {
+    try {
+      const t = await storage.getRatingTheme();
+      if (!t || !t.enabled) return res.json({ active: false });
+      const now = Date.now();
+      if (t.startDate && now < new Date(t.startDate).getTime()) return res.json({ active: false });
+      if (t.endDate && now > new Date(t.endDate).getTime()) return res.json({ active: false });
+      const value = t.iconType === "image" ? t.imageUrl : t.emoji;
+      if (!value) return res.json({ active: false });
+      res.json({ active: true, iconType: t.iconType, value, color: t.color || "#facc15" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/admin/rating-theme", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const t = await storage.getRatingTheme();
+      res.json(t || null);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/rating-theme", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const { enabled, iconType, emoji, color, label, startDate, endDate } = req.body;
+      const patch: any = {};
+      if (typeof enabled === "boolean") patch.enabled = enabled;
+      if (iconType === "emoji" || iconType === "image") patch.iconType = iconType;
+      if (typeof emoji === "string") patch.emoji = emoji;
+      if (typeof color === "string") patch.color = color;
+      if (typeof label === "string") patch.label = label;
+      patch.startDate = startDate ? new Date(startDate) : null;
+      patch.endDate = endDate ? new Date(endDate) : null;
+      const t = await storage.upsertRatingTheme(patch);
+      console.log(`[RATING_THEME] Updated by admin ${userId}: enabled=${t.enabled} type=${t.iconType}`);
+      res.json(t);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/admin/rating-theme/icon", upload.single("icon"), async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+      await ensureBucketExists();
+      const result = await uploadPhoto(req.file.buffer, req.file.originalname, req.file.mimetype);
+      if (!result) return res.status(500).json({ message: "Failed to upload icon" });
+      const t = await storage.upsertRatingTheme({ imageUrl: result.url, iconType: "image" } as any);
+      res.json(t);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // WHATSAPP ADMIN ROUTES
   // =====================
 
