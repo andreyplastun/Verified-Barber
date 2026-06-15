@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import type { Specialist, User } from "@shared/schema";
 import { categoryLabels } from "@shared/schema";
+import { RatingThemeSettings } from "@/components/admin/RatingThemeSettings";
 
 type BookingWithDetails = {
   id: number;
@@ -87,7 +88,7 @@ export default function AdminDashboard() {
     appointmentTime: "",
   });
 
-  const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims" | "whatsapp">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims" | "whatsapp" | "theme">("bookings");
   const [waMessageLimit, setWaMessageLimit] = useState(50);
   const [waStatsPeriod, setWaStatsPeriod] = useState(7);
   const [specialistFormOpen, setSpecialistFormOpen] = useState(false);
@@ -589,8 +590,8 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims" | "whatsapp")}>
-          <TabsList className="grid w-full grid-cols-4 mb-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims" | "whatsapp" | "theme")}>
+          <TabsList className="grid w-full grid-cols-5 mb-4">
             <TabsTrigger value="bookings" data-testid="tab-bookings-main" className="relative">
               <Calendar className="h-4 w-4 mr-1" />
               <span className="text-xs">Записи</span>
@@ -621,6 +622,10 @@ export default function AdminDashboard() {
             <TabsTrigger value="whatsapp" data-testid="tab-whatsapp-main">
               <Send className="h-4 w-4 mr-1" />
               <span className="text-xs">WA</span>
+            </TabsTrigger>
+            <TabsTrigger value="theme" data-testid="tab-theme-main">
+              <Star className="h-4 w-4 mr-1" />
+              <span className="text-xs">Значок</span>
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -1169,6 +1174,10 @@ export default function AdminDashboard() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {activeTab === "theme" && (
+          <RatingThemeSettings userId={currentUser?.id || ""} />
         )}
 
         {activeTab === "whatsapp" && (

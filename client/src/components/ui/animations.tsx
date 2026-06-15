@@ -1,5 +1,6 @@
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useRef, useEffect, useState, useCallback } from "react";
+import { useRatingTheme } from "@/hooks/use-rating-theme";
 
 const prefersReducedMotion = () =>
   typeof window !== "undefined" &&
@@ -115,6 +116,7 @@ export function InteractiveStarRating({
 }) {
   const [tappedStar, setTappedStar] = useState<number | null>(null);
   const reduced = useReducedMotion();
+  const theme = useRatingTheme();
 
   const handleClick = useCallback(
     (star: number) => {
@@ -148,34 +150,70 @@ export function InteractiveStarRating({
             transition={{ duration: 0.35, ease: "easeOut" }}
             data-testid={`button-star-${star}`}
           >
-            <motion.svg
-              xmlns="http://www.w3.org/2000/svg"
-              width={size}
-              height={size}
-              viewBox="0 0 24 24"
-              fill={active ? "#facc15" : "none"}
-              stroke={active ? "#facc15" : "currentColor"}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={`transition-colors duration-200 ${
-                active ? "" : "text-muted-foreground/30"
-              }`}
-              animate={
-                wasTapped && !reduced
-                  ? {
-                      filter: [
-                        "drop-shadow(0 0 0px rgba(250,204,21,0))",
-                        "drop-shadow(0 0 8px rgba(250,204,21,0.6))",
-                        "drop-shadow(0 0 0px rgba(250,204,21,0))",
-                      ],
-                    }
-                  : {}
-              }
-              transition={{ duration: 0.35, ease: "easeOut" }}
-            >
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </motion.svg>
+            {theme ? (
+              <motion.span
+                className="inline-flex items-center justify-center"
+                style={{ width: size, height: size, fontSize: Math.round(size * 0.92), lineHeight: 1 }}
+                animate={
+                  wasTapped && !reduced
+                    ? {
+                        filter: [
+                          "drop-shadow(0 0 0px rgba(250,204,21,0))",
+                          "drop-shadow(0 0 8px rgba(250,204,21,0.6))",
+                          "drop-shadow(0 0 0px rgba(250,204,21,0))",
+                        ],
+                      }
+                    : {}
+                }
+                transition={{ duration: 0.35, ease: "easeOut" }}
+              >
+                {theme.iconType === "image" ? (
+                  <img
+                    src={theme.value}
+                    alt=""
+                    draggable={false}
+                    style={{ width: size, height: size, objectFit: "contain" }}
+                    className={`transition-all duration-200 ${active ? "" : "grayscale opacity-30"}`}
+                  />
+                ) : (
+                  <span
+                    className={`transition-all duration-200 ${active ? "" : "opacity-30"}`}
+                    style={{ filter: active ? undefined : "grayscale(1)" }}
+                  >
+                    {theme.value}
+                  </span>
+                )}
+              </motion.span>
+            ) : (
+              <motion.svg
+                xmlns="http://www.w3.org/2000/svg"
+                width={size}
+                height={size}
+                viewBox="0 0 24 24"
+                fill={active ? "#facc15" : "none"}
+                stroke={active ? "#facc15" : "currentColor"}
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className={`transition-colors duration-200 ${
+                  active ? "" : "text-muted-foreground/30"
+                }`}
+                animate={
+                  wasTapped && !reduced
+                    ? {
+                        filter: [
+                          "drop-shadow(0 0 0px rgba(250,204,21,0))",
+                          "drop-shadow(0 0 8px rgba(250,204,21,0.6))",
+                          "drop-shadow(0 0 0px rgba(250,204,21,0))",
+                        ],
+                      }
+                    : {}
+                }
+                transition={{ duration: 0.35, ease: "easeOut" }}
+              >
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </motion.svg>
+            )}
           </motion.button>
         );
       })}
