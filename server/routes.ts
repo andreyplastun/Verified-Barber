@@ -26,10 +26,11 @@ function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: numbe
 }
 
 function calculateGeoWeight(distanceMeters: number | null): number {
-  if (distanceMeters === null) return 0.5;
-  if (distanceMeters <= 200) return 1.0;
-  if (distanceMeters <= 1000) return 0.7;
-  return 0.4;
+  // Geo is a BONUS for confirmed on-site presence, never a penalty.
+  // Reviewing from near the salon → small boost; anything else stays neutral.
+  // Legit clients often review later from home (far/no GPS) — that must NOT be punished.
+  if (distanceMeters !== null && distanceMeters <= 200) return 1.05;
+  return 1.0;
 }
 
 function isSpecialistAction(source: string): boolean {
@@ -2055,7 +2056,7 @@ export async function registerRoutes(
       try {
         const geoStatusValue = clientGeoStatus || (geoLat != null ? "ok" : "no_permission");
         let distanceMeters: number | null = null;
-        let geoWeight = 0.5;
+        let geoWeight = 1.0;
         let matchedLocationId: number | null = null;
 
         if (isAltegio) {
@@ -2067,29 +2068,10 @@ export async function registerRoutes(
             geoWeight = calculateGeoWeight(distanceMeters);
             console.log(`[GEO] Distance: review=${review.id} dist=${distanceMeters}m geoWeight=${geoWeight}`);
           }
-
-          if (booking.appointmentTime) {
-            const visitTime = new Date(booking.appointmentTime).getTime();
-            const timeDiffHours = Math.abs(Date.now() - visitTime) / (1000 * 60 * 60);
-            if (timeDiffHours > 2) {
-              geoWeight = geoWeight * 0.3;
-              console.log(`[GEO] Time penalty: review=${review.id} timeDiff=${timeDiffHours.toFixed(1)}h geoWeight=${geoWeight}`);
-            }
-          }
         }
 
+        // IP is recorded for monitoring only — it no longer affects review weight.
         const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || null;
-
-        if (clientIp && geoLat != null && !isAltegio) {
-          const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-          const [ipCount] = await db.select({ count: sql<number>`count(*)` })
-            .from(reviewGeodata)
-            .where(sql`${reviewGeodata.ipAddress} = ${clientIp} AND ${reviewGeodata.capturedAt} >= ${oneHourAgo}`);
-          if (Number(ipCount?.count || 0) >= 5) {
-            geoWeight = geoWeight * 0.7;
-            console.log(`[GEO] IP penalty: review=${review.id} ip=${clientIp} count=${ipCount?.count} geoWeight=${geoWeight}`);
-          }
-        }
 
         let finalWeight: number;
         if (isAltegio) {
