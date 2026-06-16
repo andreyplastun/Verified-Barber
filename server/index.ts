@@ -378,6 +378,11 @@ app.use((req, res, next) => {
         AND b.booking_source = 'specialist_manual'
         AND s.altegio_staff_id IS NOT NULL
         AND b.visit_trust_weight > 0
+        AND b.created_at >= (
+          SELECT MIN(a.created_at) FROM bookings a
+          WHERE a.specialist_id = b.specialist_id
+            AND a.booking_source = 'altegio'
+        )
       RETURNING b.specialist_id
     `);
     if (antifraudResult.rowCount && antifraudResult.rowCount > 0) {
