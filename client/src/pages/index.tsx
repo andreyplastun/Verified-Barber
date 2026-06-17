@@ -345,9 +345,26 @@ export default function SpecialistList() {
 
       {/* List */}
       <main className="px-4 py-4 space-y-3">
-        {filteredAndSortedSpecialists.map((specialist, index) => {
-          const dist = (geoStatus === 'active' && userCoords) ? specDistance(specialist as any, userCoords) : null;
-          return (
+        {filteredAndSortedSpecialists.flatMap((specialist, index) => {
+          const isGeo = geoStatus === 'active' && !!userCoords;
+          const dist = isGeo ? specDistance(specialist as any, userCoords!) : null;
+          const hasDist = dist != null && isFinite(dist);
+          const prevDist = isGeo && index > 0 ? specDistance(filteredAndSortedSpecialists[index - 1] as any, userCoords!) : null;
+          const showNearbyHeader = isGeo && index === 0 && hasDist;
+          const showNoAddressDivider = isGeo && !hasDist && prevDist != null && isFinite(prevDist);
+          return [
+          showNearbyHeader && (
+              <div key={`hdr-${specialist.id}`} className="px-1 pb-1" data-testid="header-nearby">
+                <span className="text-xs font-semibold text-muted-foreground">Рядом с вами</span>
+              </div>
+            ),
+          showNoAddressDivider && (
+              <div key={`div-${specialist.id}`} className="flex items-center gap-3 px-1 pt-1" data-testid="divider-no-address">
+                <div className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground/60 whitespace-nowrap">Адрес не указан</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+            ),
           <motion.div
             key={specialist.id}
             initial={{ opacity: 0, y: 10 }}
@@ -486,8 +503,8 @@ export default function SpecialistList() {
             </Link>
             <BookingButton specialist={specialist as any} variant="feed" />
             </div>
-          </motion.div>
-          );
+          </motion.div>,
+          ];
         })}
 
         {filteredAndSortedSpecialists.length === 0 && (
