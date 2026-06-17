@@ -49,6 +49,7 @@ function deriveSteps(
     add_client: isAltegio || createdVisits > 0,
     bio: !!s.bio && String(s.bio).trim().length > 0,
     first_review: (s.reviewCount || 0) >= 1,
+    address: s.workLat != null && s.workLng != null,
   };
 }
 
@@ -59,6 +60,7 @@ const STEP_ANCHORS: Record<ActivationStepKey, string | undefined> = {
   add_client: undefined,
   bio: "bio-section",
   first_review: undefined,
+  address: "bio-section",
 };
 
 export default function ActivationProgress({ specialist, onScrollTo, createdVisits = 0, onAddClient }: Props) {

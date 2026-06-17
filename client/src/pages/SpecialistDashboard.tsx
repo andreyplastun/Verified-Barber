@@ -792,6 +792,30 @@ export default function SpecialistDashboard() {
         }}
       />
 
+      {specialist && ((specialist as any).workLat == null || (specialist as any).workLng == null) && (
+        <div
+          className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/30 p-4"
+          data-testid="banner-add-address"
+        >
+          <p className="text-sm font-semibold text-foreground">Укажите адрес места работы</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Клиенты смогут найти вас в списке «Рядом со мной» и увидят расстояние до вас.
+          </p>
+          <Button
+            className="mt-3"
+            size="sm"
+            onClick={() => {
+              const el = document.getElementById('bio-section');
+              el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              setTimeout(() => (document.getElementById('workAddress') as HTMLInputElement | null)?.focus(), 350);
+            }}
+            data-testid="button-add-address"
+          >
+            Указать адрес
+          </Button>
+        </div>
+      )}
+
       <OnboardingPathModal />
 
       {loadingSpecialist ? (

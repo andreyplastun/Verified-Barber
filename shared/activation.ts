@@ -4,7 +4,8 @@ export type ActivationStepKey =
   | "contact"
   | "add_client"
   | "first_review"
-  | "bio";
+  | "bio"
+  | "address";
 
 export interface ActivationStepConfig {
   key: ActivationStepKey;
@@ -14,9 +15,10 @@ export interface ActivationStepConfig {
   description?: string;
 }
 
-// NOTE: `add_client` carries weight 0 — it is a guidance/gating step shown only
-// to specialists WITHOUT Altegio (who must create visits manually). It must not
-// affect the activation score, so total weight stays at 100.
+// NOTE: `add_client` and `address` carry weight 0 — guidance steps that must not
+// affect the activation score, so total weight stays at 100. `add_client` is shown
+// only to specialists WITHOUT Altegio (who must create visits manually). `address`
+// is optional but powers the "Рядом со мной" geo-sort on the client list.
 export const ACTIVATION_STEPS: ActivationStepConfig[] = [
   { key: "photo", weight: 20, required: true, label: "Добавить фото" },
   { key: "price", weight: 15, required: true, label: "Указать основную услугу и цену" },
@@ -24,6 +26,7 @@ export const ACTIVATION_STEPS: ActivationStepConfig[] = [
   { key: "add_client", weight: 0, required: true, label: "Добавить первого клиента" },
   { key: "first_review", weight: 30, required: true, label: "Получить первый отзыв" },
   { key: "bio", weight: 15, required: false, label: "Добавить описание" },
+  { key: "address", weight: 0, required: false, label: "Указать адрес места работы" },
 ];
 
 // Steps that gate a specialist's ability to start collecting reviews

@@ -8,6 +8,7 @@ import { AnimatedRating, AnimatedStar } from "@/components/ui/animations";
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import {
   Popover,
@@ -35,13 +36,38 @@ const categoryLabels: Record<string, string> = {
   auto_service: "Автосервис"
 };
 
+type GeoStatus = 'idle' | 'loading' | 'active' | 'denied';
+
+function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function specDistance(s: any, c: { lat: number; lng: number }): number {
+  if (s?.workLat == null || s?.workLng == null) return Infinity;
+  return haversineMeters(c.lat, c.lng, Number(s.workLat), Number(s.workLng));
+}
+
+function formatDistance(m: number): string {
+  if (!isFinite(m)) return '';
+  if (m < 1000) return `${Math.round(m / 10) * 10} м`;
+  return `${(m / 1000).toFixed(1)} км`;
+}
+
 export default function SpecialistList() {
   const { data: specialists, isLoading } = useSpecialists();
   const { user, role, loading } = useAuth();
   const [, setLocation] = useLocation();
   
+  const { toast } = useToast();
   const [showFilters, setShowFilters] = useState(false);
   const [sortBy, setSortBy] = useState<SortOption>('default');
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [geoStatus, setGeoStatus] = useState<GeoStatus>('idle');
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [countryFilter, setCountryFilter] = useState<string>('all');
@@ -91,8 +117,10 @@ export default function SpecialistList() {
       result = result.filter(s => ((s as any).validReviewCount || 0) < 10);
     }
     
-    // Apply sorting - matches backend logic exactly
-    if (sortBy === 'default') {
+    // Geo sort (when active) takes precedence over the chosen sort option
+    if (geoStatus === 'active' && userCoords) {
+      result.sort((a, b) => specDistance(a, userCoords) - specDistance(b, userCoords));
+    } else if (sortBy === 'default') {
       // Default: formed rating first, then by trustedRating, then by reviewCount
       result.sort((a, b) => {
         // 1. Formed rating first (validReviewCount >= 10)
@@ -115,7 +143,30 @@ export default function SpecialistList() {
     }
     
     return result;
-  }, [specialists, sortBy, ratingFilter, categoryFilter, countryFilter, cityFilter, districtFilter]);
+  }, [specialists, sortBy, ratingFilter, categoryFilter, countryFilter, cityFilter, districtFilter, geoStatus, userCoords]);
+
+  const handleGeoSort = () => {
+    if (geoStatus === 'active') {
+      setGeoStatus('idle');
+      return;
+    }
+    if (!('geolocation' in navigator)) {
+      toast({ description: 'Геолокация недоступна на этом устройстве' });
+      return;
+    }
+    setGeoStatus('loading');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGeoStatus('active');
+      },
+      () => {
+        setGeoStatus('denied');
+        toast({ description: 'Не удалось определить местоположение. Разрешите доступ к геолокации в браузере.' });
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
 
   if (loading) {
     return <div className="p-5 text-muted-foreground">Загрузка...</div>;
@@ -156,7 +207,23 @@ export default function SpecialistList() {
             <ChevronDown size={14} className={`ml-1 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
           </Button>
         </div>
-        
+
+        {/* Geo "near me" sort — top-level, above filters */}
+        <div className="mt-3">
+          <button
+            onClick={handleGeoSort}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              geoStatus === 'active'
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-muted text-foreground hover:bg-border'
+            }`}
+            data-testid="button-geo-sort"
+          >
+            <MapPin size={14} />
+            {geoStatus === 'loading' ? 'Определяем…' : 'Рядом со мной'}
+          </button>
+        </div>
+
         {/* Filters panel */}
         {showFilters && (
           <div className="mt-4 pt-4 border-t border-border space-y-4">
@@ -260,7 +327,7 @@ export default function SpecialistList() {
               ].map((opt) => (
                 <button
                   key={opt.value}
-                  onClick={() => setSortBy(opt.value as SortOption)}
+                  onClick={() => { setSortBy(opt.value as SortOption); setGeoStatus('idle'); }}
                   className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                     sortBy === opt.value
                       ? 'bg-primary text-primary-foreground'
@@ -278,7 +345,9 @@ export default function SpecialistList() {
 
       {/* List */}
       <main className="px-4 py-4 space-y-3">
-        {filteredAndSortedSpecialists.map((specialist, index) => (
+        {filteredAndSortedSpecialists.map((specialist, index) => {
+          const dist = (geoStatus === 'active' && userCoords) ? specDistance(specialist as any, userCoords) : null;
+          return (
           <motion.div
             key={specialist.id}
             initial={{ opacity: 0, y: 10 }}
@@ -315,6 +384,14 @@ export default function SpecialistList() {
                         {(specialist as any).city || 'Алматы'}
                         {(specialist as any).district && ` · ${(specialist as any).district}`}
                       </span>
+                      {dist != null && isFinite(dist) && (
+                        <span className="ml-2 font-medium text-primary" data-testid={`text-distance-${specialist.id}`}>
+                          {formatDistance(dist)}
+                        </span>
+                      )}
+                      {dist != null && !isFinite(dist) && (
+                        <span className="ml-2 text-muted-foreground/50">адрес не указан</span>
+                      )}
                     </div>
                     {/* Base service price */}
                     {(specialist as any).baseServiceName && (specialist as any).baseServicePrice && (
@@ -410,7 +487,8 @@ export default function SpecialistList() {
             <BookingButton specialist={specialist as any} variant="feed" />
             </div>
           </motion.div>
-        ))}
+          );
+        })}
 
         {filteredAndSortedSpecialists.length === 0 && (
           <div className="text-center py-16 px-4">
