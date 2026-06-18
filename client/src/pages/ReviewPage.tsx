@@ -422,7 +422,7 @@ export default function ReviewPage() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium ml-1">Комментарий <span className="text-muted-foreground">(необязательно)</span></label>
+          <label className="text-sm font-medium ml-1">Комментарий</label>
           <textarea
             rows={3}
             className="w-full bg-card border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"

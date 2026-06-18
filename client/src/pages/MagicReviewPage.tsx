@@ -17,7 +17,6 @@ const t = {
     howWasVisit: (name: string) => `Как прошёл визит к ${name}?`,
     shareImpressions: (name: string) => `${name}, поделитесь впечатлениями`,
     commentLabel: "Комментарий",
-    commentOptional: "(необязательно)",
     commentPlaceholder: "Добавьте детали...",
     submitting: "Отправка...",
     submitButton: "Оставить отзыв",
@@ -71,7 +70,6 @@ const t = {
     howWasVisit: (name: string) => `${name} қабылдауы қалай өтті?`,
     shareImpressions: (name: string) => `${name}, әсеріңізбен бөлісіңіз`,
     commentLabel: "Пікір",
-    commentOptional: "(міндетті емес)",
     commentPlaceholder: "Толығырақ жазыңыз...",
     submitting: "Жіберу...",
     submitButton: "Пікір қалдыру",
@@ -685,7 +683,7 @@ export default function MagicReviewPage() {
         </div>
 
         <div className="space-y-2">
-          <label className="text-sm font-medium ml-1">{L.commentLabel} <span className="text-muted-foreground">{L.commentOptional}</span></label>
+          <label className="text-sm font-medium ml-1">{L.commentLabel}</label>
           <textarea
             rows={3}
             className="w-full bg-card border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
@@ -697,7 +695,7 @@ export default function MagicReviewPage() {
         </div>
 
         <div className="text-center pt-2">
-          <Link href="/how-trust-works" className="text-xs text-muted-foreground hover:text-foreground transition-colors" data-testid="link-how-trust-works-magic">
+          <Link href="/how-trust-works" className="text-xs text-primary underline underline-offset-2 hover:text-primary/80 transition-colors" data-testid="link-how-trust-works-magic">
             {L.trustLink}
           </Link>
         </div>

@@ -116,7 +116,7 @@ export function InteractiveStarRating({
 }) {
   const [tappedStar, setTappedStar] = useState<number | null>(null);
   const reduced = useReducedMotion();
-  const theme = useRatingTheme();
+  const { theme, isResolved } = useRatingTheme();
 
   const handleClick = useCallback(
     (star: number) => {
@@ -150,7 +150,13 @@ export function InteractiveStarRating({
             transition={{ duration: 0.35, ease: "easeOut" }}
             data-testid={`button-star-${star}`}
           >
-            {theme ? (
+            {!isResolved ? (
+              <span
+                className="inline-block"
+                style={{ width: size, height: size }}
+                aria-hidden="true"
+              />
+            ) : theme ? (
               <motion.span
                 className="inline-flex items-center justify-center"
                 style={{ width: size, height: size, fontSize: Math.round(size * 0.92), lineHeight: 1 }}
