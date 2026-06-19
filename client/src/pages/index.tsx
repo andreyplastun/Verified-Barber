@@ -1,13 +1,14 @@
 import { useSpecialists } from "@/hooks/use-specialists";
 import { LegalFooter } from "@/components/LegalFooter";
 import { Link, useLocation, useRoute } from "wouter";
-import { MapPin, ArrowRight, Filter, ChevronDown, Star, Info } from "lucide-react";
+import { MapPin, ArrowRight, Filter, ChevronDown, Star, Info, Search, X } from "lucide-react";
 import { BookingButton } from "@/components/BookingButton";
 import { motion } from "framer-motion";
 import { AnimatedRating, AnimatedStar } from "@/components/ui/animations";
 import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -73,6 +74,7 @@ export default function SpecialistList() {
   const [countryFilter, setCountryFilter] = useState<string>('all');
   const [cityFilter, setCityFilter] = useState<string>('all');
   const [districtFilter, setDistrictFilter] = useState<string>('all');
+  const [search, setSearch] = useState('');
   
   // Fetch filter options
   const { data: filterOptions } = useQuery<{ cities: string[]; districts: string[]; categories: string[] }>({
@@ -84,6 +86,23 @@ export default function SpecialistList() {
       setLocation('/specialist-dashboard');
     }
   }, [loading, role, setLocation]);
+
+  // Restore feed scroll position after returning from a specialist card.
+  // Save on unmount (e.g. when opening a card), restore once the list is ready.
+  const scrollRestored = useRef(false);
+  useEffect(() => {
+    if (scrollRestored.current) return;
+    if (isLoading || !specialists) return;
+    const saved = sessionStorage.getItem('feed-scroll');
+    if (saved) {
+      const y = parseInt(saved, 10);
+      if (!Number.isNaN(y)) {
+        requestAnimationFrame(() => window.scrollTo(0, y));
+      }
+      sessionStorage.removeItem('feed-scroll');
+    }
+    scrollRestored.current = true;
+  }, [isLoading, specialists]);
 
   const filteredAndSortedSpecialists = useMemo(() => {
     if (!specialists) return [];
@@ -108,6 +127,15 @@ export default function SpecialistList() {
     // Apply district filter
     if (districtFilter !== 'all') {
       result = result.filter(s => (s as any).district === districtFilter);
+    }
+
+    // Apply name search
+    const q = search.trim().toLowerCase();
+    if (q) {
+      result = result.filter(s =>
+        s.name.toLowerCase().includes(q) ||
+        ((s as any).specialty || '').toLowerCase().includes(q)
+      );
     }
     
     // Apply rating filter (using validReviewCount for "Сформированный рейтинг" status)
@@ -143,7 +171,7 @@ export default function SpecialistList() {
     }
     
     return result;
-  }, [specialists, sortBy, ratingFilter, categoryFilter, countryFilter, cityFilter, districtFilter, geoStatus, userCoords]);
+  }, [specialists, sortBy, ratingFilter, categoryFilter, countryFilter, cityFilter, districtFilter, geoStatus, userCoords, search]);
 
   const handleGeoSort = () => {
     if (geoStatus === 'active') {
@@ -206,6 +234,29 @@ export default function SpecialistList() {
             Фильтры
             <ChevronDown size={14} className={`ml-1 transition-transform ${showFilters ? 'rotate-180' : ''}`} />
           </Button>
+        </div>
+
+        {/* Search by name */}
+        <div className="mt-3 relative">
+          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+          <Input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Поиск по имени"
+            className="pl-9 pr-9 h-10"
+            data-testid="input-search"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+              data-testid="button-clear-search"
+              aria-label="Очистить поиск"
+            >
+              <X size={16} />
+            </button>
+          )}
         </div>
 
         {/* Geo "near me" sort — top-level, above filters */}
@@ -372,7 +423,10 @@ export default function SpecialistList() {
             transition={{ delay: index * 0.05 }}
           >
             <div className="group bg-card rounded-xl border border-border shadow-sm transition-transform duration-150 p-3">
-            <Link href={`/specialist/${specialist.id}`}>
+            <Link
+              href={`/specialist/${specialist.id}`}
+              onClick={() => sessionStorage.setItem('feed-scroll', String(window.scrollY))}
+            >
               <div className="cursor-pointer active:scale-[0.99]">
                 {/* Top row: Avatar + Basic info + Trust block */}
                 <div className="flex gap-3">
