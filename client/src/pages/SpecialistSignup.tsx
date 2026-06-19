@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/select";
 import { categoryLabels } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
+import { trackEvent } from "@/lib/analytics";
 import { LegalFooter } from "@/components/LegalFooter";
 import { ArrowLeft, CheckCircle } from "lucide-react";
 
@@ -44,6 +45,10 @@ type SignupFormData = z.infer<typeof signupSchema>;
 export default function SpecialistSignup() {
   const [, setLocation] = useLocation();
   const [isSuccess, setIsSuccess] = useState(false);
+
+  useEffect(() => {
+    trackEvent("signup_page_view");
+  }, []);
 
   const form = useForm<SignupFormData>({
     resolver: zodResolver(signupSchema),
@@ -66,6 +71,7 @@ export default function SpecialistSignup() {
       return response.json();
     },
     onSuccess: () => {
+      trackEvent("signup_completed");
       setIsSuccess(true);
     },
     onError: (error: Error) => {
@@ -339,6 +345,7 @@ export default function SpecialistSignup() {
               type="submit"
               className="w-full"
               disabled={signupMutation.isPending}
+              onClick={() => trackEvent("signup_submit_attempt")}
               data-testid="button-submit"
             >
               {signupMutation.isPending ? "Отправка..." : "Отправить заявку"}

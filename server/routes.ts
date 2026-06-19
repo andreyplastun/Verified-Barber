@@ -1842,6 +1842,10 @@ export async function registerRoutes(
         'review_screen_loaded',
         'profile_view',
         'booking_click',
+        // Specialist signup funnel
+        'signup_page_view',
+        'signup_submit_attempt',
+        'signup_completed',
         // Soft activation events (v117)
         'activation_step_completed',
         'activation_banner_click',
