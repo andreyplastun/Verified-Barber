@@ -231,6 +231,7 @@ export const analyticsEvents = pgTable("analytics_events", {
   userAgent: text("user_agent"), // Full user agent string
   deviceType: text("device_type"), // 'mobile' or 'desktop'
   source: text("source").default("whatsapp"), // Source of the link
+  anonId: text("anon_id"), // Anonymous browser id (localStorage) for unique-visitor counting
   createdAt: timestamp("created_at").defaultNow(),
 });
 

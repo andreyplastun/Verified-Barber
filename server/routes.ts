@@ -1848,10 +1848,11 @@ export async function registerRoutes(
   // Track analytics event (no auth required - fire and forget from client)
   app.post("/api/analytics/event", async (req, res) => {
     try {
-      const { eventType, magicLinkId, bookingId, specialistId, sentAt, userAgent, source } = req.body;
+      const { eventType, magicLinkId, bookingId, specialistId, sentAt, userAgent, source, anonId } = req.body;
       
       // Validate eventType is one of allowed values
       const allowedEventTypes = [
+        'app_open',
         'magic_link_opened',
         'review_screen_loaded',
         'profile_view',
@@ -1893,6 +1894,7 @@ export async function registerRoutes(
         userAgent,
         deviceType,
         source: source || 'whatsapp',
+        anonId: typeof anonId === 'string' && anonId.trim() ? anonId.trim().slice(0, 64) : undefined,
       });
       
       res.json({ success: true });
@@ -4668,7 +4670,11 @@ ${magicLink}`;
       const aeCond = dateCol('created_at');
 
       const visits = await db.execute(sql`
-        SELECT COUNT(DISTINCT user_agent) AS uniques, COUNT(*) AS total
+        SELECT
+          COUNT(*) FILTER (WHERE event_type = 'app_open') AS app_opens,
+          COUNT(DISTINCT anon_id) FILTER (WHERE anon_id IS NOT NULL AND anon_id <> '') AS unique_visitors,
+          COUNT(DISTINCT user_agent) AS ua_uniques,
+          COUNT(*) AS total
         FROM analytics_events WHERE ${aeCond}
       `);
       const profileViews = await db.execute(sql`
@@ -4703,10 +4709,13 @@ ${magicLink}`;
         (registrations.rows as any[]).map(r => [r.role, Number(r.cnt)])
       );
 
+      const vrow = visits.rows[0] as any;
       res.json({
         period,
-        visits: Number((visits.rows[0] as any)?.uniques || 0),
-        totalEvents: Number((visits.rows[0] as any)?.total || 0),
+        visits: Number(vrow?.app_opens || 0),
+        uniqueVisitors: Number(vrow?.unique_visitors || 0),
+        deviceUniques: Number(vrow?.ua_uniques || 0),
+        totalEvents: Number(vrow?.total || 0),
         registrations: {
           total: (regByRole.specialist || 0) + (regByRole.client || 0) + (regByRole.admin || 0),
           specialist: regByRole.specialist || 0,

@@ -197,6 +197,7 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_requested_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS completion_type text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_trust_weight real;
+      ALTER TABLE analytics_events ADD COLUMN IF NOT EXISTS anon_id text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS trusted_reviews_count integer DEFAULT 0;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS verified_visit_score integer DEFAULT 0;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS payment_status text DEFAULT 'unpaid' NOT NULL;

@@ -93,6 +93,8 @@ export default function AdminDashboard() {
   const { data: stats, isLoading: statsLoading } = useQuery<{
     period: string;
     visits: number;
+    uniqueVisitors: number;
+    deviceUniques: number;
     totalEvents: number;
     registrations: { total: number; specialist: number; client: number };
     profileViews: number;
@@ -683,7 +685,8 @@ export default function AdminDashboard() {
               <>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   {[
-                    { icon: Users, label: "Заходов людей (≈)", value: stats.visits, testid: "stat-visits" },
+                    { icon: Users, label: "Заходов в приложение", value: stats.visits, testid: "stat-visits" },
+                    { icon: Eye, label: "Уникальных людей", value: stats.uniqueVisitors, testid: "stat-unique-visitors" },
                     { icon: UserPlus, label: "Регистраций", value: stats.registrations.total, testid: "stat-registrations" },
                     { icon: Eye, label: "Открытий профилей", value: stats.profileViews, testid: "stat-profile-views" },
                     { icon: MousePointerClick, label: "Попыток записаться", value: stats.bookingClicks, testid: "stat-booking-clicks" },
@@ -730,7 +733,7 @@ export default function AdminDashboard() {
                 </Card>
 
                 <p className="text-[11px] text-muted-foreground leading-snug" data-testid="text-stats-note">
-                  «Заходов людей» — это примерное число разных устройств, сделавших хоть какое-то действие (открыли профиль, отзыв и т.д.). Точного счётчика визитов и уникальных людей пока нет.
+                  «Заходов в приложение» — сколько раз открывали сайт (каждая загрузка). «Уникальных людей» — разные браузеры/устройства (по анонимному id). Точный подсчёт начался с момента включения, поэтому за прошлые дни эти цифры могут быть 0.
                 </p>
               </>
             ) : (

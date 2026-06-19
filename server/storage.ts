@@ -103,6 +103,7 @@ export interface IStorage {
     userAgent?: string;
     deviceType?: string;
     source?: string;
+    anonId?: string;
   }): Promise<void>;
   
   // Claim Requests
@@ -1168,6 +1169,7 @@ export class DatabaseStorage implements IStorage {
     userAgent?: string;
     deviceType?: string;
     source?: string;
+    anonId?: string;
   }): Promise<void> {
     await db.insert(analyticsEvents).values({
       eventType: event.eventType,
@@ -1178,6 +1180,7 @@ export class DatabaseStorage implements IStorage {
       userAgent: event.userAgent,
       deviceType: event.deviceType,
       source: event.source || 'whatsapp',
+      anonId: event.anonId,
     });
     console.log(`[ANALYTICS] Event tracked: ${event.eventType} for specialist ${event.specialistId}, booking ${event.bookingId}`);
   }
