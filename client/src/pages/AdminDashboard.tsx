@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2, Send, Power, PowerOff, AlertTriangle, Star } from "lucide-react";
+import { Calendar, Users, CheckCircle, Clock, Plus, ShieldCheck, MessageCircle, Copy, Check, UserCheck, UserX, Edit2, Trash2, Send, Power, PowerOff, AlertTriangle, Star, BarChart3, Eye, MousePointerClick, FileEdit, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -88,7 +88,29 @@ export default function AdminDashboard() {
     appointmentTime: "",
   });
 
-  const [activeTab, setActiveTab] = useState<"bookings" | "specialists" | "claims" | "whatsapp" | "theme">("bookings");
+  const [activeTab, setActiveTab] = useState<"stats" | "bookings" | "specialists" | "claims" | "whatsapp" | "theme">("bookings");
+  const [statsPeriod, setStatsPeriod] = useState<"today" | "yesterday" | "week" | "month">("today");
+  const { data: stats, isLoading: statsLoading } = useQuery<{
+    period: string;
+    visits: number;
+    totalEvents: number;
+    registrations: { total: number; specialist: number; client: number };
+    profileViews: number;
+    bookingClicks: number;
+    profileEdits: number;
+    reviews: number;
+    topProfiles: { id: number; name: string; count: number }[];
+  }>({
+    queryKey: ["/api/admin/stats", statsPeriod],
+    queryFn: async () => {
+      const res = await fetch(`/api/admin/stats?period=${statsPeriod}`, {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) throw new Error("Failed to load stats");
+      return res.json();
+    },
+    enabled: !!currentUser && activeTab === "stats",
+  });
   const [waMessageLimit, setWaMessageLimit] = useState(50);
   const [waStatsPeriod, setWaStatsPeriod] = useState(7);
   const [specialistFormOpen, setSpecialistFormOpen] = useState(false);
@@ -590,8 +612,12 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "bookings" | "specialists" | "claims" | "whatsapp" | "theme")}>
-          <TabsList className="grid w-full grid-cols-5 mb-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "stats" | "bookings" | "specialists" | "claims" | "whatsapp" | "theme")}>
+          <TabsList className="grid w-full grid-cols-6 mb-4">
+            <TabsTrigger value="stats" data-testid="tab-stats-main">
+              <BarChart3 className="h-4 w-4 mr-1" />
+              <span className="text-xs">Стата</span>
+            </TabsTrigger>
             <TabsTrigger value="bookings" data-testid="tab-bookings-main" className="relative">
               <Calendar className="h-4 w-4 mr-1" />
               <span className="text-xs">Записи</span>
@@ -629,6 +655,89 @@ export default function AdminDashboard() {
             </TabsTrigger>
           </TabsList>
         </Tabs>
+
+        {activeTab === "stats" && (
+          <div className="space-y-4">
+            <div className="flex gap-2" data-testid="stats-period-tabs">
+              {([
+                { v: "today", label: "Сегодня" },
+                { v: "yesterday", label: "Вчера" },
+                { v: "week", label: "Неделя" },
+                { v: "month", label: "Месяц" },
+              ] as const).map((p) => (
+                <Button
+                  key={p.v}
+                  variant={statsPeriod === p.v ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setStatsPeriod(p.v)}
+                  data-testid={`button-stats-period-${p.v}`}
+                >
+                  {p.label}
+                </Button>
+              ))}
+            </div>
+
+            {statsLoading ? (
+              <div className="text-center text-muted-foreground py-8" data-testid="text-stats-loading">Загрузка…</div>
+            ) : stats ? (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  {[
+                    { icon: Users, label: "Заходов людей (≈)", value: stats.visits, testid: "stat-visits" },
+                    { icon: UserPlus, label: "Регистраций", value: stats.registrations.total, testid: "stat-registrations" },
+                    { icon: Eye, label: "Открытий профилей", value: stats.profileViews, testid: "stat-profile-views" },
+                    { icon: MousePointerClick, label: "Попыток записаться", value: stats.bookingClicks, testid: "stat-booking-clicks" },
+                    { icon: FileEdit, label: "Редактирований профиля", value: stats.profileEdits, testid: "stat-profile-edits" },
+                    { icon: Star, label: "Отзывов оставлено", value: stats.reviews, testid: "stat-reviews" },
+                  ].map((m) => (
+                    <Card key={m.testid}>
+                      <CardContent className="p-3">
+                        <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                          <m.icon className="h-4 w-4" />
+                          <span className="text-xs">{m.label}</span>
+                        </div>
+                        <div className="text-2xl font-bold" data-testid={`text-${m.testid}`}>{m.value}</div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {stats.registrations.total > 0 && (
+                  <div className="text-xs text-muted-foreground" data-testid="text-stats-reg-breakdown">
+                    Из них: мастеров — {stats.registrations.specialist}, клиентов — {stats.registrations.client}
+                  </div>
+                )}
+
+                <Card>
+                  <CardContent className="p-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <BarChart3 className="h-4 w-4 text-primary" />
+                      <span className="font-semibold text-sm">Топ профилей по открытиям</span>
+                    </div>
+                    {stats.topProfiles.length === 0 ? (
+                      <div className="text-xs text-muted-foreground" data-testid="text-top-profiles-empty">Нет данных за период</div>
+                    ) : (
+                      <div className="space-y-1">
+                        {stats.topProfiles.map((p, i) => (
+                          <div key={`${p.id}-${i}`} className="flex items-center justify-between text-sm" data-testid={`row-top-profile-${p.id}`}>
+                            <span className="truncate mr-2">{i + 1}. {p.name}</span>
+                            <span className="font-semibold tabular-nums">{p.count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                <p className="text-[11px] text-muted-foreground leading-snug" data-testid="text-stats-note">
+                  «Заходов людей» — это примерное число разных устройств, сделавших хоть какое-то действие (открыли профиль, отзыв и т.д.). Точного счётчика визитов и уникальных людей пока нет.
+                </p>
+              </>
+            ) : (
+              <div className="text-center text-muted-foreground py-8" data-testid="text-stats-error">Не удалось загрузить статистику</div>
+            )}
+          </div>
+        )}
 
         {activeTab === "bookings" && (
           <>

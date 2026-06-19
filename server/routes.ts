@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata, waMessages, altegioWebhookLog } from "@shared/schema";
+import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata, waMessages, altegioWebhookLog, analyticsEvents } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
@@ -1287,6 +1287,20 @@ export async function registerRoutes(
       return false;
     }
     return true;
+  };
+
+  // Record a profile-edit analytics event (best-effort, never blocks the response)
+  const trackProfileEdit = async (specialistId: number, req: any, kind: string) => {
+    try {
+      await db.insert(analyticsEvents).values({
+        eventType: 'profile_updated',
+        specialistId,
+        userAgent: (req.headers['user-agent'] as string) || null,
+        source: kind,
+      });
+    } catch (e) {
+      console.error('[stats] profile_updated track failed', e);
+    }
   };
 
   // Get all clients (for dropdown)
@@ -2857,6 +2871,7 @@ ${magicLink}`;
       if (Object.keys(updates).length > 0) {
         await storage.updateSpecialist(specialistId, updates);
       }
+      await trackProfileEdit(specialistId, req, 'bio');
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error updating bio:", err);
@@ -2943,6 +2958,7 @@ ${magicLink}`;
       }
 
       await storage.updateSpecialistBaseService(specialistId, name, price);
+      await trackProfileEdit(specialistId, req, 'base_service');
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error updating base service:", err);
@@ -3038,6 +3054,7 @@ ${magicLink}`;
         await storage.updateSpecialistAvatar(specialistId, result.url);
       }
 
+      await trackProfileEdit(specialistId, req, photoType === 'avatar' ? 'avatar' : 'photo');
       res.status(201).json(photo);
     } catch (err: any) {
       console.error("Error uploading photo:", err);
@@ -4627,6 +4644,86 @@ ${magicLink}`;
       };
       res.json({ sentToday, sentTodayByType, sentYesterdayByType, deliveredTodayByType, deliveredYesterdayByType, failedDeliveryTodayByType, ...settings, queueStatus });
     } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Admin: app-wide usage stats for a period (today | yesterday | week | month)
+  app.get("/api/admin/stats", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId) return res.status(401).json({ message: "Unauthorized" });
+      if (!(await checkAdminRole(req, res, userId))) return;
+
+      const rawPeriod = (req.query.period as string) || 'today';
+      const period = ['today', 'yesterday', 'week', 'month'].includes(rawPeriod) ? rawPeriod : 'today';
+      const cmp =
+        period === 'yesterday' ? sql`= ((now() AT TIME ZONE 'Asia/Almaty')::date - 1)`
+        : period === 'week' ? sql`>= ((now() AT TIME ZONE 'Asia/Almaty')::date - 6)`
+        : period === 'month' ? sql`>= ((now() AT TIME ZONE 'Asia/Almaty')::date - 29)`
+        : sql`= (now() AT TIME ZONE 'Asia/Almaty')::date`;
+      // created_at is stored as UTC; convert to Almaty before bucketing by date
+      const dateCol = (col: string) =>
+        sql`(${sql.raw(col)} AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Almaty')::date ${cmp}`;
+      const aeCond = dateCol('created_at');
+
+      const visits = await db.execute(sql`
+        SELECT COUNT(DISTINCT user_agent) AS uniques, COUNT(*) AS total
+        FROM analytics_events WHERE ${aeCond}
+      `);
+      const profileViews = await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM analytics_events
+        WHERE event_type = 'profile_view' AND ${aeCond}
+      `);
+      const bookingClicks = await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM analytics_events
+        WHERE event_type = 'booking_click' AND ${aeCond}
+      `);
+      const profileEdits = await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM analytics_events
+        WHERE event_type = 'profile_updated' AND ${aeCond}
+      `);
+      const topProfiles = await db.execute(sql`
+        SELECT ae.specialist_id AS id, s.name, COUNT(*) AS cnt
+        FROM analytics_events ae
+        LEFT JOIN specialists s ON s.id = ae.specialist_id
+        WHERE ae.event_type = 'profile_view' AND ${aeCond}
+        GROUP BY ae.specialist_id, s.name
+        ORDER BY cnt DESC LIMIT 10
+      `);
+      const registrations = await db.execute(sql`
+        SELECT role, COUNT(*) AS cnt FROM users
+        WHERE ${dateCol('created_at')} GROUP BY role
+      `);
+      const reviewsCount = await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM reviews WHERE ${dateCol('created_at')}
+      `);
+
+      const regByRole = Object.fromEntries(
+        (registrations.rows as any[]).map(r => [r.role, Number(r.cnt)])
+      );
+
+      res.json({
+        period,
+        visits: Number((visits.rows[0] as any)?.uniques || 0),
+        totalEvents: Number((visits.rows[0] as any)?.total || 0),
+        registrations: {
+          total: (regByRole.specialist || 0) + (regByRole.client || 0) + (regByRole.admin || 0),
+          specialist: regByRole.specialist || 0,
+          client: regByRole.client || 0,
+        },
+        profileViews: Number((profileViews.rows[0] as any)?.cnt || 0),
+        bookingClicks: Number((bookingClicks.rows[0] as any)?.cnt || 0),
+        profileEdits: Number((profileEdits.rows[0] as any)?.cnt || 0),
+        reviews: Number((reviewsCount.rows[0] as any)?.cnt || 0),
+        topProfiles: (topProfiles.rows as any[]).map(r => ({
+          id: r.id,
+          name: r.name || `#${r.id}`,
+          count: Number(r.cnt),
+        })),
+      });
+    } catch (err: any) {
+      console.error("[admin/stats] error:", err);
       res.status(500).json({ message: err.message });
     }
   });
