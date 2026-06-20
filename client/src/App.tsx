@@ -192,7 +192,12 @@ function AppContent() {
   const { user } = useAuth();
 
   useEffect(() => {
-    trackAppOpen();
+    // Don't count review-link openings (WhatsApp magic links) as real app visits.
+    const path = window.location.pathname;
+    const isReviewLink = path.startsWith('/r/') || path.startsWith('/review/');
+    if (!isReviewLink) {
+      trackAppOpen();
+    }
   }, []);
   const hideNavigation = location.startsWith('/r/') || location.startsWith('/claim/') || location.startsWith('/review/');
   const isCriticalFlow = location.startsWith('/r/') || location.startsWith('/review/') || location.startsWith('/book/') || location.startsWith('/claim/');
