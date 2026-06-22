@@ -413,6 +413,16 @@ export async function sendDirectWaMessage(phone: string, text: string, bookingId
   }
 }
 
+export async function sendSpecialistReminderWa(phone: string, text: string, specialistId: number): Promise<{ success: boolean; assistbotMessageId?: string | null; error?: string }> {
+  try {
+    const assistbotMessageId = await sendViaAssistBot(phone, text, specialistId, "specialist_reminder");
+    return { success: true, assistbotMessageId };
+  } catch (err: any) {
+    console.error(`[SPEC_REMINDER] Failed to send to phone=${phone} specialist=${specialistId}: ${err.message}`);
+    return { success: false, error: err.message };
+  }
+}
+
 export async function testAssistBotConnection(): Promise<{ success: boolean; status?: number; body?: string; error?: string; tokenLength?: number }> {
   const token = await getAssistBotToken();
   if (!token) {

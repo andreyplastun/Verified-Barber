@@ -464,6 +464,25 @@ export const waOptOuts = pgTable("wa_opt_outs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Re-engagement nudges sent to specialists (profile completion / first visit /
+// reactivation). Separate from wa_messages (which is review-request, booking-bound).
+export const specialistReminders = pgTable("specialist_reminders", {
+  id: serial("id").primaryKey(),
+  specialistId: integer("specialist_id").notNull(),
+  phone: text("phone").notNull(),
+  reminderType: text("reminder_type", { enum: ["profile_incomplete", "no_first_visit", "inactive"] }).notNull(),
+  status: text("status", { enum: ["sending", "sent", "failed", "skipped"] }).default("sending").notNull(),
+  messageText: text("message_text").notNull(),
+  // Idempotency key (specialistId:type:periodBucket). Unique → guards against
+  // duplicate sends across overlapping scans or multiple app instances.
+  dedupeKey: text("dedupe_key").unique(),
+  sentAt: timestamp("sent_at"),
+  lastError: text("last_error"),
+  skipReason: text("skip_reason"),
+  assistbotMessageId: text("assistbot_message_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Diagnostic log of every incoming Altegio webhook hit (even rejected/skipped),
 // so we can verify whether events actually arrive and where they are dropped.
 export const altegioWebhookLog = pgTable("altegio_webhook_log", {
@@ -550,6 +569,7 @@ export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
 export type AppConfig = typeof appConfig.$inferSelect;
 export type WaMessage = typeof waMessages.$inferSelect;
 export type WaOptOut = typeof waOptOuts.$inferSelect;
+export type SpecialistReminder = typeof specialistReminders.$inferSelect;
 
 export type CreateBookingRequest = z.infer<typeof insertBookingSchema>;
 export type CreateReviewRequest = z.infer<typeof insertReviewSchema>;

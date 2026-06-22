@@ -63,6 +63,7 @@ export default function SpecialistDashboard() {
   const [rateLimitWarningOpen, setRateLimitWarningOpen] = useState(false);
   const [showFirstVisitSuccess, setShowFirstVisitSuccess] = useState(false);
   const [manualVisitInfoDismissed, setManualVisitInfoDismissed] = useState(false);
+  const [guideMode, setGuideMode] = useState<null | 'create-visit' | 'profile'>(null);
 
   const { data: specialist, isLoading: loadingSpecialist } = useQuery<Specialist>({
     queryKey: ['/api/specialists', specialistId],
@@ -124,6 +125,25 @@ export default function SpecialistDashboard() {
     setNewBookingDate((d) => d || `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`);
     setNewBookingTime((t) => t || `${pad(now.getHours())}:${pad(now.getMinutes())}`);
   };
+
+  useEffect(() => {
+    const guide = new URLSearchParams(window.location.search).get('guide');
+    if (guide === 'create-visit') {
+      setShowNewBookingForm(true);
+      prefillVisitNow();
+      setGuideMode('create-visit');
+      setTimeout(() => {
+        document.getElementById('bookings-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        (document.getElementById('new-booking-name') as HTMLInputElement | null)?.focus();
+      }, 400);
+    } else if (guide === 'profile') {
+      setGuideMode('profile');
+      setTimeout(() => {
+        document.getElementById('bio-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 400);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [altegioErrorDismissed, setAltegioErrorDismissed] = useState(false);
   const [altegioRetrying, setAltegioRetrying] = useState(false);
@@ -771,6 +791,27 @@ export default function SpecialistDashboard() {
 
   return (
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
+      <Dialog open={!!guideMode} onOpenChange={(o) => { if (!o) setGuideMode(null); }}>
+        <DialogContent className="max-w-sm" data-testid="dialog-guide">
+          <DialogHeader>
+            <DialogTitle>
+              {guideMode === 'create-visit' ? 'Создайте и завершите визит' : 'Заполните профиль'}
+            </DialogTitle>
+            <DialogDescription className="space-y-2 text-left pt-1">
+              {guideMode === 'create-visit' ? (
+                <>
+                  <span className="block">1. Заполните данные клиента — имя и телефон в форме ниже.</span>
+                  <span className="block">2. Нажмите «Создать запись».</span>
+                  <span className="block">3. После визита нажмите «Завершить визит» — клиент получит ссылку на отзыв.</span>
+                </>
+              ) : (
+                <span className="block">Добавьте фото, основную услугу с ценой и способ записи. Без этого клиенты не смогут вас найти и записаться.</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <Button onClick={() => setGuideMode(null)} className="w-full" data-testid="button-guide-ok">Понятно</Button>
+        </DialogContent>
+      </Dialog>
       <ActivationProgress
         specialist={specialist}
         createdVisits={bookings?.length ?? 0}
@@ -1775,6 +1816,15 @@ export default function SpecialistDashboard() {
                             <Button
                               size="sm"
                               className="flex-1"
+                              onClick={() => completeSendReviewMutation.mutate(booking.id)}
+                              disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
+                              data-testid={`button-send-review-${booking.id}`}
+                            >
+                              {completingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : (<><CheckCircle2 className="w-4 h-4 mr-2" />Завершить визит</>)}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => {
                                 setPriceDialogBookingId(booking.id);
                                 setPriceInputValue((booking as any).price ? String((booking as any).price) : '');
@@ -1782,17 +1832,7 @@ export default function SpecialistDashboard() {
                               disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
                               data-testid={`button-request-payment-${booking.id}`}
                             >
-                              <CheckCircle2 className="w-4 h-4 mr-2" />
                               Запросить оплату
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => completeSendReviewMutation.mutate(booking.id)}
-                              disabled={completingBookingId === booking.id || cancellingBookingId === booking.id}
-                              data-testid={`button-send-review-${booking.id}`}
-                            >
-                              {completingBookingId === booking.id ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Завершить визит'}
                             </Button>
                           </div>
                           <div className="flex justify-end">

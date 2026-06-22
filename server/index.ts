@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
 import { startWaWorkerLoop, getWaSettings } from "./whatsapp";
+import { startSpecialistReminderLoop } from "./specialistReminders";
 import { syncUpcomingAppointments, isAltegioConfigured } from "./altegio";
 import { tryCreateMagicLinkForCompletedVisit } from "./routes";
 import { readFileSync, existsSync } from "fs";
@@ -293,6 +294,23 @@ app.use((req, res, next) => {
         phone TEXT NOT NULL UNIQUE,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS specialist_reminders (
+        id SERIAL PRIMARY KEY,
+        specialist_id INTEGER NOT NULL,
+        phone TEXT NOT NULL,
+        reminder_type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'sending',
+        message_text TEXT NOT NULL,
+        dedupe_key TEXT,
+        sent_at TIMESTAMP,
+        last_error TEXT,
+        skip_reason TEXT,
+        assistbot_message_id TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS specialist_reminders_dedupe_key_uniq ON specialist_reminders (dedupe_key);
 
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS assistbot_message_id TEXT;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
@@ -609,6 +627,8 @@ app.use((req, res, next) => {
       console.error("[WA_WORKER] Fatal error in worker loop:", err);
     });
   }, 5000);
+
+  startSpecialistReminderLoop();
   console.log(`[STARTUP] Background jobs started (transitions every ${TRANSITION_INTERVAL_MS / 60000} min, wa_worker=continuous, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, altegio_sync=every ${ALTEGIO_SYNC_EVERY_N * TRANSITION_INTERVAL_MS / 60000} min)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
