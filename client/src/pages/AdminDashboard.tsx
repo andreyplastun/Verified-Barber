@@ -88,7 +88,7 @@ export default function AdminDashboard() {
     appointmentTime: "",
   });
 
-  const [activeTab, setActiveTab] = useState<"stats" | "bookings" | "specialists" | "claims" | "whatsapp" | "theme">("bookings");
+  const [activeTab, setActiveTab] = useState<"stats" | "bookings" | "specialists" | "claims" | "clients" | "whatsapp" | "theme">("bookings");
   const [statsPeriod, setStatsPeriod] = useState<"today" | "yesterday" | "week" | "month">("today");
   const { data: stats, isLoading: statsLoading } = useQuery<{
     period: string;
@@ -137,6 +137,18 @@ export default function AdminDashboard() {
       return res.json();
     },
     enabled: !!currentUser,
+  });
+
+  const { data: clients = [], isLoading: isLoadingClients, isError: isErrorClients } = useQuery<User[]>({
+    queryKey: ["/api/admin/clients"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/clients", {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!res.ok) throw new Error("Failed to fetch clients");
+      return res.json();
+    },
+    enabled: !!currentUser && activeTab === "clients",
   });
 
   const { data: reviewsTodayData } = useQuery<{ count: number }>({
@@ -614,8 +626,8 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "stats" | "bookings" | "specialists" | "claims" | "whatsapp" | "theme")}>
-          <TabsList className="grid w-full grid-cols-6 mb-4">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "stats" | "bookings" | "specialists" | "claims" | "clients" | "whatsapp" | "theme")}>
+          <TabsList className="grid w-full grid-cols-7 mb-4">
             <TabsTrigger value="stats" data-testid="tab-stats-main">
               <BarChart3 className="h-4 w-4 mr-1" />
               <span className="text-xs">Стата</span>
@@ -646,6 +658,10 @@ export default function AdminDashboard() {
                   {pendingClaimsCount}
                 </span>
               )}
+            </TabsTrigger>
+            <TabsTrigger value="clients" data-testid="tab-clients-main">
+              <UserPlus className="h-4 w-4 mr-1" />
+              <span className="text-xs">Клиенты</span>
             </TabsTrigger>
             <TabsTrigger value="whatsapp" data-testid="tab-whatsapp-main">
               <Send className="h-4 w-4 mr-1" />
@@ -1282,6 +1298,55 @@ export default function AdminDashboard() {
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {activeTab === "clients" && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <UserPlus size={20} />
+                Клиенты ({clients.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isLoadingClients ? (
+                <p className="text-sm text-muted-foreground" data-testid="text-clients-loading">Загрузка...</p>
+              ) : isErrorClients ? (
+                <p className="text-sm text-destructive" data-testid="text-clients-error">Не удалось загрузить список клиентов</p>
+              ) : clients.length === 0 ? (
+                <p className="text-sm text-muted-foreground" data-testid="text-clients-empty">Пока нет зарегистрированных клиентов</p>
+              ) : (
+                <div className="space-y-2">
+                  {clients
+                    .slice()
+                    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+                    .map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between p-3 border rounded-lg"
+                        data-testid={`row-client-${c.id}`}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <UserPlus className="h-5 w-5 text-muted-foreground shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-medium truncate" data-testid={`text-client-email-${c.id}`}>{c.email}</p>
+                            {c.createdAt && (
+                              <p className="text-xs text-muted-foreground" data-testid={`text-client-date-${c.id}`}>
+                                {new Date(c.createdAt).toLocaleDateString("ru-RU", {
+                                  day: "numeric",
+                                  month: "long",
+                                  year: "numeric",
+                                })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                 </div>
               )}
             </CardContent>
