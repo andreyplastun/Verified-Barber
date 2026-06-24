@@ -20,7 +20,7 @@ type ReminderType = "profile_incomplete" | "no_first_visit" | "inactive";
 
 interface Candidate {
   id: number;
-  phone: string;
+  phone: string | null;
   image_url: string | null;
   base_service_price: number | null;
   base_service_name: string | null;
@@ -141,7 +141,8 @@ export async function runSpecialistReminderScan(): Promise<void> {
            COUNT(b.id)::int AS booking_count, MAX(b.created_at) AS last_booking_at
     FROM specialists s
     LEFT JOIN bookings b ON b.specialist_id = s.id
-    WHERE s.phone IS NOT NULL AND s.phone <> '' AND s.is_active = true
+    WHERE s.is_active = true
+      AND ((s.phone IS NOT NULL AND s.phone <> '') OR (s.whatsapp IS NOT NULL AND s.whatsapp <> ''))
     GROUP BY s.id
   `);
   const candidates = res.rows as any as Candidate[];
@@ -174,7 +175,10 @@ export async function runSpecialistReminderScan(): Promise<void> {
     if ((type === "profile_incomplete" || type === "no_first_visit") && Number(f?.profile_sent || 0) >= MAX_PROFILE_REMINDERS) continue;
     if (type === "inactive" && f?.last_inactive && now - new Date(f.last_inactive).getTime() < INACTIVE_DAYS * DAY_MS) continue;
 
-    const cleanPhone = c.phone.replace(/\D/g, "");
+    // WA reminders go out over WhatsApp, so target the contact phone if set,
+    // otherwise fall back to the WhatsApp number (many specialists fill only that).
+    const recipient = (c.phone && c.phone.trim()) ? c.phone : (c.whatsapp || "");
+    const cleanPhone = recipient.replace(/\D/g, "");
     if (!cleanPhone) continue;
 
     // Claim before sending so overlapping scans / instances cannot double-send.
@@ -188,7 +192,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
 
     const text = buildMessage(type, missing);
     try {
-      const r = await sendSpecialistReminderWa(c.phone, text, c.id);
+      const r = await sendSpecialistReminderWa(recipient, text, c.id);
       if (r.success) {
         await finalizeReminder(claimId, "sent", text, null, null, r.assistbotMessageId ?? null);
         sent++;
