@@ -702,26 +702,28 @@ export default function SpecialistDashboard() {
       let lat = workLat;
       let lng = workLng;
       let addr = workAddress;
+      let geocodeMissed = false;
       // Auto-geocode a typed address that has no coordinates yet, so the master
       // shows up correctly in "Рядом со мной" even if they didn't press the
-      // geocode button. Best-effort: on failure we just save without coords.
+      // geocode button. If it can't be located, we still save the typed address
+      // but flag it so we can be honest with the user instead of faking success.
       if (workAddress.trim() && (lat == null || lng == null)) {
         try {
           const q = buildGeocodeQuery();
           const gr = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&accept-language=ru`);
-          if (gr.ok) {
-            const results = await gr.json();
-            if (results.length > 0) {
-              lat = Number(results[0].lat);
-              lng = Number(results[0].lon);
-              addr = results[0].display_name || workAddress;
-              setWorkLat(lat);
-              setWorkLng(lng);
-              setWorkAddress(addr);
-            }
+          const results = gr.ok ? await gr.json() : [];
+          if (results.length > 0) {
+            lat = Number(results[0].lat);
+            lng = Number(results[0].lon);
+            addr = results[0].display_name || workAddress;
+            setWorkLat(lat);
+            setWorkLng(lng);
+            setWorkAddress(addr);
+          } else {
+            geocodeMissed = true;
           }
         } catch {
-          /* keep typed address without coords */
+          geocodeMissed = true;
         }
       }
       const res = await fetch(`/api/specialists/${specialistId}/bio`, {
@@ -737,7 +739,15 @@ export default function SpecialistDashboard() {
         throw new Error(error.message || 'Failed to save');
       }
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
-      toast({ title: 'Профиль сохранён' });
+      if (geocodeMissed) {
+        toast({
+          title: 'Адрес сохранён, но не найден на карте',
+          description: 'Координаты не определились. Нажмите «Определить моё местоположение» рядом с полем адреса, чтобы клиенты видели вас в «Рядом со мной».',
+          variant: 'destructive',
+        });
+      } else {
+        toast({ title: 'Профиль сохранён' });
+      }
     } catch (err: any) {
       toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
     } finally {
@@ -870,9 +880,13 @@ export default function SpecialistDashboard() {
           className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/30 p-4"
           data-testid="banner-add-address"
         >
-          <p className="text-sm font-semibold text-foreground">Укажите адрес места работы</p>
+          <p className="text-sm font-semibold text-foreground">
+            {(specialist as any).workAddress?.trim() ? 'Адрес не определён на карте' : 'Укажите адрес места работы'}
+          </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Клиенты смогут найти вас в списке «Рядом со мной» и увидят расстояние до вас.
+            {(specialist as any).workAddress?.trim()
+              ? 'Вы указали адрес, но координаты не нашлись. Определите местоположение, чтобы клиенты видели вас в «Рядом со мной».'
+              : 'Клиенты смогут найти вас в списке «Рядом со мной» и увидят расстояние до вас.'}
           </p>
           <Button
             className="mt-3"
@@ -884,7 +898,7 @@ export default function SpecialistDashboard() {
             }}
             data-testid="button-add-address"
           >
-            Указать адрес
+            {(specialist as any).workAddress?.trim() ? 'Определить на карте' : 'Указать адрес'}
           </Button>
         </div>
       )}
