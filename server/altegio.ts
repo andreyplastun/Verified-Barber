@@ -424,6 +424,17 @@ function normalizeAltegioAvatar(avatar: string | null | undefined): string | nul
   return url;
 }
 
+// Decide whether to overwrite an existing specialist's imageUrl with a fresh
+// Altegio avatar. We only refresh when the current image is empty or itself an
+// Altegio-hosted URL (previously pulled or a stale placeholder). Manually
+// uploaded photos (e.g. Supabase Storage) are never overwritten.
+function shouldRefreshAltegioAvatar(currentImageUrl: string | null | undefined, newAvatar: string): boolean {
+  const current = String(currentImageUrl || "").trim();
+  if (!current) return true;
+  if (current === newAvatar) return false;
+  return /(^|\.)alteg\.io\//i.test(current);
+}
+
 export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff?: Array<{ id: number; name: string; avatar: string | null; specialization: string | null; companyId: number }>; companyId?: number; error?: string; errorType?: AltegioErrorType }> {
   const config = getConfig();
   if (!config) {
@@ -534,7 +545,21 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
 
     const alreadyMapped = allSpecialists.find((s: any) => s.altegioStaffId === staff.id && s.altegioCompanyId === staffCompanyId);
     if (alreadyMapped) {
-      skipped++;
+      // Refresh the avatar from Altegio for already-mapped specialists. We only
+      // overwrite when the current image is empty or itself an Altegio-hosted
+      // URL (i.e. previously pulled or a stale "no photo" placeholder). A
+      // manually uploaded photo (Supabase Storage URL) is never touched.
+      if (staff.avatar && shouldRefreshAltegioAvatar((alreadyMapped as any).imageUrl, staff.avatar)) {
+        try {
+          await storage.updateSpecialistAvatar(alreadyMapped.id, staff.avatar);
+          console.log(`[ALTEGIO-AUTOMAP] Refreshed avatar for "${alreadyMapped.name}" (id=${alreadyMapped.id}) from Altegio`);
+          mapped++;
+        } catch (err: any) {
+          errors.push(`Failed to refresh avatar for ${alreadyMapped.id}: ${err.message}`);
+        }
+      } else {
+        skipped++;
+      }
       continue;
     }
 
