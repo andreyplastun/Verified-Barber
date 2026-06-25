@@ -6,6 +6,7 @@
 - [Onboarding redirect gating](onboarding-redirect-gating.md) — incomplete-onboarding specialists are looped back from `/` and `/specialist-dashboard`; on-onboarding CTAs must link to public ungated routes only.
 - [Production DB location](prod-db-location.md) — rateus prod DB is external Supabase Postgres (run SQL in Supabase SQL Editor), NOT Railway; Railway hosts only the app; dev DB (helium) has no prod rows.
 - [Altegio connected predicate](altegio-connected-predicate.md) — "connected" = altegioStaffId OR (altegioCompanyId + status connected); keep identical across components; webhook resolver needs unique company-only match.
+- [Specialist reminder segmentation](specialist-reminder-segmentation.md) — profile_incomplete uses review-gate steps, NOT activation<100 (which would deadlock no_first_visit); claim via ON CONFLICT dedupe_key.
 - [Altegio avatar sync](altegio-avatar-sync.md) — book_staff returns a no-master placeholder URL (not null) for masters w/o photo; filter it + refresh existing rows from Altegio, never overwrite manual Supabase uploads.
 - [Keyed Fragment metadata warning](keyed-fragment-metadata-warning.md) — Replit Vite plugin injects data-replit-metadata onto Fragment → warning; for list rows needing sibling header/divider use flatMap+keyed array.
 - [Near-me geo-sort](near-me-geo-sort.md) — distance sort is client-side & useless without specialist addresses (ship the adoption push too); optional activation steps use weight 0 so total stays 100.
