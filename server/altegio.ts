@@ -412,6 +412,18 @@ async function fetchStaffServiceCount(config: AltegioConfig, companyId: number, 
   }
 }
 
+// Altegio returns a default "no photo" placeholder URL (e.g.
+// https://be.cdn.alteg.io/images/no-master-sm.png) when a master has no real
+// avatar. Treat those placeholders as "no photo" so the profile is honestly
+// flagged as missing a photo instead of storing a junk URL.
+function normalizeAltegioAvatar(avatar: string | null | undefined): string | null {
+  if (!avatar) return null;
+  const url = String(avatar).trim();
+  if (!url) return null;
+  if (/no-master|no_master|no-photo|no_photo|placeholder/i.test(url)) return null;
+  return url;
+}
+
 export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff?: Array<{ id: number; name: string; avatar: string | null; specialization: string | null; companyId: number }>; companyId?: number; error?: string; errorType?: AltegioErrorType }> {
   const config = getConfig();
   if (!config) {
@@ -446,7 +458,7 @@ export async function fetchAltegioStaffList(): Promise<{ success: boolean; staff
         const rawStaff = (result.data || []).map((s: any) => ({
           id: s.id,
           name: s.name,
-          avatar: s.avatar || null,
+          avatar: normalizeAltegioAvatar(s.avatar),
           specialization: s.specialization || null,
           companyId: cid,
         }));
