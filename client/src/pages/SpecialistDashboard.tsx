@@ -665,11 +665,18 @@ export default function SpecialistDashboard() {
     );
   };
 
+  const buildGeocodeQuery = () => {
+    const countryName = country === 'UZ' ? 'Узбекистан' : 'Казахстан';
+    if (new RegExp(countryName, 'i').test(workAddress)) return workAddress;
+    return `${workAddress}, ${city}, ${countryName}`;
+  };
+
   const handleGeocodeAddress = async () => {
     if (!workAddress.trim()) return;
     setGeocoding(true);
     try {
-      const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(workAddress)}&format=json&limit=1&accept-language=ru`);
+      const query = buildGeocodeQuery();
+      const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=ru`);
       if (resp.ok) {
         const results = await resp.json();
         if (results.length > 0) {
@@ -692,13 +699,38 @@ export default function SpecialistDashboard() {
     if (!specialistId || !currentUser?.id) return;
     setSavingBio(true);
     try {
+      let lat = workLat;
+      let lng = workLng;
+      let addr = workAddress;
+      // Auto-geocode a typed address that has no coordinates yet, so the master
+      // shows up correctly in "Рядом со мной" even if they didn't press the
+      // geocode button. Best-effort: on failure we just save without coords.
+      if (workAddress.trim() && (lat == null || lng == null)) {
+        try {
+          const q = buildGeocodeQuery();
+          const gr = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&accept-language=ru`);
+          if (gr.ok) {
+            const results = await gr.json();
+            if (results.length > 0) {
+              lat = Number(results[0].lat);
+              lng = Number(results[0].lon);
+              addr = results[0].display_name || workAddress;
+              setWorkLat(lat);
+              setWorkLng(lng);
+              setWorkAddress(addr);
+            }
+          }
+        } catch {
+          /* keep typed address without coords */
+        }
+      }
       const res = await fetch(`/api/specialists/${specialistId}/bio`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio, city, country, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram }),
+        body: JSON.stringify({ bio, city, country, subcategory, workAddress: addr, workLat: lat, workLng: lng, bookingUrl, whatsapp, instagram }),
       });
       if (!res.ok) {
         const error = await res.json();

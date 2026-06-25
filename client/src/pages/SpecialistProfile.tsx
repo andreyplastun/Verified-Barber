@@ -264,15 +264,21 @@ export default function SpecialistProfile() {
 
           {/* Service tags */}
           <div className="mt-4 flex gap-3">
-            <div className="flex items-center gap-1 text-xs text-muted-foreground/60">
+            <div className="flex items-center gap-1 text-xs text-muted-foreground/60" data-testid="text-city">
               <MapPin size={11} />
-              Алматы
+              {(specialist as any).city || 'Алматы'}
             </div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground/60">
               <Calendar size={11} />
               Пн-Сб
             </div>
           </div>
+          {(specialist as any).workAddress && (
+            <div className="mt-2 flex items-start gap-1 text-xs text-muted-foreground/60" data-testid="text-work-address">
+              <MapPin size={11} className="mt-0.5 flex-shrink-0" />
+              <span>{(specialist as any).workAddress}</span>
+            </div>
+          )}
 
           {/* Booking button — after bio so user reads first, then books */}
           <div style={{ marginTop: 20 }}>
