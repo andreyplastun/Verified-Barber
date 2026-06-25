@@ -24,6 +24,7 @@ import AltegioStatusCard from '@/components/AltegioStatusCard';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import ActivationProgress from '@/components/ActivationProgress';
 import OnboardingPathModal from '@/components/OnboardingPathModal';
+import AddressPicker from '@/components/AddressPicker';
 
 export default function SpecialistDashboard() {
   const { currentUser } = useAuth();
@@ -40,8 +41,6 @@ export default function SpecialistDashboard() {
   const [workAddress, setWorkAddress] = useState('');
   const [workLat, setWorkLat] = useState<number | null>(null);
   const [workLng, setWorkLng] = useState<number | null>(null);
-  const [detectingLocation, setDetectingLocation] = useState(false);
-  const [geocoding, setGeocoding] = useState(false);
   const [locationCooldownOpen, setLocationCooldownOpen] = useState(false);
   const [kaspiPhone, setKaspiPhone] = useState('');
   const [tipsEnabled, setTipsEnabled] = useState(false);
@@ -633,66 +632,10 @@ export default function SpecialistDashboard() {
     }
   }, [specialist]);
 
-  const handleDetectLocation = async () => {
-    if (!navigator.geolocation) {
-      toast({ title: 'Геолокация недоступна', variant: 'destructive' });
-      return;
-    }
-    setDetectingLocation(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude;
-        const lng = pos.coords.longitude;
-        setWorkLat(lat);
-        setWorkLng(lng);
-        try {
-          const resp = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&accept-language=ru`);
-          if (resp.ok) {
-            const data = await resp.json();
-            const addr = data.display_name || '';
-            setWorkAddress(addr);
-          }
-        } catch {
-        }
-        setDetectingLocation(false);
-        toast({ title: 'Местоположение определено' });
-      },
-      () => {
-        setDetectingLocation(false);
-        toast({ title: 'Не удалось определить', description: 'Разрешите доступ к геолокации', variant: 'destructive' });
-      },
-      { enableHighAccuracy: true, timeout: 10000 }
-    );
-  };
-
   const buildGeocodeQuery = () => {
     const countryName = country === 'UZ' ? 'Узбекистан' : 'Казахстан';
     if (new RegExp(countryName, 'i').test(workAddress)) return workAddress;
     return `${workAddress}, ${city}, ${countryName}`;
-  };
-
-  const handleGeocodeAddress = async () => {
-    if (!workAddress.trim()) return;
-    setGeocoding(true);
-    try {
-      const query = buildGeocodeQuery();
-      const resp = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&accept-language=ru`);
-      if (resp.ok) {
-        const results = await resp.json();
-        if (results.length > 0) {
-          setWorkLat(Number(results[0].lat));
-          setWorkLng(Number(results[0].lon));
-          setWorkAddress(results[0].display_name || workAddress);
-          toast({ title: 'Адрес найден' });
-        } else {
-          toast({ title: 'Адрес не найден', variant: 'destructive' });
-        }
-      }
-    } catch {
-      toast({ title: 'Ошибка геокодирования', variant: 'destructive' });
-    } finally {
-      setGeocoding(false);
-    }
   };
 
   const handleSaveBio = async () => {
@@ -903,7 +846,7 @@ export default function SpecialistDashboard() {
         </div>
       )}
 
-      <OnboardingPathModal />
+      {!loadingSpecialist && !isAltegioConnected && <OnboardingPathModal />}
 
       {loadingSpecialist ? (
         <Skeleton className="h-32 w-full" />
@@ -1019,45 +962,14 @@ export default function SpecialistDashboard() {
                       </p>
                     </div>
                   ) : (
-                    <>
-                      <div className="flex gap-2">
-                        <Input
-                          id="workAddress"
-                          value={workAddress}
-                          onChange={(e) => { setWorkAddress(e.target.value); setWorkLat(null); setWorkLng(null); }}
-                          placeholder="Например: ул. Абая 150, Алматы"
-                          data-testid="input-work-address"
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="icon"
-                          onClick={handleGeocodeAddress}
-                          disabled={geocoding || !workAddress.trim()}
-                          title="Найти координаты по адресу"
-                          data-testid="button-geocode-address"
-                        >
-                          {geocoding ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
-                        </Button>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={handleDetectLocation}
-                        disabled={detectingLocation}
-                        className="w-full"
-                        data-testid="button-detect-location"
-                      >
-                        {detectingLocation ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Navigation className="w-4 h-4 mr-2" />}
-                        Определить моё местоположение
-                      </Button>
-                      {workLat != null && workLng != null && (
-                        <p className="text-xs text-muted-foreground" data-testid="text-coords">
-                          Координаты: {workLat.toFixed(5)}, {workLng.toFixed(5)}
-                        </p>
-                      )}
-                    </>
+                    <AddressPicker
+                      address={workAddress}
+                      lat={workLat}
+                      lng={workLng}
+                      city={city}
+                      country={country}
+                      onChange={(addr, la, ln) => { setWorkAddress(addr); setWorkLat(la); setWorkLng(ln); }}
+                    />
                   )}
                   <Dialog open={locationCooldownOpen} onOpenChange={setLocationCooldownOpen}>
                     <DialogContent className="max-w-sm">
