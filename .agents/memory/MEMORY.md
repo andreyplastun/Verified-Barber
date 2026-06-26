@@ -6,6 +6,7 @@
 - [Onboarding redirect gating](onboarding-redirect-gating.md) — incomplete-onboarding specialists are looped back from `/` and `/specialist-dashboard`; on-onboarding CTAs must link to public ungated routes only.
 - [Production DB location](prod-db-location.md) — rateus prod DB is external Supabase Postgres (run SQL in Supabase SQL Editor), NOT Railway; Railway hosts only the app; dev DB (helium) has no prod rows.
 - [Altegio connected predicate](altegio-connected-predicate.md) — "connected" = altegioStaffId OR (altegioCompanyId + status connected); keep identical across components; webhook resolver needs unique company-only match.
+- [Magic-link short_code wrap](magic-link-shortcode-wrap.md) — global MAX latches at 9999 → all new links get code 1; resolver picks latest so immediate(primary) links survive, delayed(followup) links break. Derive next from last-issued, not MAX.
 - [Address geocode UX](address-geocode-ux.md) — coords only from explicit suggestion/GPS/map-tap, never limit=1 auto-snap; onboarding modal gated on !loadingSpecialist && !isAltegioConnected to avoid flash.
 - [Specialist reminder segmentation](specialist-reminder-segmentation.md) — profile_incomplete uses review-gate steps, NOT activation<100 (which would deadlock no_first_visit); claim via ON CONFLICT dedupe_key.
 - [Altegio avatar sync](altegio-avatar-sync.md) — book_staff returns a no-master placeholder URL (not null) for masters w/o photo; filter it + refresh existing rows from Altegio, never overwrite manual Supabase uploads.

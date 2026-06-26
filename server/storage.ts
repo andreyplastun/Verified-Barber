@@ -1048,9 +1048,17 @@ export class DatabaseStorage implements IStorage {
 
   private async getNextShortCode(): Promise<number> {
     const MAX_CODE = 9999;
-    const result = await db.select({ maxCode: sql<number>`COALESCE(MAX(short_code), 0)` })
-      .from(magicLinks);
-    const current = Number(result[0]?.maxCode || 0);
+    // Use the LAST issued code (most recent link), not global MAX. A global MAX
+    // gets permanently stuck once any row reaches MAX_CODE (the wrap returns 1
+    // forever because that max row never disappears), which makes every new link
+    // collide on short_code=1. Cycling off the last-issued code recycles 1..9999
+    // safely (a code only repeats every ~9999 issues, far beyond the 7-day TTL).
+    const [last] = await db.select({ code: magicLinks.shortCode })
+      .from(magicLinks)
+      .where(sql`${magicLinks.shortCode} IS NOT NULL`)
+      .orderBy(desc(magicLinks.createdAt))
+      .limit(1);
+    const current = Number(last?.code || 0);
     return current >= MAX_CODE ? 1 : current + 1;
   }
 
