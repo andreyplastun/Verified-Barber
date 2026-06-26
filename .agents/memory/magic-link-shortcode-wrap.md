@@ -12,8 +12,8 @@ Review URLs are `/review/<slug>/<shortCode>` where shortCode is an int in 1..999
 - Primary sent ~30min post-visit → clicked while their booking is still the latest `/1` for that barber → resolves to their own booking → still converts (~20%).
 - Followup sent 20–24h later → newer clients created newer `/1` links → resolves to someone else's (newer) booking → wrong/used link → followup conversion collapsed to ~0%.
 
-**Fix:** base the next code on the **last issued** code (most recent link by `createdAt`, short_code NOT NULL), not the global MAX, so 1..9999 cycles properly and a stuck high row can't poison issuance.
+**Fix (final):** short_code is now allocated by a Postgres sequence `magic_link_short_code_seq` (`MINVALUE 1 MAXVALUE 9999 START 1000 CYCLE`), created in the `server/index.ts` auto-migration; `getNextShortCode()` just does `SELECT nextval(...)`. This is atomic (no read-then-insert race) and self-cycling (no latch). START 1000 skips the legacy cluster of short_code=1 rows so there's no transient collision on redeploy.
 
-**Why:** a global aggregate (MAX) over a non-expiring table is a latch — once it hits the ceiling it never releases. Sequence-style allocation must track the *last issued* value, not the all-time max.
+**Why:** a global aggregate (MAX) over a non-expiring table is a latch — once it hits the ceiling it never releases. And manual read-then-insert allocation also races under concurrency. A DB sequence with CYCLE removes both failure modes.
 
-**How to apply:** any time you generate a recycling numeric code from existing rows, derive "next" from the most-recent issuance, not MAX/COUNT over all history. Ideal hardening: atomic DB sequence / counter row, since read-then-insert still races. Already-sent links from a bad window can only be fixed by issuing fresh links (resend), not retroactively.
+**How to apply:** for any recycling numeric code, prefer a DB sequence with CYCLE over computing next from MAX/COUNT of existing rows. Already-sent links from a bad window can only be fixed by issuing fresh links (resend), not retroactively.

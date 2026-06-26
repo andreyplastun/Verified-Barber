@@ -253,6 +253,12 @@ app.use((req, res, next) => {
         END IF;
       END $$;
 
+      -- Atomic, self-cycling allocator for magic_links.short_code (1..9999).
+      -- Replaces the old MAX()+1 logic that latched at 9999 forever and made
+      -- every new review link collide on short_code=1. START 1000 skips the
+      -- legacy cluster of short_code=1 rows so there is no transient collision.
+      CREATE SEQUENCE IF NOT EXISTS magic_link_short_code_seq MINVALUE 1 MAXVALUE 9999 START 1000 CYCLE;
+
       CREATE TABLE IF NOT EXISTS altegio_webhook_log (
         id serial PRIMARY KEY,
         received_at timestamp DEFAULT now(),

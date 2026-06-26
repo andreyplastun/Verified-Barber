@@ -1047,19 +1047,15 @@ export class DatabaseStorage implements IStorage {
   }
 
   private async getNextShortCode(): Promise<number> {
-    const MAX_CODE = 9999;
-    // Use the LAST issued code (most recent link), not global MAX. A global MAX
-    // gets permanently stuck once any row reaches MAX_CODE (the wrap returns 1
-    // forever because that max row never disappears), which makes every new link
-    // collide on short_code=1. Cycling off the last-issued code recycles 1..9999
-    // safely (a code only repeats every ~9999 issues, far beyond the 7-day TTL).
-    const [last] = await db.select({ code: magicLinks.shortCode })
-      .from(magicLinks)
-      .where(sql`${magicLinks.shortCode} IS NOT NULL`)
-      .orderBy(desc(magicLinks.createdAt))
-      .limit(1);
-    const current = Number(last?.code || 0);
-    return current >= MAX_CODE ? 1 : current + 1;
+    // Atomic, race-free allocation via a DB sequence that cycles 1..9999
+    // (created in server/index.ts auto-migration). This replaces the old
+    // MAX()+1 logic, which (a) latched at 9999 forever — once any row hit the
+    // ceiling, MAX stayed 9999 so every new link got short_code=1 and all
+    // review links collided on /review/<slug>/1 — and (b) had a read-then-insert
+    // race that could hand the same code to concurrent creates. nextval() has
+    // neither problem.
+    const result = await db.execute(sql`SELECT nextval('magic_link_short_code_seq')::int AS code`);
+    return Number((result.rows[0] as any).code);
   }
 
   async getMagicLinkByShortCodeAndSlug(shortCode: number, slug: string): Promise<MagicLink | undefined> {
