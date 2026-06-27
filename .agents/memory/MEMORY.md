@@ -6,6 +6,7 @@
 - [Onboarding redirect gating](onboarding-redirect-gating.md) — incomplete-onboarding specialists are looped back from `/` and `/specialist-dashboard`; on-onboarding CTAs must link to public ungated routes only.
 - [Production DB location](prod-db-location.md) — rateus prod DB is external Supabase Postgres (run SQL in Supabase SQL Editor), NOT Railway; Railway hosts only the app; dev DB (helium) has no prod rows.
 - [Altegio connected predicate](altegio-connected-predicate.md) — "connected" = altegioStaffId OR (altegioCompanyId + status connected); keep identical across components; webhook resolver needs unique company-only match.
+- [Gamification achievements](gamification-achievements.md) — badges/leaderboard are cosmetic-only, computed live from review history (no snapshot/cron/migration); top-10 by competition rank, ties included.
 - [WA send capacity bottleneck](wa-send-capacity-bottleneck.md) — review volume is gated by a saturated shared send cap + 30min primary deadline; ~83% of primaries expire unsent; check `expired_primary` before debating followups.
 - [Magic-link short_code wrap](magic-link-shortcode-wrap.md) — global MAX latches at 9999 → all new links get code 1; resolver picks latest so immediate(primary) links survive, delayed(followup) links break. Derive next from last-issued, not MAX.
 - [Address geocode UX](address-geocode-ux.md) — coords only from explicit suggestion/GPS/map-tap, never limit=1 auto-snap; onboarding modal gated on !loadingSpecialist && !isAltegioConnected to avoid flash.

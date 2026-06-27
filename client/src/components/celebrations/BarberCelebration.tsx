@@ -5,12 +5,17 @@ export type CelebrationType =
   | "rating_appeared"
   | "count_milestone"
   | "new_record"
-  | "rating_dropped";
+  | "rating_dropped"
+  | "achievement";
 
 export type CelebrationEvent = {
   type: CelebrationType;
   rating?: number;
   count?: number;
+  // For type === "achievement": custom badge copy.
+  title?: string;
+  message?: string;
+  cta?: string;
 };
 
 type Variant = "spin" | "gold" | "cracked";
@@ -250,6 +255,13 @@ const COPY: Record<
     message: "Бывает у каждого. Пара хороших отзывов — и столб снова закрутится.",
     cta: "Поднажму",
     effect: "none",
+  }),
+  achievement: (e) => ({
+    variant: "gold",
+    title: e.title || "Новая награда!",
+    message: e.message || "Ты заслужил награду. Так держать!",
+    cta: e.cta || "Беру награду",
+    effect: "stars",
   }),
 };
 

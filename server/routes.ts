@@ -13,6 +13,7 @@ import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
 import { appConfig } from "@shared/schema";
 import { enqueueReviewMessage, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
+import { getSpecialistAchievements } from "./achievements";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 
@@ -622,6 +623,22 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (err: any) {
       console.error("Error marking celebrations seen:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Gamification: specialist achievements / standings (derived from public
+  // review counts — no auth needed; the leaderboard is public info).
+  app.get("/api/specialists/:id/achievements", async (req, res) => {
+    try {
+      const specialistId = parseInt(req.params.id);
+      if (isNaN(specialistId)) {
+        return res.status(400).json({ message: "Invalid specialist ID" });
+      }
+      const data = await getSpecialistAchievements(specialistId);
+      res.json(data);
+    } catch (err: any) {
+      console.error("Error computing achievements:", err);
       res.status(500).json({ message: err.message });
     }
   });

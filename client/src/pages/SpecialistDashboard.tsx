@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays, MapPin, Navigation, MessageCircle, X } from 'lucide-react';
+import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays, MapPin, Navigation, MessageCircle, X, Trophy } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -27,6 +27,19 @@ import OnboardingPathModal from '@/components/OnboardingPathModal';
 import AddressPicker from '@/components/AddressPicker';
 import { BarberCelebrationOverlay, type CelebrationEvent } from '@/components/celebrations/BarberCelebration';
 import { useMemo } from 'react';
+
+type AchievementBadge = { id: string; emoji: string; title: string; desc: string };
+type SpecialistAchievements = {
+  rank: number | null;
+  reviewCount: number;
+  totalRanked: number;
+  top10Streak: number;
+  firstStreak: number;
+  reviewsToNextRank: number | null;
+  badges: AchievementBadge[];
+  nudge: { title: string; message: string } | null;
+  leaderboard: { rank: number; specialistId: number; name: string; reviewCount: number; isYou: boolean }[];
+};
 
 export default function SpecialistDashboard() {
   const { currentUser } = useAuth();
@@ -103,11 +116,54 @@ export default function SpecialistDashboard() {
     return null;
   }, [specialist]);
 
-  const activeCelebration = celebrationDismissed ? null : celebrationEvent;
+  const { data: achievements } = useQuery<SpecialistAchievements>({
+    queryKey: ['/api/specialists', specialistId, 'achievements'],
+    queryFn: async () => {
+      const res = await fetch(`/api/specialists/${specialistId}/achievements`);
+      if (!res.ok) throw new Error('Failed to fetch achievements');
+      return res.json();
+    },
+    enabled: !!specialistId,
+  });
+
+  const freshBadge = useMemo<AchievementBadge | null>(() => {
+    if (!achievements || !specialistId) return null;
+    const badges = achievements.badges ?? [];
+    if (badges.length === 0) return null;
+    let seen: string[] = [];
+    try {
+      seen = JSON.parse(localStorage.getItem(`achievements_seen_${specialistId}`) || '[]');
+    } catch {}
+    return badges.find((b) => !seen.includes(b.id)) ?? null;
+  }, [achievements, specialistId]);
+
+  const newAchievement = useMemo<CelebrationEvent | null>(() => {
+    if (!freshBadge) return null;
+    return { type: 'achievement', title: `${freshBadge.emoji} ${freshBadge.title}`, message: freshBadge.desc };
+  }, [freshBadge]);
+
+  const activeCelebration = celebrationDismissed ? null : (newAchievement ?? celebrationEvent);
 
   const dismissCelebration = () => {
     setCelebrationDismissed(true);
+    // Mark ONLY the badge we just showed as seen, so any other newly-earned
+    // badge still pops (once) on a subsequent open.
+    if (specialistId && freshBadge) {
+      try {
+        const key = `achievements_seen_${specialistId}`;
+        let seen: string[] = [];
+        try {
+          seen = JSON.parse(localStorage.getItem(key) || '[]');
+        } catch {}
+        if (!seen.includes(freshBadge.id)) {
+          localStorage.setItem(key, JSON.stringify([...seen, freshBadge.id]));
+        }
+      } catch {}
+    }
     if (!specialistId || !currentUser?.id) return;
+    // When an achievement popup overrode the built-in celebration, don't consume
+    // the built-in celebration state — let it surface on the next open.
+    if (newAchievement) return;
     fetch(`/api/specialists/${specialistId}/celebrations-seen`, {
       method: 'POST',
       headers: { 'x-user-id': currentUser.id },
@@ -865,6 +921,78 @@ export default function SpecialistDashboard() {
           }
         }}
       />
+
+      {achievements && (achievements.rank != null || achievements.badges.length > 0) && (
+        <Card data-testid="card-achievements">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-amber-500" />
+              Твои награды
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {achievements.rank != null && (
+              <p className="text-sm text-muted-foreground" data-testid="text-rank">
+                Ты <span className="font-bold text-foreground">№{achievements.rank}</span> по количеству отзывов
+                {' '}({achievements.reviewCount}) из {achievements.totalRanked} мастеров.
+              </p>
+            )}
+
+            {achievements.badges.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {achievements.badges.map((b) => (
+                  <div
+                    key={b.id}
+                    title={b.desc}
+                    className="flex items-center gap-1.5 rounded-full border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/30 px-3 py-1.5 text-sm font-medium"
+                    data-testid={`badge-${b.id}`}
+                  >
+                    <span className="text-base leading-none">{b.emoji}</span>
+                    <span>{b.title}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {achievements.nudge && (
+              <div
+                className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/30 p-3"
+                data-testid="text-nudge"
+              >
+                <p className="text-sm font-semibold text-foreground">{achievements.nudge.title}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">{achievements.nudge.message}</p>
+              </div>
+            )}
+
+            {achievements.leaderboard.length > 0 && (
+              <div>
+                <p className="mb-2 text-sm font-semibold text-foreground">Топ-10 по отзывам</p>
+                <div className="space-y-1" data-testid="leaderboard">
+                  {achievements.leaderboard.map((e) => (
+                    <div
+                      key={e.specialistId}
+                      className={`flex items-center justify-between rounded-lg px-3 py-1.5 text-sm ${
+                        e.isYou
+                          ? 'bg-primary/10 font-semibold text-foreground'
+                          : 'text-muted-foreground'
+                      }`}
+                      data-testid={`leaderboard-row-${e.specialistId}`}
+                    >
+                      <span className="flex items-center gap-2">
+                        <span className="w-6 text-center">
+                          {e.rank === 1 ? '🥇' : e.rank === 2 ? '🥈' : e.rank === 3 ? '🥉' : `${e.rank}.`}
+                        </span>
+                        <span>{e.name}{e.isYou ? ' (ты)' : ''}</span>
+                      </span>
+                      <span>{e.reviewCount}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {specialist && ((specialist as any).workLat == null || (specialist as any).workLng == null) && (
         <div
