@@ -21,4 +21,6 @@ The WA review-request pipeline is **throughput-limited**, and this dominates any
 
 **Why (don't relearn this):** judging WA changes by aggregate reviews/day hides the bottleneck. Always check `expired_primary` skip volume — if it's huge, the channel is the constraint, not message strategy.
 
+**Corollary (followup value is cap-dependent):** "followups hurt" is purely a scarcity artifact. Once the cap is raised enough that primaries stop expiring, followups no longer displace anything and revert to pure additive upside (~37% extra reviews at zero primary cost) — so keep them ON. Right order: raise cap first, then run followups at full. The cap can't go to infinity though: it keeps the WA number human-looking so the provider (AssistBot/WhatsApp) doesn't ban for spam — raise to a safe max, not remove.
+
 **Caveat:** followup review attribution (`reviewsAfterFollowup`) counts reviews that arrived after a reminder was sent; it overstates true followup *causation* (some would review anyway), making followups even less efficient than the raw slots/review suggests.
