@@ -25,6 +25,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import ActivationProgress from '@/components/ActivationProgress';
 import OnboardingPathModal from '@/components/OnboardingPathModal';
 import AddressPicker from '@/components/AddressPicker';
+import { BarberCelebrationOverlay, type CelebrationEvent } from '@/components/celebrations/BarberCelebration';
+import { useMemo } from 'react';
 
 export default function SpecialistDashboard() {
   const { currentUser } = useAuth();
@@ -68,6 +70,51 @@ export default function SpecialistDashboard() {
     queryKey: ['/api/specialists', specialistId],
     enabled: !!specialistId,
   });
+
+  const [celebrationDismissed, setCelebrationDismissed] = useState(false);
+
+  const celebrationEvent = useMemo<CelebrationEvent | null>(() => {
+    if (!specialist) return null;
+    const trusted = specialist.trustedRating ?? 0;
+    const trustedCount = specialist.trustedReviewsCount ?? 0;
+    const reviewCount = specialist.reviewCount ?? 0;
+    const seenRating = specialist.celebrationSeenRating ?? 0;
+    const seenCount = specialist.celebrationSeenReviewCount ?? 0;
+    const peak = specialist.celebrationPeakRating ?? 0;
+    const M = 0.05; // rating margin to avoid float jitter
+
+    // Priority order (highest first)
+    if (trustedCount >= 3 && trusted > 0 && !specialist.ratingFormedCelebrated) {
+      return { type: 'rating_appeared', rating: trusted };
+    }
+    const milestone = [100, 50, 25, 10, 5].find((t) => seenCount < t && reviewCount >= t);
+    if (milestone) {
+      return { type: 'count_milestone', count: milestone };
+    }
+    if (specialist.ratingFormedCelebrated && peak > 0 && trusted > peak + M) {
+      return { type: 'new_record', rating: trusted };
+    }
+    if (reviewCount >= 1 && !specialist.firstReviewCelebrated && trustedCount < 3) {
+      return { type: 'first_review' };
+    }
+    if (specialist.ratingFormedCelebrated && seenRating > 0 && trusted < seenRating - M) {
+      return { type: 'rating_dropped', rating: trusted };
+    }
+    return null;
+  }, [specialist]);
+
+  const activeCelebration = celebrationDismissed ? null : celebrationEvent;
+
+  const dismissCelebration = () => {
+    setCelebrationDismissed(true);
+    if (!specialistId || !currentUser?.id) return;
+    fetch(`/api/specialists/${specialistId}/celebrations-seen`, {
+      method: 'POST',
+      headers: { 'x-user-id': currentUser.id },
+    })
+      .then(() => queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] }))
+      .catch((err) => console.error('Failed to sync celebration state:', err));
+  };
 
   const { data: bookings, isLoading: loadingBookings } = useQuery<Booking[]>({
     queryKey: ['/api/specialists', specialistId, 'bookings'],
@@ -776,6 +823,7 @@ export default function SpecialistDashboard() {
 
   return (
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
+      <BarberCelebrationOverlay event={activeCelebration} onClose={dismissCelebration} />
       <Dialog open={!!guideMode} onOpenChange={(o) => { if (!o) setGuideMode(null); }}>
         <DialogContent className="max-w-sm" data-testid="dialog-guide">
           <DialogHeader>

@@ -41,6 +41,7 @@ export interface IStorage {
   updateSpecialistRating(id: number): Promise<void>;
   updateSpecialistRatingIncludingPending(id: number): Promise<void>;
   markFirstReviewCelebrated(id: number): Promise<void>;
+  markCelebrationsSeen(specialist: Specialist): Promise<void>;
 
   // Bookings
   createBooking(booking: CreateBookingRequest): Promise<Booking>;
@@ -552,6 +553,19 @@ export class DatabaseStorage implements IStorage {
     await db.update(specialists)
       .set({ firstReviewCelebrated: true })
       .where(eq(specialists.id, id));
+  }
+
+  async markCelebrationsSeen(specialist: Specialist): Promise<void> {
+    const peak = Math.max(specialist.celebrationPeakRating ?? 0, specialist.trustedRating ?? 0);
+    await db.update(specialists)
+      .set({
+        celebrationSeenReviewCount: specialist.reviewCount ?? 0,
+        celebrationSeenRating: specialist.trustedRating ?? 0,
+        celebrationPeakRating: peak,
+        ratingFormedCelebrated: (specialist.trustedReviewsCount ?? 0) >= 3 ? true : specialist.ratingFormedCelebrated,
+        firstReviewCelebrated: (specialist.reviewCount ?? 0) >= 1 ? true : specialist.firstReviewCelebrated,
+      })
+      .where(eq(specialists.id, specialist.id));
   }
 
   async deleteSpecialist(id: number): Promise<void> {

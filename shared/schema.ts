@@ -124,6 +124,11 @@ export const specialists = pgTable("specialists", {
   whatsapp: text("whatsapp"), // Phone number specifically for WhatsApp contact (digits, any format)
   instagram: text("instagram"), // Instagram handle or full URL
   firstReviewCelebrated: boolean("first_review_celebrated").default(false).notNull(),
+  // Motivational celebration system (barbershop-themed milestone animations)
+  ratingFormedCelebrated: boolean("rating_formed_celebrated").default(false).notNull(), // "rating appeared" (3 trusted reviews) shown
+  celebrationSeenReviewCount: integer("celebration_seen_review_count").default(0).notNull(), // reviewCount at last celebration sync (count milestones)
+  celebrationSeenRating: real("celebration_seen_rating").default(0).notNull(), // trustedRating at last sync (detect up/down)
+  celebrationPeakRating: real("celebration_peak_rating").default(0).notNull(), // highest trustedRating ever (new record)
   slug: text("slug"), // URL-friendly identifier e.g. "andreybarber"
 });
 
@@ -357,7 +362,12 @@ export const insertSpecialistSchema = createInsertSchema(specialists).omit({
   averageRating: true,
   validReviewCount: true,
   trustedRating: true,
-  trustedReviewsCount: true
+  trustedReviewsCount: true,
+  firstReviewCelebrated: true,
+  ratingFormedCelebrated: true,
+  celebrationSeenReviewCount: true,
+  celebrationSeenRating: true,
+  celebrationPeakRating: true,
 });
 
 export type CreateSpecialistRequest = z.infer<typeof insertSpecialistSchema>;

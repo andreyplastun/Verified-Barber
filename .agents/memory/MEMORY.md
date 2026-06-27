@@ -17,3 +17,4 @@
 - [Seasonal rating-icon theme](rating-icon-theme.md) — themed glyph (footballs/barber/image) shows ONLY on the tap-to-rate input; feed/cards/rating badges always stay stars ("никаких игр").
 - [Altegio subscription 403 + marketplace gap](altegio-subscription-and-marketplace.md) — records API 403 "renew subscription" = master's Altegio unpaid (book_staff/company still 200); marketplace-installed cos never in /companies?my=1, so they rely only on webhooks.
 - [Querying prod data (Supabase REST)](prod-data-query-rest.md) — no prod DB password; read via PostgREST + service-role key FROM BASH (sandbox masks secrets); specialists has no created_at, date signups via users.role/created_at.
+- [Specialist celebrations](specialist-celebrations.md) — dashboard milestone overlay dedupes via seen-snapshot + 0.05 margin; celebrations-seen is owner-gated, first-review-celebrated is intentionally public (profile page).

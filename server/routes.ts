@@ -599,6 +599,33 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/specialists/:id/celebrations-seen", async (req, res) => {
+    try {
+      const specialistId = parseInt(req.params.id);
+      if (isNaN(specialistId)) {
+        return res.status(400).json({ message: "Invalid specialist ID" });
+      }
+      // Only the owning specialist may sync their own celebration state
+      const authUserId = req.headers["x-user-id"] as string | undefined;
+      if (!authUserId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const user = await storage.getUser(authUserId);
+      if (!user || user.specialistId !== specialistId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
+      const specialist = await storage.getSpecialist(specialistId);
+      if (!specialist) {
+        return res.status(404).json({ message: "Specialist not found" });
+      }
+      await storage.markCelebrationsSeen(specialist);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error marking celebrations seen:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.post("/api/users/:id/onboarding-seen", async (req, res) => {
     try {
       const userId = req.params.id;

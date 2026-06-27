@@ -247,6 +247,10 @@ app.use((req, res, next) => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_client boolean NOT NULL DEFAULT false;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_seen_pro boolean NOT NULL DEFAULT false;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS first_review_celebrated boolean NOT NULL DEFAULT false;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS rating_formed_celebrated boolean NOT NULL DEFAULT false;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS celebration_seen_review_count integer NOT NULL DEFAULT 0;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS celebration_seen_rating real NOT NULL DEFAULT 0;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS celebration_peak_rating real NOT NULL DEFAULT 0;
       DO $$ BEGIN
         IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='bookings' AND column_name='customer_phone' AND is_nullable='NO') THEN
           ALTER TABLE bookings ALTER COLUMN customer_phone DROP NOT NULL;
