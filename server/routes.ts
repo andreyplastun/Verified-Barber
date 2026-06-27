@@ -4568,7 +4568,7 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
-      const { enabled, warmupStartDate, dailyLimit } = req.body;
+      const { enabled, warmupStartDate, dailyLimit, followupEnabled } = req.body;
       if (typeof enabled === "boolean") {
         await setWaSetting("WA_SENDING_ENABLED", String(enabled));
       }
@@ -4578,8 +4578,11 @@ ${magicLink}`;
       if (typeof dailyLimit === "number" && dailyLimit > 0) {
         await setWaSetting("WA_DAILY_LIMIT", String(dailyLimit));
       }
+      if (typeof followupEnabled === "boolean") {
+        await setWaSetting("WA_FOLLOWUP_ENABLED", String(followupEnabled));
+      }
       const settings = await getWaSettings();
-      console.log(`[WA_SETTINGS] Updated by admin ${userId}: enabled=${settings.enabled} warmup=${settings.warmupStartDate} limit=${settings.dailyLimit}`);
+      console.log(`[WA_SETTINGS] Updated by admin ${userId}: enabled=${settings.enabled} warmup=${settings.warmupStartDate} limit=${settings.dailyLimit} followup=${settings.followupEnabled}`);
       res.json(settings);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

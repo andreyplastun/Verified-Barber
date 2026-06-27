@@ -485,7 +485,7 @@ export default function AdminDashboard() {
   });
 
   type QueueStatusType = { byStatus: Record<string, number>; readyNow: number; futureQueued: number; nextScheduled: any[]; recentFailed: any[] };
-  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number; sentToday?: number; sentTodayByType?: { primary: number; reminder: number }; sentYesterdayByType?: { primary: number; reminder: number }; deliveredTodayByType?: { primary: number; reminder: number }; deliveredYesterdayByType?: { primary: number; reminder: number }; failedDeliveryTodayByType?: { primary: number; reminder: number }; queueStatus?: QueueStatusType };
+  type WaSettingsType = { enabled: boolean; warmupStartDate: string; dailyLimit: number; followupEnabled?: boolean; sentToday?: number; sentTodayByType?: { primary: number; reminder: number }; sentYesterdayByType?: { primary: number; reminder: number }; deliveredTodayByType?: { primary: number; reminder: number }; deliveredYesterdayByType?: { primary: number; reminder: number }; failedDeliveryTodayByType?: { primary: number; reminder: number }; queueStatus?: QueueStatusType };
   type WaMessageType = {
     id: number; bookingId: number; customerPhone: string; customerName: string;
     specialistName: string; messageType: string; status: string; templateIndex: number;
@@ -1381,6 +1381,23 @@ export default function AdminDashboard() {
                   >
                     {waSettings?.enabled ? <Power className="h-4 w-4 mr-1" /> : <PowerOff className="h-4 w-4 mr-1" />}
                     {updateWaSettingsMutation.isPending ? "..." : waSettings?.enabled ? "Вкл" : "Выкл"}
+                  </Button>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-medium">Follow-up (напоминания)</Label>
+                    <p className="text-xs text-muted-foreground">Второе сообщение через 20–24ч. Выкл → шлём только primary</p>
+                  </div>
+                  <Button
+                    variant={waSettings?.followupEnabled !== false ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => updateWaSettingsMutation.mutate({ followupEnabled: !(waSettings?.followupEnabled !== false) })}
+                    disabled={updateWaSettingsMutation.isPending}
+                    data-testid="button-wa-followup-toggle"
+                  >
+                    {waSettings?.followupEnabled !== false ? <Power className="h-4 w-4 mr-1" /> : <PowerOff className="h-4 w-4 mr-1" />}
+                    {updateWaSettingsMutation.isPending ? "..." : waSettings?.followupEnabled !== false ? "Вкл" : "Выкл"}
                   </Button>
                 </div>
 

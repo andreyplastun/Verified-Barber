@@ -243,6 +243,7 @@ export async function getWaSettings(): Promise<{
   enabled: boolean;
   warmupStartDate: string;
   dailyLimit: number;
+  followupEnabled: boolean;
 }> {
   const rows = await db.select().from(appConfig);
   const map: Record<string, string> = {};
@@ -251,6 +252,8 @@ export async function getWaSettings(): Promise<{
     enabled: map["WA_SENDING_ENABLED"] === "true",
     warmupStartDate: map["WA_WARMUP_START_DATE"] || "",
     dailyLimit: parseInt(map["WA_DAILY_LIMIT"] || "20", 10),
+    // Follow-ups (reminder messages) default ON; admin can disable from dashboard.
+    followupEnabled: map["WA_FOLLOWUP_ENABLED"] !== "false",
   };
 }
 
@@ -629,6 +632,12 @@ export async function enqueueReviewMessage(params: {
 }
 
 async function createFollowup(msg: typeof waMessages.$inferSelect, opts?: { baseDateMs?: number }): Promise<void> {
+  const waSettings = await getWaSettings();
+  if (!waSettings.followupEnabled) {
+    console.log(`[WA_FOLLOWUP] Skip followup for booking=${msg.bookingId}: follow-ups disabled (WA_FOLLOWUP_ENABLED=false)`);
+    return;
+  }
+
   const booking = await storage.getBooking(msg.bookingId);
   if (booking?.hasReview) {
     console.log(`[WA_FOLLOWUP] Skip followup for booking=${msg.bookingId}: review already submitted`);
@@ -1184,6 +1193,12 @@ export async function startWaWorkerLoop(): Promise<void> {
       if (msg.messageType === "primary" && isPrimaryPastQuiet()) {
         await storage.markWaMessageSkipped(msg.id, "quiet_hours_primary");
         console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary reason=quiet_hours_primary (past 21:45)`);
+        continue;
+      }
+
+      if (msg.messageType === "reminder" && !settings.followupEnabled) {
+        await storage.markWaMessageSkipped(msg.id, "followup_disabled");
+        console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=reminder reason=followup_disabled (WA_FOLLOWUP_ENABLED=false)`);
         continue;
       }
 
