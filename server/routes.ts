@@ -3204,6 +3204,13 @@ ${magicLink}`;
         return res.status(404).json({ message: "Специалист не найден" });
       }
 
+      // Already-owned profiles (e.g. self-registered specialists) cannot be
+      // claimed. Mirrors the claim-status ownership check so a direct API call
+      // can't open a claim against a profile that already has an owner.
+      if (specialist.ownerUserId) {
+        return res.status(400).json({ message: "Профиль уже привязан" });
+      }
+
       const existingClaims = await storage.getClaimRequests();
       const hasActiveClaim = existingClaims.some(
         c => c.specialistId === specialistId && (c.status === "pending" || c.status === "approved")
@@ -3408,12 +3415,16 @@ ${magicLink}`;
       if (!specialist) {
         return res.status(404).json({ message: "Специалист не найден" });
       }
+      // A profile is "claimed" if it already has an owner (e.g. the specialist
+      // self-registered) OR there is an active claim request. Without the
+      // owner_user_id check, self-registered specialists wrongly saw the
+      // "Забрать аккаунт" button on their own profile.
       const allClaims = await storage.getClaimRequests();
       const hasActiveClaim = allClaims.some(
         c => c.specialistId === specialistId && (c.status === "pending" || c.status === "approved")
       );
       res.json({ 
-        isClaimed: hasActiveClaim,
+        isClaimed: !!specialist.ownerUserId || hasActiveClaim,
         specialistId 
       });
     } catch (err: any) {
