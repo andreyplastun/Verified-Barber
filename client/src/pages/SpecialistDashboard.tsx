@@ -1212,7 +1212,7 @@ export default function SpecialistDashboard() {
                   data-testid="note-manual-booking"
                 >
                   <p className="text-xs text-amber-900 dark:text-amber-200">
-                    Чтобы собирать отзывы: создавайте визиты вручную ниже (кнопка «Создать запись») и завершайте их после приёма.
+                    ⚠️ Чтобы собирать отзывы: создавайте визиты вручную ниже (кнопка «Создать запись») и завершайте их после приёма.
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
