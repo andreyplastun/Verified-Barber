@@ -1207,6 +1207,15 @@ export default function SpecialistDashboard() {
               </div>
             ) : (
               <>
+                <div
+                  className="rounded-lg border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 p-3"
+                  data-testid="note-manual-booking"
+                >
+                  <p className="text-xs text-amber-900 dark:text-amber-200">
+                    Эта ссылка — просто переход для клиента. Записи отсюда к нам не попадают, и отзывы сами не соберутся.
+                    Чтобы собрать отзывы: создайте визит вручную ниже (кнопка «Создать запись») и завершите его после приёма.
+                  </p>
+                </div>
                 <p className="text-xs text-muted-foreground">
                   Кнопка «Записаться» использует первый заполненный канал по приоритету: ссылка → WhatsApp → Instagram → телефон из профиля.
                 </p>
