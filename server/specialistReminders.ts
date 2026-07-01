@@ -15,9 +15,10 @@ const DAY_MS = 86400000;
 const MIN_DAYS_BETWEEN = 7; // never more than 1 reminder per specialist per week
 const MAX_PROFILE_REMINDERS = 3; // profile/first-visit nudges capped at 3 total
 const MAX_CLAIM_REMINDERS = 3; // claim-ownership nudges capped at 3 total
+const MAX_UNCOMPLETED_REMINDERS = 4; // "finish your visits" nudges capped at 4 total
 const INACTIVE_DAYS = 14;
 
-type ReminderType = "claim_ownership" | "profile_incomplete" | "no_first_visit" | "inactive";
+type ReminderType = "claim_ownership" | "profile_incomplete" | "no_first_visit" | "uncompleted_visits" | "inactive";
 
 interface Candidate {
   id: number;
@@ -30,6 +31,7 @@ interface Candidate {
   instagram: string | null;
   owner_user_id: string | null;
   booking_count: number;
+  uncompleted_count: number;
   last_booking_at: string | null;
 }
 
@@ -76,6 +78,9 @@ function segmentFor(c: Candidate): { type: ReminderType; missing: string[] } | n
   const missing = gateMissing(c);
   if (missing.length > 0) return { type: "profile_incomplete", missing };
   if (c.booking_count === 0) return { type: "no_first_visit", missing };
+  // Self-created visits that already happened but were never marked completed:
+  // the specialist is waiting for reviews that will never arrive.
+  if (c.uncompleted_count > 0) return { type: "uncompleted_visits", missing };
   const last = c.last_booking_at ? new Date(c.last_booking_at).getTime() : 0;
   if (Date.now() - last > INACTIVE_DAYS * DAY_MS) return { type: "inactive", missing };
   return null;
@@ -93,6 +98,10 @@ function buildMessage(type: ReminderType, missing: string[], specialistId: numbe
   if (type === "no_first_visit") {
     const link = `${BASE_URL}/specialist-dashboard?guide=create-visit`;
     return `Профиль готов 👍 Теперь создайте и завершите первый визит — без визита клиент не получит ссылку на отзыв. Это займёт минуту:\n${link}`;
+  }
+  if (type === "uncompleted_visits") {
+    const link = `${BASE_URL}/specialist-dashboard`;
+    return `У вас есть незавершённые визиты. Отзыв клиенту уходит только ПОСЛЕ завершения визита.\nЧто сделать: откройте кабинет → визит → «Завершить визит». Это займёт минуту:\n${link}`;
   }
   const link = `${BASE_URL}/specialist-dashboard?guide=create-visit`;
   return `Вы давно не отмечали визиты на Rateus. Отметьте завершённые визиты — клиенты оставят отзывы и поднимут ваш рейтинг:\n${link}`;
@@ -148,7 +157,12 @@ export async function runSpecialistReminderScan(): Promise<void> {
   const res = await db.execute(sql`
     SELECT s.id, s.phone, s.image_url, s.base_service_price, s.base_service_name,
            s.booking_url, s.whatsapp, s.instagram, s.owner_user_id,
-           COUNT(b.id)::int AS booking_count, MAX(b.created_at) AS last_booking_at
+           COUNT(b.id)::int AS booking_count, MAX(b.created_at) AS last_booking_at,
+           COUNT(b.id) FILTER (
+             WHERE b.booking_source = 'specialist_manual'
+               AND b.status NOT IN ('completed', 'cancelled')
+               AND b.appointment_time < now()
+           )::int AS uncompleted_count
     FROM specialists s
     LEFT JOIN bookings b ON b.specialist_id = s.id
     WHERE s.is_active = true
@@ -162,6 +176,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
     SELECT specialist_id,
       MAX(sent_at) FILTER (WHERE status = 'sent') AS last_sent,
       COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type = 'claim_ownership') AS claim_sent,
+      COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type = 'uncompleted_visits') AS uncompleted_sent,
       COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type IN ('profile_incomplete', 'no_first_visit')) AS profile_sent,
       MAX(sent_at) FILTER (WHERE status = 'sent' AND reminder_type = 'inactive') AS last_inactive
     FROM specialist_reminders
@@ -184,6 +199,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
     const f = fmap.get(c.id);
     if (f?.last_sent && now - new Date(f.last_sent).getTime() < MIN_DAYS_BETWEEN * DAY_MS) continue;
     if (type === "claim_ownership" && Number(f?.claim_sent || 0) >= MAX_CLAIM_REMINDERS) continue;
+    if (type === "uncompleted_visits" && Number(f?.uncompleted_sent || 0) >= MAX_UNCOMPLETED_REMINDERS) continue;
     if ((type === "profile_incomplete" || type === "no_first_visit") && Number(f?.profile_sent || 0) >= MAX_PROFILE_REMINDERS) continue;
     if (type === "inactive" && f?.last_inactive && now - new Date(f.last_inactive).getTime() < INACTIVE_DAYS * DAY_MS) continue;
 
