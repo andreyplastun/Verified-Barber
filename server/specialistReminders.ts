@@ -14,9 +14,10 @@ const SEND_SPACING_MS = 20 * 1000;
 const DAY_MS = 86400000;
 const MIN_DAYS_BETWEEN = 7; // never more than 1 reminder per specialist per week
 const MAX_PROFILE_REMINDERS = 3; // profile/first-visit nudges capped at 3 total
+const MAX_CLAIM_REMINDERS = 3; // claim-ownership nudges capped at 3 total
 const INACTIVE_DAYS = 14;
 
-type ReminderType = "profile_incomplete" | "no_first_visit" | "inactive";
+type ReminderType = "claim_ownership" | "profile_incomplete" | "no_first_visit" | "inactive";
 
 interface Candidate {
   id: number;
@@ -27,6 +28,7 @@ interface Candidate {
   booking_url: string | null;
   whatsapp: string | null;
   instagram: string | null;
+  owner_user_id: string | null;
   booking_count: number;
   last_booking_at: string | null;
 }
@@ -67,6 +69,10 @@ function gateMissing(c: Candidate): string[] {
 }
 
 function segmentFor(c: Candidate): { type: ReminderType; missing: string[] } | null {
+  // Highest priority: profiles nobody owns yet (imported / admin-created).
+  // Until claimed, the dashboard-based nudges (photo/visit) are useless because
+  // the specialist can't edit anything, so claim preempts everything else.
+  if (!c.owner_user_id) return { type: "claim_ownership", missing: [] };
   const missing = gateMissing(c);
   if (missing.length > 0) return { type: "profile_incomplete", missing };
   if (c.booking_count === 0) return { type: "no_first_visit", missing };
@@ -75,7 +81,11 @@ function segmentFor(c: Candidate): { type: ReminderType; missing: string[] } | n
   return null;
 }
 
-function buildMessage(type: ReminderType, missing: string[]): string {
+function buildMessage(type: ReminderType, missing: string[], specialistId: number): string {
+  if (type === "claim_ownership") {
+    const link = `${BASE_URL}/specialist/${specialistId}`;
+    return `Здравствуйте! Ваш профиль на Rateus уже создан, но пока не привязан к вам. Заберите его, чтобы управлять записями, фото и отзывами — нажмите «Забрать» на странице профиля:\n${link}`;
+  }
   if (type === "profile_incomplete") {
     const link = `${BASE_URL}/specialist-dashboard?guide=profile`;
     return `Здравствуйте! Ваш профиль на Rateus ещё не готов — не хватает: ${missing.join(", ")}.\nЗаполните, чтобы клиенты могли вас найти и оставлять отзывы:\n${link}`;
@@ -137,7 +147,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
 
   const res = await db.execute(sql`
     SELECT s.id, s.phone, s.image_url, s.base_service_price, s.base_service_name,
-           s.booking_url, s.whatsapp, s.instagram,
+           s.booking_url, s.whatsapp, s.instagram, s.owner_user_id,
            COUNT(b.id)::int AS booking_count, MAX(b.created_at) AS last_booking_at
     FROM specialists s
     LEFT JOIN bookings b ON b.specialist_id = s.id
@@ -151,6 +161,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
   const freq = await db.execute(sql`
     SELECT specialist_id,
       MAX(sent_at) FILTER (WHERE status = 'sent') AS last_sent,
+      COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type = 'claim_ownership') AS claim_sent,
       COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type IN ('profile_incomplete', 'no_first_visit')) AS profile_sent,
       MAX(sent_at) FILTER (WHERE status = 'sent' AND reminder_type = 'inactive') AS last_inactive
     FROM specialist_reminders
@@ -172,6 +183,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
 
     const f = fmap.get(c.id);
     if (f?.last_sent && now - new Date(f.last_sent).getTime() < MIN_DAYS_BETWEEN * DAY_MS) continue;
+    if (type === "claim_ownership" && Number(f?.claim_sent || 0) >= MAX_CLAIM_REMINDERS) continue;
     if ((type === "profile_incomplete" || type === "no_first_visit") && Number(f?.profile_sent || 0) >= MAX_PROFILE_REMINDERS) continue;
     if (type === "inactive" && f?.last_inactive && now - new Date(f.last_inactive).getTime() < INACTIVE_DAYS * DAY_MS) continue;
 
@@ -190,7 +202,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
       continue;
     }
 
-    const text = buildMessage(type, missing);
+    const text = buildMessage(type, missing, c.id);
     try {
       const r = await sendSpecialistReminderWa(recipient, text, c.id);
       if (r.success) {
