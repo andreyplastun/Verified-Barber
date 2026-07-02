@@ -95,6 +95,12 @@ const PRIMARY_END_MINUTE = 45;
 const FOLLOWUP_END_HOUR = 20;
 const FOLLOWUP_END_MINUTE = 0;
 const SEND_WINDOW_MINUTES = (PRIMARY_END_HOUR * 60 + PRIMARY_END_MINUTE) - (WINDOW_START_HOUR * 60 + WINDOW_START_MINUTE);
+// Primary messages are throttled to one per ~12-15min (getMinIntervalMs) and capped
+// per day (WA_DAILY_LIMIT). A short deadline made most messages expire in the queue
+// before their rate-limit slot ("expired_primary"), so the daily cap was never reached.
+// Give primary a full send-window buffer to wait for its slot; quiet hours (21:45) is
+// the real end-of-day cutoff.
+const PRIMARY_DEADLINE_MINUTES = SEND_WINDOW_MINUTES;
 
 function isBeforeWindowStart(): boolean {
   const h = getAlmatyHour();
@@ -596,7 +602,12 @@ export async function enqueueReviewMessage(params: {
   if (params.messageType === "primary") {
     const delayMinutes = 10 + Math.random() * 10;
     scheduledAt = new Date(now.getTime() + delayMinutes * 60000);
-    deadline = new Date(now.getTime() + 30 * 60000);
+    // Let the message wait for its rate-limit slot, but never past today's quiet-hours
+    // cutoff (21:45 Almaty). The worker's expired_after_wait guard uses this deadline,
+    // so capping it here prevents any primary from being sent after quiet hours.
+    const almaty = new Date(now.getTime() + ALMATY_UTC_OFFSET * 3600000);
+    const quietCutoffMs = Date.UTC(almaty.getUTCFullYear(), almaty.getUTCMonth(), almaty.getUTCDate(), PRIMARY_END_HOUR - ALMATY_UTC_OFFSET, PRIMARY_END_MINUTE, 0, 0);
+    deadline = new Date(Math.min(now.getTime() + PRIMARY_DEADLINE_MINUTES * 60000, quietCutoffMs));
     console.log(`[WA_QUEUE] Primary: booking=${params.bookingId} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline.toISOString()} (delay=${Math.round(delayMinutes)}min)`);
   } else {
     const delayMs = params.delayMs || randomMinutes(20 * 60, 24 * 60);

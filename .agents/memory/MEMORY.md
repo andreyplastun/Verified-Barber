@@ -1,4 +1,5 @@
 - [WA delivery webhook correlation](wa-delivery-correlation.md) — parse `rateus_<source>_<bookingId>_<ts>` by tail-anchoring on 13-digit timestamp; constrain UPDATE by message_type; show sent vs delivered both.
+- [WA primary throughput vs deadline](wa-throughput-deadline.md) — 12-15min rate limit + short 30min deadline silently expired most primaries before send; deadline=full window fixes it; don't lower interval (ban risk).
 - [Altegio public booking URL](altegio-booking-url.md) — client booking page is `https://n{companyId}.alteg.io/`; not stored/derivable from code or company API.
 - [Altegio self-connect binding](altegio-self-connect-binding.md) — private-app install doesn't redirect back/carry company_id; connect modal MUST keep the paste-link step or webhooks drop visits.
 - [New-specialist review framing](onboarding-new-specialist-framing.md) — dashboard booking copy branches on `isNewSpecialist`; avoid "запись" for new users, keep "complete the visit" warning visible.
