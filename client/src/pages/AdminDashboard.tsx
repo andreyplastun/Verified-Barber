@@ -567,7 +567,10 @@ export default function AdminDashboard() {
       return { prev };
     },
     onSuccess: (data) => {
-      queryClient.setQueryData(["/api/admin/whatsapp/stats"], data);
+      queryClient.setQueryData<WaSettingsType>(["/api/admin/whatsapp/stats"], (prev) =>
+        prev ? { ...prev, ...data } : data,
+      );
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/whatsapp/stats"] });
       toast({ title: "Настройки WhatsApp сохранены" });
     },
     onError: (err: Error, _vars, ctx) => {
