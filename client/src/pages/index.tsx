@@ -396,6 +396,21 @@ export default function SpecialistList() {
 
       {/* List */}
       <main className="px-4 py-4 space-y-3">
+        {!loading && !user && (
+          <Link
+            href="/login"
+            className="flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 hover:bg-primary/10 transition-colors"
+            data-testid="banner-guest-register"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">Войдите — так удобнее</p>
+              <p className="text-xs text-muted-foreground truncate">
+                Запись в пару кликов, история визитов и отзывы
+              </p>
+            </div>
+            <ArrowRight size={18} className="shrink-0 text-primary" />
+          </Link>
+        )}
         {filteredAndSortedSpecialists.flatMap((specialist, index) => {
           const isGeo = geoStatus === 'active' && !!userCoords;
           const dist = isGeo ? specDistance(specialist as any, userCoords!) : null;
