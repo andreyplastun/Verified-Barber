@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoginForm } from './LoginForm';
 import { SignUpForm } from './SignUpForm';
+import { ClientBenefits } from '@/components/ClientBenefits';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -39,11 +40,14 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
             onClose={handleClose}
           />
         ) : (
-          <SignUpForm 
-            onSuccess={handleSuccess} 
-            onSwitchToLogin={() => setMode('login')}
-            onClose={handleClose}
-          />
+          <div className="space-y-4">
+            <ClientBenefits />
+            <SignUpForm 
+              onSuccess={handleSuccess} 
+              onSwitchToLogin={() => setMode('login')}
+              onClose={handleClose}
+            />
+          </div>
         )}
       </DialogContent>
     </Dialog>
