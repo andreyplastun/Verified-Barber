@@ -379,7 +379,6 @@ app.use((req, res, next) => {
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '35') ON CONFLICT (key) DO NOTHING;
-      UPDATE app_config SET value = '35' WHERE key = 'WA_DAILY_LIMIT' AND value::int < 35;
     `);
 
     // Backfill dedupe_key for existing wa_messages and create unique index
