@@ -89,7 +89,7 @@ function segmentFor(c: Candidate): { type: ReminderType; missing: string[] } | n
 function buildMessage(type: ReminderType, missing: string[], specialistId: number): string {
   if (type === "claim_ownership") {
     const link = `${BASE_URL}/specialist/${specialistId}`;
-    return `Здравствуйте! Ваш профиль на Rateus уже создан, но пока не привязан к вам. Заберите его, чтобы управлять записями, фото и отзывами — нажмите «Забрать» на странице профиля:\n${link}`;
+    return `Здравствуйте! Это Rateus — сервис отзывов и онлайн-записи к мастерам в Алматы (rateus.kz). Мы уже создали вашу страницу, чтобы клиенты находили вас и оставляли отзывы. Профиль пока не привязан к вам — заберите его, чтобы управлять записями, фото и отзывами. Нажмите «Забрать» на странице:\n${link}`;
   }
   if (type === "profile_incomplete") {
     const link = `${BASE_URL}/specialist-dashboard?guide=profile`;
