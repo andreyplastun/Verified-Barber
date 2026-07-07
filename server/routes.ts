@@ -3190,6 +3190,22 @@ ${magicLink}`;
   }
 
   // Public: Submit claim request
+  // A claim "occupies" a profile only while it is pending, completed (token used),
+  // or approved with a still-valid unused link. An approved link that expired
+  // without ever being used is abandoned — it must NOT keep the profile locked,
+  // otherwise the specialist can never (re)claim and reminders keep nagging a
+  // profile that merely *looks* taken. Used identically by the create-claim
+  // duplicate check and the public claim-status endpoint so they never disagree.
+  const isClaimActive = (c: any): boolean => {
+    if (c.status === "pending") return true;
+    if (c.status === "approved") {
+      if (c.tokenUsedAt) return true;
+      if (c.tokenExpiresAt && new Date(c.tokenExpiresAt) < new Date()) return false;
+      return true;
+    }
+    return false;
+  };
+
   app.post("/api/claim-requests", async (req, res) => {
     try {
       const parsed = claimRequestSchema.safeParse(req.body);
@@ -3213,7 +3229,7 @@ ${magicLink}`;
 
       const existingClaims = await storage.getClaimRequests();
       const hasActiveClaim = existingClaims.some(
-        c => c.specialistId === specialistId && (c.status === "pending" || c.status === "approved")
+        c => c.specialistId === specialistId && isClaimActive(c)
       );
       if (hasActiveClaim) {
         return res.status(400).json({ message: "Запрос уже отправлен или профиль привязан" });
@@ -3421,7 +3437,7 @@ ${magicLink}`;
       // "Забрать аккаунт" button on their own profile.
       const allClaims = await storage.getClaimRequests();
       const hasActiveClaim = allClaims.some(
-        c => c.specialistId === specialistId && (c.status === "pending" || c.status === "approved")
+        c => c.specialistId === specialistId && isClaimActive(c)
       );
       res.json({ 
         isClaimed: !!specialist.ownerUserId || hasActiveClaim,

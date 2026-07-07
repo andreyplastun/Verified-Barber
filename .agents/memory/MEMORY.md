@@ -7,6 +7,7 @@
 - [Onboarding redirect gating](onboarding-redirect-gating.md) — incomplete-onboarding specialists are looped back from `/` and `/specialist-dashboard`; on-onboarding CTAs must link to public ungated routes only.
 - [Production DB location](prod-db-location.md) — rateus prod DB is external Supabase Postgres (run SQL in Supabase SQL Editor), NOT Railway; Railway hosts only the app; dev DB (helium) has no prod rows.
 - [Altegio connected predicate](altegio-connected-predicate.md) — "connected" = altegioStaffId OR (altegioCompanyId + status connected); keep identical across components; webhook resolver needs unique company-only match.
+- [Claim active predicate](claim-active-predicate.md) — profile "claimed/locked" must use one shared isClaimActive; expired-unused approved claim ≠ active or it locks profile forever while reminders still nag.
 - [WA stats counter zeroed](wa-stats-cache-clobber.md) — settings-save mutation overwrote the shared stats query key with a counter-less response; merge+invalidate, don't blind setQueryData.
 - [Gamification achievements](gamification-achievements.md) — badges/leaderboard are cosmetic-only, computed live from review history (no snapshot/cron/migration); top-10 by competition rank, ties included.
 - [WA send capacity bottleneck](wa-send-capacity-bottleneck.md) — review volume is gated by a saturated shared send cap + 30min primary deadline; ~83% of primaries expire unsent; check `expired_primary` before debating followups.

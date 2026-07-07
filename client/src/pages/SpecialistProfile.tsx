@@ -35,7 +35,13 @@ export default function SpecialistProfile() {
   });
 
   const [showClaimForm, setShowClaimForm] = useState(false);
+  const [showClaimModal, setShowClaimModal] = useState(false);
   const [claimPhone, setClaimPhone] = useState("");
+
+  const dismissClaimModal = () => {
+    setShowClaimModal(false);
+    if (id > 0) localStorage.setItem(`claim_modal_seen_${id}`, "1");
+  };
 
   const claimMutation = useMutation({
     mutationFn: async () => {
@@ -45,6 +51,7 @@ export default function SpecialistProfile() {
       toast({ title: "Запрос отправлен", description: "Администратор рассмотрит ваш запрос." });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', id, 'claim-status'] });
       setShowClaimForm(false);
+      setShowClaimModal(false);
       setClaimPhone("");
     },
     onError: (error: any) => {
@@ -53,6 +60,13 @@ export default function SpecialistProfile() {
   });
 
   const showClaimButton = claimStatus && !claimStatus.isClaimed;
+
+  useEffect(() => {
+    if (showClaimButton && id > 0 && !localStorage.getItem(`claim_modal_seen_${id}`)) {
+      const t = setTimeout(() => setShowClaimModal(true), 700);
+      return () => clearTimeout(t);
+    }
+  }, [showClaimButton, id]);
 
   // Fetch user's bookings to check if they can leave a review
   const { data: myBookings = [] } = useQuery<Booking[]>({
@@ -342,6 +356,44 @@ export default function SpecialistProfile() {
             )}
           </div>
         )}
+
+        <Dialog open={showClaimModal} onOpenChange={(open) => { if (!open) dismissClaimModal(); }}>
+          <DialogContent className="sm:max-w-sm" data-testid="modal-claim-profile">
+            <DialogHeader>
+              <DialogTitle>Это ваш аккаунт?</DialogTitle>
+              <DialogDescription>
+                Заберите свой аккаунт, чтобы управлять записями, фото и отзывами. Укажите ваш номер — администратор подтвердит, и профиль станет вашим.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                type="tel"
+                placeholder="+7 (___) ___-__-__"
+                value={claimPhone}
+                onChange={(e) => setClaimPhone(e.target.value)}
+                className="pl-9"
+                data-testid="input-claim-phone-modal"
+              />
+            </div>
+            <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button
+                variant="ghost"
+                onClick={dismissClaimModal}
+                data-testid="button-claim-later"
+              >
+                Позже
+              </Button>
+              <Button
+                onClick={() => claimMutation.mutate()}
+                disabled={claimMutation.isPending || !claimPhone.trim()}
+                data-testid="button-claim-account-modal"
+              >
+                {claimMutation.isPending ? "..." : "Забрать аккаунт"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Work Photos Gallery */}
         {workPhotos.length > 0 && (
