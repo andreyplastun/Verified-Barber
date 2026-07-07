@@ -38,25 +38,31 @@ function isSpecialistAction(source: string): boolean {
   return source.startsWith('specialist_');
 }
 
-function toDativeCase(name: string): string {
-  const lastChar = name.slice(-1);
-  const lastTwoChars = name.slice(-2);
+function dativeCaseWord(word: string): string {
+  const lastChar = word.slice(-1);
+  const lastTwoChars = word.slice(-2);
   if (lastTwoChars === 'ия') {
-    return name.slice(0, -1) + 'и';
+    return word.slice(0, -1) + 'и';
   }
   if (lastChar === 'а') {
-    return name.slice(0, -1) + 'е';
+    return word.slice(0, -1) + 'е';
   }
   if (lastChar === 'я') {
-    return name.slice(0, -1) + 'е';
+    return word.slice(0, -1) + 'е';
   }
   if (lastChar === 'й') {
-    return name.slice(0, -1) + 'ю';
+    return word.slice(0, -1) + 'ю';
   }
   if (lastChar === 'ь') {
-    return name.slice(0, -1) + 'ю';
+    return word.slice(0, -1) + 'ю';
   }
-  return name + 'у';
+  return word + 'у';
+}
+
+function toDativeCase(name: string): string {
+  const n = name.trim();
+  if (!n) return n;
+  return n.split(/\s+/).map(dativeCaseWord).join(' ');
 }
 
 async function checkReviewEligibility(

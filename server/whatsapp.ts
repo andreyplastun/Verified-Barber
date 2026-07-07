@@ -186,8 +186,7 @@ function isNonDeclinable(name: string): boolean {
   return NON_DECLINABLE_NAMES.has(name.toLowerCase());
 }
 
-function toDative(name: string): string {
-  const n = name.trim();
+function dativeWord(n: string): string {
   if (!n) return n;
   if (/[a-zA-Z]/.test(n)) return n;
   if (isNonDeclinable(n)) return n;
@@ -206,8 +205,13 @@ function toDative(name: string): string {
   return n;
 }
 
-function toGenitive(name: string): string {
+function toDative(name: string): string {
   const n = name.trim();
+  if (!n) return n;
+  return n.split(/\s+/).map(dativeWord).join(" ");
+}
+
+function genitiveWord(n: string): string {
   if (!n) return n;
   if (/[a-zA-Z]/.test(n)) return n;
   if (isNonDeclinable(n)) return n;
@@ -224,6 +228,12 @@ function toGenitive(name: string): string {
     return n + "а";
   }
   return n;
+}
+
+function toGenitive(name: string): string {
+  const n = name.trim();
+  if (!n) return n;
+  return n.split(/\s+/).map(genitiveWord).join(" ");
 }
 
 function renderTemplate(template: string, vars: { clientName: string; specialistName: string; reviewLink: string }): string {
