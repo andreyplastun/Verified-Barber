@@ -114,32 +114,32 @@ export default function OnboardingPathModal() {
         data-testid="onboarding-path-modal"
       >
         <DialogHeader>
-          <DialogTitle className="text-xl">Как вы работаете?</DialogTitle>
+          <DialogTitle className="text-xl">Как вы записываете клиентов?</DialogTitle>
           <DialogDescription>
-            Выберите сценарий, чтобы быстрее запустить профиль
+            Выберите свой вариант — так вы быстрее получите первые отзывы
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3 mt-2">
           <PathCard
-            icon={<Link2 className="w-5 h-5 text-blue-600" />}
-            tint="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900"
-            title="Работаю через Altegio"
-            description="Автоматически собирать отзывы после визитов"
-            cta="Подключить"
-            loading={submitting === "altegio"}
-            onClick={() => choose("altegio")}
-            testId="path-altegio"
-          />
-          <PathCard
             icon={<Plus className="w-5 h-5 text-emerald-600" />}
             tint="bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900"
-            title="Работаю без CRM"
-            description="Создать первый визит вручную"
+            title="Сам(а): в WhatsApp, по телефону, в блокноте"
+            description="Добавьте визит клиента вручную — это 1 минута"
             cta="Начать"
             loading={submitting === "manual"}
             onClick={() => choose("manual")}
             testId="path-manual"
+          />
+          <PathCard
+            icon={<Link2 className="w-5 h-5 text-blue-600" />}
+            tint="bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900"
+            title="Через программу Altegio"
+            description="Если клиенты записываются к вам через Altegio — отзывы будут собираться сами"
+            cta="Подключить"
+            loading={submitting === "altegio"}
+            onClick={() => choose("altegio")}
+            testId="path-altegio"
           />
           {hasExample && (
             <PathCard
