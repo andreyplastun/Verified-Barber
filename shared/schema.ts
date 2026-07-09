@@ -382,7 +382,7 @@ export const specialistSignupSchema = z.object({
   city: z.string().default("Алматы"),
   country: z.enum(["KZ", "UZ"]).default("KZ"),
   serviceLocation: z.string().min(1, "Укажите место приёма"),
-  phone: z.string().optional(),
+  phone: z.string().trim().regex(/^\+?[\d\s\-()]{10,18}$/, "Введите корректный номер WhatsApp"),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
   referredBySpecialistId: z.number().optional(),
 });

@@ -37,6 +37,7 @@ const signupSchema = z.object({
   city: z.string().default("Алматы"),
   country: z.enum(["KZ", "UZ"]).default("KZ"),
   serviceLocation: z.string().min(1, "Укажите место приёма"),
+  phone: z.string().trim().regex(/^\+?[\d\s\-()]{10,18}$/, "Введите корректный номер WhatsApp"),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
 });
 
@@ -61,6 +62,7 @@ export default function SpecialistSignup() {
       city: "Алматы",
       country: "KZ",
       serviceLocation: "",
+      phone: "",
       consentReviews: false,
     },
   });
@@ -198,6 +200,28 @@ export default function SpecialistSignup() {
                       data-testid="input-password"
                     />
                   </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="phone"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Номер WhatsApp</FormLabel>
+                  <FormControl>
+                    <Input 
+                      type="tel"
+                      placeholder="+7 777 123 45 67" 
+                      {...field} 
+                      data-testid="input-phone"
+                    />
+                  </FormControl>
+                  <p className="text-xs text-muted-foreground">
+                    Сюда придут подсказки по настройке профиля
+                  </p>
                   <FormMessage />
                 </FormItem>
               )}
