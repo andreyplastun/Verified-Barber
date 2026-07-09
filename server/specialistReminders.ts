@@ -13,6 +13,11 @@ const MAX_PER_SCAN = 8;
 const SEND_SPACING_MS = 20 * 1000;
 const DAY_MS = 86400000;
 const MIN_DAYS_BETWEEN = 7; // never more than 1 reminder per specialist per week
+// Fresh signups get a faster cadence: the goal is to nudge them to finish the
+// profile within a day of registering, and to push "create first visit" within
+// a day of the profile becoming complete (not a week later).
+const FRESH_DAYS = 14; // "fresh" = registered within the last 14 days
+const FRESH_MIN_DAYS_BETWEEN = 1;
 const MAX_PROFILE_REMINDERS = 3; // profile/first-visit nudges capped at 3 total
 const MAX_CLAIM_REMINDERS = 3; // claim-ownership nudges capped at 3 total
 const MAX_UNCOMPLETED_REMINDERS = 4; // "finish your visits" nudges capped at 4 total
@@ -22,6 +27,8 @@ type ReminderType = "claim_ownership" | "profile_incomplete" | "no_first_visit" 
 
 interface Candidate {
   id: number;
+  name: string | null;
+  owner_created_at: string | null;
   phone: string | null;
   image_url: string | null;
   base_service_price: number | null;
@@ -70,6 +77,21 @@ function gateMissing(c: Candidate): string[] {
   return missing;
 }
 
+// What the specialist has already filled in (the complement of gateMissing),
+// used to make the fresh-signup nudge feel personal instead of a form letter.
+function gateFilled(c: Candidate): string[] {
+  const filled: string[] = [];
+  if (c.image_url && c.image_url.trim() !== "") filled.push("фото");
+  if (c.base_service_price != null && c.base_service_name) filled.push(`услуга «${c.base_service_name}»`);
+  if (c.booking_url || c.whatsapp || c.instagram || c.phone) filled.push("способ записи");
+  return filled;
+}
+
+function isFresh(c: Candidate): boolean {
+  if (!c.owner_created_at) return false;
+  return Date.now() - new Date(c.owner_created_at).getTime() < FRESH_DAYS * DAY_MS;
+}
+
 function segmentFor(c: Candidate): { type: ReminderType; missing: string[] } | null {
   // Highest priority: profiles nobody owns yet (imported / admin-created).
   // Until claimed, the dashboard-based nudges (photo/visit) are useless because
@@ -86,13 +108,22 @@ function segmentFor(c: Candidate): { type: ReminderType; missing: string[] } | n
   return null;
 }
 
-function buildMessage(type: ReminderType, missing: string[], specialistId: number): string {
+function buildMessage(type: ReminderType, missing: string[], specialistId: number, c?: Candidate): string {
   if (type === "claim_ownership") {
     const link = `${BASE_URL}/specialist/${specialistId}`;
     return `Здравствуйте! Это Rateus — сервис отзывов и онлайн-записи к мастерам в Алматы (www.rateus.kz). Мы уже создали вашу страницу, чтобы клиенты находили вас и оставляли отзывы. Профиль пока не привязан к вам — заберите его, чтобы управлять записями, фото и отзывами. Нажмите «Забрать» на странице:\n${link}`;
   }
   if (type === "profile_incomplete") {
     const link = `${BASE_URL}/specialist-dashboard?guide=profile`;
+    if (c && isFresh(c)) {
+      const filled = gateFilled(c);
+      const firstName = (c.name || "").trim().split(/\s+/)[0];
+      const hello = firstName ? `Здравствуйте, ${firstName}!` : "Здравствуйте!";
+      const doneLine = filled.length > 0
+        ? `Вы уже добавили: ${filled.join(", ")} — отлично 👍`
+        : `Профиль создан — хороший старт 👍`;
+      return `${hello} Это Rateus. ${doneLine}\nЧтобы клиенты находили вас и оставляли отзывы, осталось добавить: ${missing.join(", ")}. Это займёт пару минут:\n${link}`;
+    }
     return `Здравствуйте! Ваш профиль на Rateus ещё не готов — не хватает: ${missing.join(", ")}.\nЗаполните, чтобы клиенты могли вас найти и оставлять отзывы:\n${link}`;
   }
   if (type === "no_first_visit") {
@@ -109,6 +140,10 @@ function buildMessage(type: ReminderType, missing: string[], specialistId: numbe
 
 // Period bucket so a given (specialist, type) can be reminded at most once per
 // window. Profile/first-visit nudges bucket weekly; inactive every 14 days.
+// INTENTIONAL for fresh signups: the 1-day gap (FRESH_MIN_DAYS_BETWEEN) only
+// speeds up *transitions between stages* (profile_incomplete -> no_first_visit).
+// Repeats of the SAME type stay weekly via this bucket, so a fresh specialist
+// who ignores the first nudge is not spammed daily with the same text.
 function dedupeKeyFor(specialistId: number, type: ReminderType): string {
   const periodMs = type === "inactive" ? INACTIVE_DAYS * DAY_MS : MIN_DAYS_BETWEEN * DAY_MS;
   const bucket = Math.floor(Date.now() / periodMs);
@@ -155,8 +190,9 @@ export async function runSpecialistReminderScan(): Promise<void> {
   if (!(await isEnabled())) return;
 
   const res = await db.execute(sql`
-    SELECT s.id, s.phone, s.image_url, s.base_service_price, s.base_service_name,
+    SELECT s.id, s.name, s.phone, s.image_url, s.base_service_price, s.base_service_name,
            s.booking_url, s.whatsapp, s.instagram, s.owner_user_id,
+           u.created_at AS owner_created_at,
            COUNT(b.id)::int AS booking_count, MAX(b.created_at) AS last_booking_at,
            COUNT(b.id) FILTER (
              WHERE b.booking_source = 'specialist_manual'
@@ -164,10 +200,11 @@ export async function runSpecialistReminderScan(): Promise<void> {
                AND b.appointment_time < now()
            )::int AS uncompleted_count
     FROM specialists s
+    LEFT JOIN users u ON u.id = s.owner_user_id
     LEFT JOIN bookings b ON b.specialist_id = s.id
     WHERE s.is_active = true
       AND ((s.phone IS NOT NULL AND s.phone <> '') OR (s.whatsapp IS NOT NULL AND s.whatsapp <> ''))
-    GROUP BY s.id
+    GROUP BY s.id, u.created_at
   `);
   const candidates = res.rows as any as Candidate[];
   if (candidates.length === 0) return;
@@ -197,7 +234,10 @@ export async function runSpecialistReminderScan(): Promise<void> {
     const { type, missing } = seg;
 
     const f = fmap.get(c.id);
-    if (f?.last_sent && now - new Date(f.last_sent).getTime() < MIN_DAYS_BETWEEN * DAY_MS) continue;
+    // Fresh signups move through the funnel daily (profile → first visit);
+    // everyone else keeps the conservative weekly spacing.
+    const gapDays = isFresh(c) ? FRESH_MIN_DAYS_BETWEEN : MIN_DAYS_BETWEEN;
+    if (f?.last_sent && now - new Date(f.last_sent).getTime() < gapDays * DAY_MS) continue;
     if (type === "claim_ownership" && Number(f?.claim_sent || 0) >= MAX_CLAIM_REMINDERS) continue;
     if (type === "uncompleted_visits" && Number(f?.uncompleted_sent || 0) >= MAX_UNCOMPLETED_REMINDERS) continue;
     if ((type === "profile_incomplete" || type === "no_first_visit") && Number(f?.profile_sent || 0) >= MAX_PROFILE_REMINDERS) continue;
@@ -218,7 +258,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
       continue;
     }
 
-    const text = buildMessage(type, missing, c.id);
+    const text = buildMessage(type, missing, c.id, c);
     try {
       const r = await sendSpecialistReminderWa(recipient, text, c.id);
       if (r.success) {
