@@ -4766,7 +4766,7 @@ ${magicLink}`;
         WHERE event_type = 'booking_click' AND ${aeCond}
       `);
       const profileEdits = await db.execute(sql`
-        SELECT COUNT(*) AS cnt FROM analytics_events
+        SELECT COUNT(DISTINCT specialist_id) AS cnt FROM analytics_events
         WHERE event_type = 'profile_updated' AND ${aeCond}
       `);
       const topProfiles = await db.execute(sql`

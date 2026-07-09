@@ -709,7 +709,7 @@ export default function AdminDashboard() {
                     { icon: UserPlus, label: "Регистраций", value: stats.registrations.total, testid: "stat-registrations" },
                     { icon: Eye, label: "Открытий профилей", value: stats.profileViews, testid: "stat-profile-views" },
                     { icon: MousePointerClick, label: "Попыток записаться", value: stats.bookingClicks, testid: "stat-booking-clicks" },
-                    { icon: FileEdit, label: "Редактирований профиля", value: stats.profileEdits, testid: "stat-profile-edits" },
+                    { icon: FileEdit, label: "Мастеров редактировали профиль", value: stats.profileEdits, testid: "stat-profile-edits" },
                     { icon: Star, label: "Отзывов оставлено", value: stats.reviews, testid: "stat-reviews" },
                   ].map((m) => (
                     <Card key={m.testid}>
