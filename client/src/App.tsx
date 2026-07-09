@@ -20,6 +20,7 @@ import SpecialistDashboard from "@/pages/SpecialistDashboard";
 import SpecialistOnboarding from "@/pages/SpecialistOnboarding";
 import SpecialistSignup from "@/pages/SpecialistSignup";
 import LoginPage from "@/pages/LoginPage";
+import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import PrivacyPage from "@/pages/PrivacyPage";
 import TermsPage from "@/pages/TermsPage";
 import OfferPage from "@/pages/OfferPage";
@@ -144,6 +145,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={LoginRoute} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/signup" component={LoginRoute} />
       <Route path="/" component={HomeRoute} />
       <Route path="/specialist/:id" component={SpecialistProfile} />

@@ -2284,6 +2284,16 @@ export default function SpecialistDashboard() {
         </CardContent>
       </Card>
 
+      <div className="text-center pb-4">
+        <a
+          href="/reset-password"
+          className="text-xs text-muted-foreground underline"
+          data-testid="link-change-password"
+        >
+          Сменить пароль
+        </a>
+      </div>
+
       <Dialog open={priceDialogBookingId !== null} onOpenChange={(open) => { if (!open) { setPriceDialogBookingId(null); setPriceInputValue(''); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
