@@ -5,13 +5,14 @@ import { SignUpForm } from "@/components/auth/SignUpForm";
 import { LegalFooter } from "@/components/LegalFooter";
 import { ClientBenefits } from "@/components/ClientBenefits";
 import { getCurrentUserWithRole } from "@/lib/auth";
-import { UserPlus } from "lucide-react";
+import { UserPlus, User, Briefcase, ChevronRight, ArrowLeft } from "lucide-react";
 import logoImage from "@assets/410C2451-35F6-4A38-98C8-FF4645466949_1771319885407.png";
 
+type Mode = "login" | "choose-role" | "client-signup";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
-  const [isLogin, setIsLogin] = useState(true);
+  const [mode, setMode] = useState<Mode>("login");
 
   const handleSuccess = async () => {
     const claimReturn = sessionStorage.getItem("claimReturnUrl");
@@ -39,35 +40,97 @@ export default function LoginPage() {
         <div className="w-full max-w-sm space-y-6">
           <div className="text-center space-y-2">
             <h1 className="text-2xl font-bold" data-testid="text-login-title">
-              {isLogin ? 'Добро пожаловать' : 'Создание аккаунта'}
+              {mode === "login" && "Добро пожаловать"}
+              {mode === "choose-role" && "Кто вы?"}
+              {mode === "client-signup" && "Создание аккаунта"}
             </h1>
             <p className="text-muted-foreground">
-              {isLogin ? 'Войдите, чтобы продолжить' : 'Заполните данные для регистрации'}
+              {mode === "login" && "Войдите, чтобы продолжить"}
+              {mode === "choose-role" && "Выберите, как хотите зарегистрироваться"}
+              {mode === "client-signup" && "Регистрация клиента"}
             </p>
           </div>
 
-          {isLogin ? (
-            <LoginForm onSuccess={handleSuccess} onSwitchToSignUp={() => setIsLogin(false)} />
-          ) : (
+          {mode === "login" && (
             <>
-              <ClientBenefits />
-              <SignUpForm onSuccess={handleSuccess} onSwitchToLogin={() => setIsLogin(true)} />
+              <LoginForm onSuccess={handleSuccess} onSwitchToSignUp={() => setMode("choose-role")} />
+
+              <div className="pt-6 border-t space-y-3">
+                <p className="text-center text-xs text-muted-foreground uppercase tracking-wide">
+                  Вы специалист?
+                </p>
+                <Link
+                  href="/specialist-signup"
+                  className="flex items-center justify-center gap-2 w-full rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm font-medium text-foreground hover:bg-primary/10 transition-colors"
+                  data-testid="link-specialist-signup"
+                >
+                  <UserPlus className="h-4 w-4" />
+                  Зарегистрироваться как специалист
+                </Link>
+              </div>
             </>
           )}
 
-          <div className="pt-6 border-t space-y-3">
-            <p className="text-center text-xs text-muted-foreground uppercase tracking-wide">
-              Вы специалист?
-            </p>
-            <Link
-              href="/specialist-signup"
-              className="flex items-center justify-center gap-2 w-full rounded-md border border-primary/40 bg-primary/5 px-4 py-3 text-sm font-medium text-foreground hover:bg-primary/10 transition-colors"
-              data-testid="link-specialist-signup"
-            >
-              <UserPlus className="h-4 w-4" />
-              Зарегистрироваться как специалист
-            </Link>
-          </div>
+          {mode === "choose-role" && (
+            <div className="space-y-3">
+              <Link
+                href="/specialist-signup"
+                className="flex items-center gap-4 w-full rounded-lg border-2 border-primary/40 bg-primary/5 p-4 text-left hover:bg-primary/10 transition-colors"
+                data-testid="button-role-specialist"
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10">
+                  <Briefcase className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold">Я специалист</p>
+                  <p className="text-sm text-muted-foreground">Оказываю услуги, хочу профиль и отзывы</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => setMode("client-signup")}
+                className="flex items-center gap-4 w-full rounded-lg border p-4 text-left hover-elevate active-elevate-2 transition-colors"
+                data-testid="button-role-client"
+              >
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-muted">
+                  <User className="h-5 w-5 text-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold">Я клиент</p>
+                  <p className="text-sm text-muted-foreground">Ищу специалистов и записываюсь к ним</p>
+                </div>
+                <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className="flex items-center justify-center gap-1 w-full text-sm text-muted-foreground pt-2"
+                data-testid="link-back-to-login"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Назад ко входу
+              </button>
+            </div>
+          )}
+
+          {mode === "client-signup" && (
+            <>
+              <ClientBenefits />
+              <SignUpForm onSuccess={handleSuccess} onSwitchToLogin={() => setMode("login")} />
+              <button
+                type="button"
+                onClick={() => setMode("choose-role")}
+                className="flex items-center justify-center gap-1 w-full text-sm text-muted-foreground"
+                data-testid="link-back-to-role-choice"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Я не клиент, я специалист
+              </button>
+            </>
+          )}
 
         </div>
       </div>

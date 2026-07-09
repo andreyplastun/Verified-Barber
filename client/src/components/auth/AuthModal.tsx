@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'wouter';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { LoginForm } from './LoginForm';
 import { SignUpForm } from './SignUpForm';
@@ -47,6 +48,17 @@ export function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
               onSwitchToLogin={() => setMode('login')}
               onClose={handleClose}
             />
+            <p className="text-center text-sm text-muted-foreground">
+              Вы специалист?{' '}
+              <Link
+                href="/specialist-signup"
+                onClick={handleClose}
+                className="text-foreground underline font-medium"
+                data-testid="link-modal-specialist-signup"
+              >
+                Регистрация специалиста
+              </Link>
+            </p>
           </div>
         )}
       </DialogContent>
