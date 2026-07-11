@@ -66,6 +66,7 @@ export default function SpecialistDashboard() {
   const [bookingUrl, setBookingUrl] = useState('');
   const [whatsapp, setWhatsapp] = useState('');
   const [instagram, setInstagram] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
   const [altegioModalOpen, setAltegioModalOpen] = useState(false);
   const [altegioConnecting, setAltegioConnecting] = useState(false);
   const [altegioCompanyInput, setAltegioCompanyInput] = useState('');
@@ -731,6 +732,7 @@ export default function SpecialistDashboard() {
       setBookingUrl((specialist as any).bookingUrl || '');
       setWhatsapp((specialist as any).whatsapp || '');
       setInstagram((specialist as any).instagram || '');
+      setContactPhone((specialist as any).phone || '');
       setCountry((specialist as any).country || 'KZ');
     }
   }, [specialist]);
@@ -778,7 +780,7 @@ export default function SpecialistDashboard() {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio, city, country, subcategory, workAddress: addr, workLat: lat, workLng: lng, bookingUrl, whatsapp, instagram }),
+        body: JSON.stringify({ bio, city, country, subcategory, workAddress: addr, workLat: lat, workLng: lng, bookingUrl, whatsapp, instagram, phone: contactPhone }),
       });
       if (!res.ok) {
         const error = await res.json();
@@ -1242,6 +1244,20 @@ export default function SpecialistDashboard() {
               data-testid="input-instagram"
             />
           </div>
+          <div className="space-y-2" id="contact-phone-section">
+            <Label htmlFor="contact-phone">Ваш WhatsApp для уведомлений</Label>
+            <Input
+              id="contact-phone"
+              type="tel"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+              placeholder="+7 777 123 45 67"
+              data-testid="input-contact-phone"
+            />
+            <p className="text-xs text-muted-foreground">
+              Личный номер — на него приходят уведомления сервиса (например, о новых отзывах). Клиентам не показывается.
+            </p>
+          </div>
           <div className="space-y-2" id="bio-section">
             <Label htmlFor="bio">Краткое описание</Label>
             <Textarea
@@ -1260,7 +1276,7 @@ export default function SpecialistDashboard() {
               <Button
                 size="sm"
                 onClick={handleSaveBio}
-                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null) && bookingUrl === ((specialist as any)?.bookingUrl || '') && whatsapp === ((specialist as any)?.whatsapp || '') && instagram === ((specialist as any)?.instagram || ''))}
+                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null) && bookingUrl === ((specialist as any)?.bookingUrl || '') && whatsapp === ((specialist as any)?.whatsapp || '') && instagram === ((specialist as any)?.instagram || '') && contactPhone === ((specialist as any)?.phone || ''))}
                 data-testid="button-save-bio"
               >
                 {savingBio ? 'Сохранение...' : 'Сохранить'}

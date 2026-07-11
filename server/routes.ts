@@ -2825,7 +2825,7 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       const specialistId = Number(req.params.id);
-      const { bio, city, country, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram } = req.body;
+      const { bio, city, country, subcategory, workAddress, workLat, workLng, bookingUrl, whatsapp, instagram, phone } = req.body;
 
       if (!userId) {
         return res.status(401).json({ message: "Unauthorized" });
@@ -2894,6 +2894,10 @@ ${magicLink}`;
 
         const instagramNorm = normalizeOptionalString(instagram, 'instagram', 200);
         if (instagramNorm !== undefined) updates.instagram = instagramNorm;
+
+        const phoneNorm = normalizeOptionalString(phone, 'phone', 32, (v) =>
+          /^\+?[\d\s\-()]{10,18}$/.test(v) ? null : "Введите корректный номер WhatsApp");
+        if (phoneNorm !== undefined) updates.phone = phoneNorm;
       } catch (e: any) {
         if (e?.message === '__validation_handled__') return;
         throw e;
