@@ -67,6 +67,7 @@ export default function SpecialistDashboard() {
   const [whatsapp, setWhatsapp] = useState('');
   const [instagram, setInstagram] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [showAltBookingPhone, setShowAltBookingPhone] = useState(false);
   const [altegioModalOpen, setAltegioModalOpen] = useState(false);
   const [altegioConnecting, setAltegioConnecting] = useState(false);
   const [altegioCompanyInput, setAltegioCompanyInput] = useState('');
@@ -733,6 +734,7 @@ export default function SpecialistDashboard() {
       setWhatsapp((specialist as any).whatsapp || '');
       setInstagram((specialist as any).instagram || '');
       setContactPhone((specialist as any).phone || '');
+      if ((specialist as any).whatsapp) setShowAltBookingPhone(true);
       setCountry((specialist as any).country || 'KZ');
     }
   }, [specialist]);
@@ -1170,7 +1172,18 @@ export default function SpecialistDashboard() {
             })()}
           </div>
           <div className="space-y-2" id="contacts-section">
-            <Label>Контакты для записи</Label>
+            <Label htmlFor="contact-phone">Ваш WhatsApp</Label>
+            <Input
+              id="contact-phone"
+              type="tel"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+              placeholder="+7 777 123 45 67"
+              data-testid="input-contact-phone"
+            />
+            <p className="text-xs text-muted-foreground">
+              Сюда пишут клиенты для записи и приходят уведомления сервиса.
+            </p>
             {isAltegioConnected ? (
               <div
                 className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 space-y-3"
@@ -1218,7 +1231,7 @@ export default function SpecialistDashboard() {
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Кнопка «Записаться» использует первый заполненный канал по приоритету: ссылка → WhatsApp → Instagram → телефон из профиля.
+                  Если ссылки нет, кнопка «Записаться» откроет клиенту чат с вашим WhatsApp.
                 </p>
                 <Input
                   type="url"
@@ -1230,33 +1243,36 @@ export default function SpecialistDashboard() {
               </>
             )}
             <Input
-              type="tel"
-              value={whatsapp}
-              onChange={(e) => setWhatsapp(e.target.value)}
-              placeholder="WhatsApp: +7 777 123 45 67"
-              data-testid="input-whatsapp"
-            />
-            <Input
               type="text"
               value={instagram}
               onChange={(e) => setInstagram(e.target.value)}
               placeholder="Instagram: @username или ссылка"
               data-testid="input-instagram"
             />
-          </div>
-          <div className="space-y-2" id="contact-phone-section">
-            <Label htmlFor="contact-phone">Ваш WhatsApp для уведомлений</Label>
-            <Input
-              id="contact-phone"
-              type="tel"
-              value={contactPhone}
-              onChange={(e) => setContactPhone(e.target.value)}
-              placeholder="+7 777 123 45 67"
-              data-testid="input-contact-phone"
-            />
-            <p className="text-xs text-muted-foreground">
-              Личный номер — на него приходят уведомления сервиса (например, о новых отзывах). Клиентам не показывается.
-            </p>
+            {showAltBookingPhone ? (
+              <div className="space-y-1">
+                <Label htmlFor="alt-booking-phone" className="text-sm font-normal text-muted-foreground">
+                  Номер для записи (салон, администратор)
+                </Label>
+                <Input
+                  id="alt-booking-phone"
+                  type="tel"
+                  value={whatsapp}
+                  onChange={(e) => setWhatsapp(e.target.value)}
+                  placeholder="WhatsApp: +7 777 123 45 67"
+                  data-testid="input-whatsapp"
+                />
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowAltBookingPhone(true)}
+                className="text-xs text-muted-foreground underline"
+                data-testid="button-show-alt-booking-phone"
+              >
+                Для записи другой номер (салон, администратор)?
+              </button>
+            )}
           </div>
           <div className="space-y-2" id="bio-section">
             <Label htmlFor="bio">Краткое описание</Label>
