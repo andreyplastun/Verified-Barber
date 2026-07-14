@@ -77,6 +77,7 @@ export default function SpecialistDashboard() {
   const [newBookingDate, setNewBookingDate] = useState('');
   const [newBookingTime, setNewBookingTime] = useState('');
   const [rateLimitWarningOpen, setRateLimitWarningOpen] = useState(false);
+  const [dailyLimitMessage, setDailyLimitMessage] = useState<string | null>(null);
   const [showFirstVisitSuccess, setShowFirstVisitSuccess] = useState(false);
   const [manualVisitInfoDismissed, setManualVisitInfoDismissed] = useState(false);
   const [guideMode, setGuideMode] = useState<null | 'create-visit' | 'profile'>(null);
@@ -644,6 +645,12 @@ export default function SpecialistDashboard() {
           throw new Error(`Сервер вернул некорректный ответ (${res.status})`);
         }
         if (!res.ok) {
+          if (data.dailyLimitReached) {
+            setDailyLimitMessage(data.message || 'Лимит записей на сегодня исчерпан. Новые записи можно создать завтра.');
+            const e: any = new Error('daily_limit');
+            e.silent = true;
+            throw e;
+          }
           throw new Error(data.message || `Ошибка сервера (${res.status})`);
         }
         return data;
@@ -673,6 +680,7 @@ export default function SpecialistDashboard() {
       setNewBookingTime('');
     },
     onError: (err: Error) => {
+      if ((err as any).silent) return;
       toast({ title: isNewSpecialist ? 'Не удалось добавить клиента' : 'Ошибка создания записи', description: err.message, variant: 'destructive' });
     },
   });
@@ -1522,6 +1530,27 @@ export default function SpecialistDashboard() {
               Отмена
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!dailyLimitMessage} onOpenChange={(open) => !open && setDailyLimitMessage(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-orange-500" />
+              Дневной лимит
+            </DialogTitle>
+            <DialogDescription data-testid="text-daily-limit-message">
+              {dailyLimitMessage}
+            </DialogDescription>
+          </DialogHeader>
+          <Button
+            className="w-full mt-2"
+            onClick={() => setDailyLimitMessage(null)}
+            data-testid="button-close-daily-limit"
+          >
+            Понятно
+          </Button>
         </DialogContent>
       </Dialog>
 

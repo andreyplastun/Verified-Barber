@@ -1029,6 +1029,30 @@ export async function registerRoutes(
     });
   });
 
+  // Daily manual booking limit per specialist: 5/day base, ramps to 7 then 9 (cap) with sustained volume (Almaty days).
+  // Counts non-Altegio bookings (specialist_manual, client_app, legacy NULL) so the public endpoint can't be used to bypass the cap.
+  async function checkManualDailyLimit(specialistId: number): Promise<{ blocked: boolean; limit: number; todayCount: number }> {
+    const rows = await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Almaty')::date = (now() AT TIME ZONE 'Asia/Almaty')::date) AS today_count,
+        COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Almaty')::date >= (now() AT TIME ZONE 'Asia/Almaty')::date - 7
+                           AND (created_at AT TIME ZONE 'Asia/Almaty')::date < (now() AT TIME ZONE 'Asia/Almaty')::date) AS week1_count,
+        COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Almaty')::date >= (now() AT TIME ZONE 'Asia/Almaty')::date - 14
+                           AND (created_at AT TIME ZONE 'Asia/Almaty')::date < (now() AT TIME ZONE 'Asia/Almaty')::date - 7) AS week2_count
+      FROM bookings
+      WHERE specialist_id = ${specialistId}
+        AND (booking_source IS NULL OR booking_source IN ('specialist_manual', 'client_app'))
+    `);
+    const r: any = (rows as any).rows?.[0] || {};
+    const todayCount = Number(r.today_count || 0);
+    const week1 = Number(r.week1_count || 0);
+    const week2 = Number(r.week2_count || 0);
+    let limit = 5;
+    if (week1 >= 25) limit = 7;
+    if (week1 >= 40 && week2 >= 25) limit = 9;
+    return { blocked: todayCount >= limit, limit, todayCount };
+  }
+
   // Bookings
   app.post(api.bookings.create.path, async (req, res) => {
     try {
@@ -1050,12 +1074,23 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Нельзя создать запись старше 24 часов" });
       }
 
+      const dailyCheck = await checkManualDailyLimit(input.specialistId);
+      if (dailyCheck.blocked) {
+        console.log(`[ANTIFRAUD_DAILY_LIMIT] public create: specialist=${input.specialistId} today=${dailyCheck.todayCount} limit=${dailyCheck.limit} — blocked`);
+        return res.status(429).json({
+          dailyLimitReached: true,
+          limit: dailyCheck.limit,
+          message: `Лимит записей на сегодня исчерпан (${dailyCheck.limit} в день). Новые записи можно создать завтра.`,
+        });
+      }
+
       const normalized = normalizePhone(input.customerPhone);
       const booking = await storage.createBooking({
         ...input,
         status: "scheduled",
         normalizedPhone: normalized,
         isNewClient: !normalized && !input.customerPhone,
+        bookingSource: (input as any).bookingSource === "specialist_manual" ? "specialist_manual" : "client_app",
       } as any);
 
       if (isAltegioConfigured()) {
@@ -2257,6 +2292,16 @@ ${magicLink}`;
       if (apptDate < twentyFourHoursAgo) {
         console.log(`[SPECIALIST_BOOKING] Rejected: date too old. appt=${apptDate.toISOString()} cutoff=${twentyFourHoursAgo.toISOString()}`);
         return res.status(400).json({ message: "Нельзя создать запись старше 24 часов" });
+      }
+
+      const dailyCheck = await checkManualDailyLimit(user.specialistId);
+      if (dailyCheck.blocked) {
+        console.log(`[ANTIFRAUD_DAILY_LIMIT] specialist=${user.specialistId} today=${dailyCheck.todayCount} limit=${dailyCheck.limit} — blocked`);
+        return res.status(429).json({
+          dailyLimitReached: true,
+          limit: dailyCheck.limit,
+          message: `Лимит записей на сегодня исчерпан (${dailyCheck.limit} в день). Новые записи можно создать завтра.`,
+        });
       }
 
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);

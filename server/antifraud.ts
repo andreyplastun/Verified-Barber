@@ -170,7 +170,7 @@ export async function calculateRepeatWeight(
   if (!customerPhone) return 1.0;
 
   const norm = normalizePhone(customerPhone);
-  const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+  const sixtyDaysAgo = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000); // 180-day phone cooldown (2026-07: raised from 60)
 
   const existing = await db.select({ id: reviews.id })
     .from(reviews)
