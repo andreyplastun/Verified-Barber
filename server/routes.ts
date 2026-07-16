@@ -142,6 +142,19 @@ function specialistHasAltegio(specialist: any): boolean {
     (!!specialist?.altegioCompanyId && specialist?.altegioConnectionStatus === "connected");
 }
 
+// For the manual-booking 0.3 penalty: Altegio counts only if data actually flows
+// (at least one altegio-sourced booking exists). A nominal connection (company_id
+// saved but the salon never installed the app → zero webhooks) must NOT penalize.
+async function specialistHasWorkingAltegio(specialist: any): Promise<boolean> {
+  if (!specialistHasAltegio(specialist)) return false;
+  const rows = await db.execute(sql`
+    SELECT 1 FROM bookings
+    WHERE specialist_id = ${specialist.id} AND booking_source = 'altegio'
+    LIMIT 1
+  `);
+  return ((rows as any).rows?.length ?? 0) > 0;
+}
+
 // Resolves a Rateus specialist for an incoming Altegio webhook.
 // Priority: 1) exact staff+company, 2) staff only, 3) company only for solo
 // specialists who connected via company link (altegioCompanyId set, altegioStaffId null).
@@ -1166,7 +1179,7 @@ export async function registerRoutes(
     }
     if ((booking as any).bookingSource === "specialist_manual" && (booking as any).visitTrustWeight == null) {
       const specialist = await storage.getSpecialist(booking.specialistId);
-      const trustWeight = specialistHasAltegio(specialist) ? 0.3 : 0.6;
+      const trustWeight = (await specialistHasWorkingAltegio(specialist)) ? 0.3 : 0.6;
       await storage.updateBooking(id, { visitTrustWeight: trustWeight } as any);
       (booking as any).visitTrustWeight = trustWeight;
       console.log(`[ANTIFRAUD] booking=${id} specialist=${booking.specialistId}: manual booking completed via legacy endpoint, trustWeight=${trustWeight}`);
@@ -1495,7 +1508,7 @@ export async function registerRoutes(
 
       if ((booking as any).bookingSource === "specialist_manual" && (booking as any).visitTrustWeight == null) {
         const specialist = await storage.getSpecialist(booking.specialistId);
-        const trustWeight = specialistHasAltegio(specialist) ? 0.3 : 0.6;
+        const trustWeight = (await specialistHasWorkingAltegio(specialist)) ? 0.3 : 0.6;
         await storage.updateBooking(id, { visitTrustWeight: trustWeight } as any);
         console.log(`[ANTIFRAUD] booking=${id} specialist=${booking.specialistId}: manual booking completed via admin, trustWeight=${trustWeight}`);
       }
@@ -2458,7 +2471,7 @@ ${magicLink}`;
 
       const specialist = await storage.getSpecialist(booking.specialistId);
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";
-      const hasAltegio = specialistHasAltegio(specialist);
+      const hasAltegio = isManualBooking && (await specialistHasWorkingAltegio(specialist));
       const trustWeight = isManualBooking ? (hasAltegio ? 0.3 : 0.6) : 1.05;
 
       const finalBooking = await storage.updateBooking(bookingId, {
@@ -2529,7 +2542,7 @@ ${magicLink}`;
 
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";
       const specialist = await storage.getSpecialist(booking.specialistId);
-      const hasAltegio = specialistHasAltegio(specialist);
+      const hasAltegio = isManualBooking && (await specialistHasWorkingAltegio(specialist));
       const trustWeight = isManualBooking ? (hasAltegio ? 0.3 : 0.6) : 1.0;
 
       const updated = await storage.updateBooking(bookingId, {
@@ -2677,7 +2690,7 @@ ${magicLink}`;
     let paidTrustWeight = 1.05;
     if ((booking as any).bookingSource === 'specialist_manual') {
       const specialist = await storage.getSpecialist(booking.specialistId);
-      paidTrustWeight = specialistHasAltegio(specialist) ? 0.3 : 0.6;
+      paidTrustWeight = (await specialistHasWorkingAltegio(specialist)) ? 0.3 : 0.6;
       console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking paid via ${source}, trustWeight=${paidTrustWeight}`);
     }
     const updateData: any = {
