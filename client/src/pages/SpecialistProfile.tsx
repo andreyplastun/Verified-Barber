@@ -61,12 +61,22 @@ export default function SpecialistProfile() {
 
   const showClaimButton = claimStatus && !claimStatus.isClaimed;
 
+  // Claim modal: never for logged-in users (client or specialist); for anonymous
+  // visitors only after they've opened this unclaimed profile several times.
+  const CLAIM_MODAL_VIEW_THRESHOLD = 10;
+
   useEffect(() => {
-    if (showClaimButton && id > 0 && !localStorage.getItem(`claim_modal_seen_${id}`)) {
+    if (id <= 0 || currentUser) return;
+    if (!showClaimButton) return;
+    if (localStorage.getItem(`claim_modal_seen_${id}`)) return;
+    const key = `claim_profile_views_${id}`;
+    const views = (parseInt(localStorage.getItem(key) || "0", 10) || 0) + 1;
+    localStorage.setItem(key, String(views));
+    if (views >= CLAIM_MODAL_VIEW_THRESHOLD) {
       const t = setTimeout(() => setShowClaimModal(true), 700);
       return () => clearTimeout(t);
     }
-  }, [showClaimButton, id]);
+  }, [showClaimButton, id, currentUser]);
 
   // Fetch user's bookings to check if they can leave a review
   const { data: myBookings = [] } = useQuery<Booking[]>({
