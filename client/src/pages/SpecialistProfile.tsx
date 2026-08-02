@@ -24,14 +24,23 @@ export default function SpecialistProfile() {
   const { toast } = useToast();
   const { data: specialist, isLoading } = useSpecialist(id, currentUser?.id);
 
-  const { data: claimStatus } = useQuery<{ isClaimed: boolean }>({
-    queryKey: ['/api/specialists', id, 'claim-status'],
+  const { data: claimStatus } = useQuery<{ isClaimed: boolean; suggestClaim?: boolean }>({
+    queryKey: ['/api/specialists', id, 'claim-status', currentUser?.id ?? 'anon'],
     queryFn: async () => {
-      const res = await fetch(`/api/specialists/${id}/claim-status`);
+      // x-user-id lets the server skip counting logged-in visits toward the
+      // "same IP visited 3 times today" claim-modal trigger.
+      const res = await fetch(`/api/specialists/${id}/claim-status`, {
+        headers: currentUser?.id ? { "x-user-id": String(currentUser.id) } : undefined,
+      });
       if (!res.ok) return { isClaimed: true };
       return res.json();
     },
     enabled: id > 0,
+    // Each fetch counts as one "visit" on the server, so never refetch in the
+    // background (focus/reconnect) — one count per real profile open.
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 
   const [showClaimForm, setShowClaimForm] = useState(false);
@@ -72,11 +81,13 @@ export default function SpecialistProfile() {
     const key = `claim_profile_views_${id}`;
     const views = (parseInt(localStorage.getItem(key) || "0", 10) || 0) + 1;
     localStorage.setItem(key, String(views));
-    if (views >= CLAIM_MODAL_VIEW_THRESHOLD) {
+    // Trigger either on the server signal (same IP opened this unclaimed
+    // profile 3+ times today) or on the local per-browser view counter.
+    if (claimStatus?.suggestClaim || views >= CLAIM_MODAL_VIEW_THRESHOLD) {
       const t = setTimeout(() => setShowClaimModal(true), 700);
       return () => clearTimeout(t);
     }
-  }, [showClaimButton, id, currentUser]);
+  }, [showClaimButton, id, currentUser, claimStatus?.suggestClaim]);
 
   // Fetch user's bookings to check if they can leave a review
   const { data: myBookings = [] } = useQuery<Booking[]>({

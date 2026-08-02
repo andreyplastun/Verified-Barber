@@ -22,7 +22,7 @@ The backend is built with Node.js and Express in TypeScript, providing RESTful A
 - **Visit Lifecycle**: Bookings progress through a 5-status lifecycle (`scheduled` to `completed`). Background jobs manage status transitions.
 - **Trust Model (LOCKED SPEC v2)**: A `visitTrustWeight` field is used to calculate ratings based on visit payment status. Damping factors are applied for specialists with multiple uncompleted visits. Ratings are recalculated on new reviews or payment status changes.
 - **Booking & Payment Flow**: Supports two payment paths: Kaspi P2P (specialist-confirmed) and external webhook payments. Magic links for reviews are generated upon visit completion.
-- **Specialist Onboarding & Claiming**: Provides a self-signup and profile claiming process for specialists.
+- **Specialist Onboarding & Claiming**: Provides a self-signup and profile claiming process for specialists. Claim modal triggers: never for logged-in users; anonymous visitors get it either after 10 local views of the profile, or immediately when the server sees 3+ anonymous visits to the same unclaimed profile from one IP in a day (in-memory counter in claim-status endpoint, resets daily, capped at 20k keys).
 - **Altegio Bidirectional Sync**: Integrates with Altegio via webhooks for appointment synchronization, including loop protection and retry mechanisms.
 - **New Client Identity System**: Handles client identification using `altegio_client_id` and `normalized_phone`, with a priority system and structured logging for identity management.
 - **Phone-Only Magic Links**: Allows creation of magic links for bookings with only phone numbers, enabling review collection for Altegio-synced clients without user accounts.

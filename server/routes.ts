@@ -3492,6 +3492,16 @@ ${magicLink}`;
   });
 
   // Check if specialist profile is claimed (public)
+  // Per-IP visit counter for unclaimed profiles: if the same IP opens the same
+  // unclaimed profile 3+ times within one day, the client shows the "claim your
+  // account" modal immediately. In-memory, keyed by day so it self-resets.
+  const CLAIM_SUGGEST_VISIT_THRESHOLD = 3;
+  // Hard cap so spoofed X-Forwarded-For values can't grow the map unboundedly
+  // within a day; when full we simply stop counting new keys until reset.
+  const CLAIM_VISIT_COUNTER_MAX_KEYS = 20000;
+  const claimVisitCounter = new Map<string, number>();
+  let claimVisitCounterDay = "";
+
   app.get("/api/specialists/:id/claim-status", async (req, res) => {
     try {
       const specialistId = parseInt(req.params.id);
@@ -3507,9 +3517,38 @@ ${magicLink}`;
       const hasActiveClaim = allClaims.some(
         c => c.specialistId === specialistId && isClaimActive(c)
       );
-      res.json({ 
-        isClaimed: !!specialist.ownerUserId || hasActiveClaim,
-        specialistId 
+      const isClaimed = !!specialist.ownerUserId || hasActiveClaim;
+
+      let suggestClaim = false;
+      if (!isClaimed) {
+        const today = new Date().toISOString().slice(0, 10);
+        if (claimVisitCounterDay !== today) {
+          claimVisitCounter.clear();
+          claimVisitCounterDay = today;
+        }
+        const ip = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket.remoteAddress || '';
+        // Only count anonymous visitors: logged-in users never see the modal,
+        // and their visits shouldn't trigger it for someone else on the same IP.
+        const isLoggedIn = !!(req.headers["x-user-id"] as string);
+        if (ip && !isLoggedIn) {
+          const key = `${ip}:${specialistId}`;
+          if (!claimVisitCounter.has(key) && claimVisitCounter.size >= CLAIM_VISIT_COUNTER_MAX_KEYS) {
+            // Map is full for today — skip counting new keys to bound memory.
+            return res.json({ isClaimed, suggestClaim: false, specialistId });
+          }
+          const visits = (claimVisitCounter.get(key) || 0) + 1;
+          claimVisitCounter.set(key, visits);
+          suggestClaim = visits >= CLAIM_SUGGEST_VISIT_THRESHOLD;
+          if (suggestClaim) {
+            console.log(`[CLAIM] specialist=${specialistId}: ${visits} visits today from same IP → suggest claim modal`);
+          }
+        }
+      }
+
+      res.json({
+        isClaimed,
+        suggestClaim,
+        specialistId
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
