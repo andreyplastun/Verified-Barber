@@ -1059,6 +1059,11 @@ export default function SpecialistDashboard() {
                   <div className="flex items-center gap-1">
                     <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                     <span data-testid="text-rating">{averageRating}</span>
+                    {((specialist as any).validReviewCount || 0) >= 10 ? (
+                      <span className="text-xs text-emerald-600 font-medium ml-1" data-testid="text-rating-formed">Сформированный</span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground ml-1" data-testid="text-rating-forming">Формируется</span>
+                    )}
                   </div>
                 )}
                 <Badge variant="secondary" data-testid="badge-review-count">

@@ -186,8 +186,11 @@ async function getStandings(): Promise<Standings> {
   return data;
 }
 
-function badgesFor(rank: number | null, top10Streak: number, firstStreak: number): AchievementBadge[] {
+function badgesFor(rank: number | null, top10Streak: number, firstStreak: number, ratingFormed: boolean): AchievementBadge[] {
   const b: AchievementBadge[] = [];
+  if (ratingFormed) {
+    b.push({ id: "rating_formed", emoji: "✅", title: "Сформированный рейтинг", desc: "10+ подтверждённых отзывов — рейтинг сформирован" });
+  }
   if (rank === 1) {
     b.push({ id: "rank_1", emoji: "👑", title: "Король отзывов", desc: "№1 по количеству отзывов" });
   } else if (rank === 2) {
@@ -241,6 +244,19 @@ export async function getSpecialistAchievements(specialistId: number): Promise<S
   const firstStreak = s.firstStreak.get(specialistId) ?? 0;
   const reviewsToNextRank = s.reviewsToNext.get(specialistId) ?? null;
 
+  // "Formed rating" badge: same threshold as the public catalog/profile status
+  // (validReviewCount >= 10). Read live from the specialist row, not standings.
+  let ratingFormed = false;
+  try {
+    const [spec] = await db
+      .select({ validReviewCount: specialists.validReviewCount })
+      .from(specialists)
+      .where(eq(specialists.id, specialistId));
+    ratingFormed = (spec?.validReviewCount ?? 0) >= 10;
+  } catch {
+    // best-effort; badge simply won't show if the lookup fails
+  }
+
   return {
     rank,
     reviewCount,
@@ -248,7 +264,7 @@ export async function getSpecialistAchievements(specialistId: number): Promise<S
     top10Streak,
     firstStreak,
     reviewsToNextRank,
-    badges: badgesFor(rank, top10Streak, firstStreak),
+    badges: badgesFor(rank, top10Streak, firstStreak, ratingFormed),
     nudge: nudgeFor(rank, reviewsToNextRank),
     leaderboard: s.leaderboard.map((e) => ({ ...e, isYou: e.specialistId === specialistId })),
   };

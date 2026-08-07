@@ -177,7 +177,8 @@ export default function SpecialistProfile() {
     };
     if (validReviewCount >= 10) return { 
       label: "Сформированный рейтинг", 
-      tooltip: "Рейтинг основан на достаточном количестве подтверждённых визитов"
+      tooltip: "Рейтинг основан на достаточном количестве подтверждённых визитов",
+      formed: true,
     };
     return { 
       label: "Рейтинг формируется", 
@@ -273,7 +274,7 @@ export default function SpecialistProfile() {
               >
                 <Popover>
                   <PopoverTrigger asChild>
-                    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground/60 cursor-pointer" data-testid="link-rating-status">
+                    <span className={`inline-flex items-center gap-1 text-xs cursor-pointer ${(ratingStatus as any).formed ? "text-emerald-600 font-medium" : "text-muted-foreground/60"}`} data-testid="link-rating-status">
                       {ratingStatus.label}
                       <Info size={10} className="opacity-60" />
                     </span>
