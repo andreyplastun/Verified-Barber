@@ -14,6 +14,7 @@ import { sql, eq } from "drizzle-orm";
 import { appConfig } from "@shared/schema";
 import { enqueueReviewMessage, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
 import { getSpecialistAchievements } from "./achievements";
+import { authenticateRequest } from "./auth";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 
@@ -420,6 +421,10 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // SECURITY: derive caller identity from the verified Supabase JWT only.
+  // Strips any spoofed client-supplied x-user-id before route handlers run.
+  app.use("/api", authenticateRequest);
 
   // Liveness probe - responds immediately (no DB check)
   app.get("/health", (_req, res) => {
