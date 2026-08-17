@@ -1,7 +1,7 @@
 import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
-import { eq, desc, and, lt, gte, asc, sql } from "drizzle-orm";
+import { eq, desc, and, lt, gte, asc, sql, or } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -611,7 +611,10 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(reviews.specialistId, id),
         eq(reviews.isFinalized, true),
-        eq(reviews.publishReview, true)
+        // Published reviews AND private ones ("сообщить только сервису"):
+        // private reviews are hidden from all feeds (publishReview=false)
+        // but still count toward the rating — that's their whole point.
+        or(eq(reviews.publishReview, true), eq(reviews.isPrivate, true))
       ));
     
     const totalCount = reviewsWithBookings.length;
@@ -866,8 +869,10 @@ export class DatabaseStorage implements IStorage {
       isFinalized: false,
       showName: showName,
       hiddenName: !showName,
-      publishReview: true,
-      isPrivate: false,
+      // Private review = "сообщить только сервису": excluded from every feed
+      // (publishReview=false) but still counted in rating computation.
+      publishReview: !review.isPrivate,
+      isPrivate: !!review.isPrivate,
       isPublicName: showName,
       finalizedAt: null,
       editableUntil: editableUntil,

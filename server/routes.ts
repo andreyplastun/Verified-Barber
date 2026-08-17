@@ -1033,7 +1033,9 @@ export async function registerRoutes(
       viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
     }
     
-    const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
+    // Private reviews ("сообщить только сервису") are visible only to admins
+    const visibleReviews = viewerRole === 'admin' ? reviews : reviews.filter(r => !r.isPrivate);
+    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole);
     
     // Use DB values directly - same as list endpoint for consistency
     res.json({ 
@@ -1304,7 +1306,10 @@ export async function registerRoutes(
       console.log(`[DEBUG] Viewer role: ${viewerRole}`);
     }
     
-    const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
+    // Private reviews ("сообщить только сервису") are visible only to admins —
+    // never in the feed, never to the specialist.
+    const visibleReviews = viewerRole === 'admin' ? reviews : reviews.filter(r => !(r as any).isPrivate);
+    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole);
     console.log(`[DEBUG] After masking, reviews with hidden names: ${maskedReviews.filter(r => r.customerName === 'Аноним').length}`);
     res.json(maskedReviews);
   });
@@ -1332,7 +1337,9 @@ export async function registerRoutes(
       viewerRole = (viewer?.role as 'admin' | 'specialist' | 'client') || 'client';
     }
     
-    const maskedReviews = maskReviewsForViewer(reviews, viewerRole);
+    // Private reviews ("сообщить только сервису") are visible only to admins
+    const visibleReviews = viewerRole === 'admin' ? reviews : reviews.filter(r => !r.isPrivate);
+    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole);
     res.json(maskedReviews);
   });
 
@@ -1364,6 +1371,11 @@ export async function registerRoutes(
       if (viewer?.role === 'admin') {
         return res.json(review);
       }
+    }
+
+    // Private reviews are never returned to anyone except the author/admin above
+    if (review.isPrivate) {
+      return res.status(404).json({ message: "Review not found" });
     }
 
     // For others, mask the name if hidden
@@ -2105,7 +2117,7 @@ export async function registerRoutes(
         return res.status(409).json({ message: "Отзыв уже оставлен" });
       }
       
-      const { rating, comment, triggers, showName, priceMismatch, geoLat, geoLng, geoStatus: clientGeoStatus } = req.body;
+      const { rating, comment, triggers, showName, priceMismatch, isPrivate, geoLat, geoLng, geoStatus: clientGeoStatus } = req.body;
       
       if (!rating || rating < 1 || rating > 5) {
         return res.status(400).json({ message: "Укажите оценку от 1 до 5" });
@@ -2134,7 +2146,8 @@ export async function registerRoutes(
         comment: comment || null,
         triggers: triggers || null,
         customerName: booking.customerName,
-        showName: showName ?? true,
+        showName: isPrivate ? false : (showName ?? true),
+        isPrivate: !!isPrivate,
         normalizedText: normalizedText || null,
         isRatingLimited: antifraudResult.isLimited,
         ratingLimitReason: antifraudResult.reason,

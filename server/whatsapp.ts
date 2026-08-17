@@ -121,35 +121,35 @@ function isFollowupPastQuiet(): boolean {
 }
 
 const PRIMARY_TEMPLATES = [
-  "{clientName}, спасибо за визит к вашему барберу {specialistNameDative}.\nОставьте, пожалуйста, отзыв, это можно сделать и анонимно:\n{reviewLink}",
-  "{clientName}, благодарим за визит к вашему барберу {specialistNameDative}.\nБудем признательны за оставленный отзыв, в том числе анонимный:\n{reviewLink}",
-  "{clientName}, как прошёл визит к вашему барберу {specialistNameDative}?\nОставьте, пожалуйста, отзыв:\n{reviewLink}.\nМожно анонимно.",
-  "{clientName}, спасибо, что выбрали барбера {specialistNameGenitive}.\nПоделитесь, пожалуйста, впечатлением через отзыв по ссылке:\n{reviewLink}\nМожно оставить анонимно.",
-  "{clientName}, визит к вашему барберу {specialistNameDative} завершён.\nОцените, пожалуйста, специалиста, можно анонимно:\n{reviewLink}",
+  "{clientName}, спасибо за визит к вашему барберу {specialistNameDative}.\nОставьте, пожалуйста, отзыв — можно анонимно, мастер не узнает, кто оценил:\n{reviewLink}",
+  "{clientName}, благодарим за визит к вашему барберу {specialistNameDative}.\nБудем признательны за отзыв. Можно анонимно — имя не показывается:\n{reviewLink}",
+  "{clientName}, как прошёл визит к вашему барберу {specialistNameDative}?\nОставьте, пожалуйста, отзыв:\n{reviewLink}\nМожно анонимно — мастер не узнает, от кого оценка.",
+  "{clientName}, спасибо, что выбрали барбера {specialistNameGenitive}.\nПоделитесь, пожалуйста, впечатлением по ссылке:\n{reviewLink}\nМожно анонимно, ваше имя мастеру не покажем.",
+  "{clientName}, визит к вашему барберу {specialistNameDative} завершён.\nОцените, пожалуйста, специалиста — можно анонимно, мастер не узнает, кто оценил:\n{reviewLink}",
 ];
 
 const REMINDER_TEMPLATES = [
-  "{clientName}, отзыв о визите к барберу {specialistNameDative} ещё не оставлен:\n{reviewLink}",
-  "{clientName}, напоминаем об отзыве для барбера {specialistNameGenitive}.\nЭто займёт всего несколько секунд:\n{reviewLink}",
-  "{clientName}, если удобно — оставьте, пожалуйста, отзыв о визите к барберу {specialistNameDative}:\n{reviewLink}",
+  "{clientName}, отзыв о визите к барберу {specialistNameDative} ещё не оставлен. Можно анонимно:\n{reviewLink}",
+  "{clientName}, напоминаем об отзыве для барбера {specialistNameGenitive}.\nЭто займёт всего несколько секунд, можно анонимно:\n{reviewLink}",
+  "{clientName}, если удобно — оставьте, пожалуйста, отзыв о визите к барберу {specialistNameDative}. Мастер не узнает, кто оценил:\n{reviewLink}",
   "{clientName}, оценка визита к барберу {specialistNameDative} ещё не завершена. Завершить, можно анонимно, или пропустить: {reviewLink}",
-  "{clientName}, последняя возможность оценить визит к барберу {specialistNameDative}:\n{reviewLink}",
+  "{clientName}, последняя возможность оценить визит к барберу {specialistNameDative}. Можно анонимно:\n{reviewLink}",
 ];
 
 const PRIMARY_TEMPLATES_KZ = [
-  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына келгеніңіз үшін рақмет.\nПікір қалдырыңыз, оны анонимді түрде де жасауға болады:\n{reviewLink}",
-  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына келгеніңіз үшін алғыс білдіреміз.\nҚалдырылған пікір үшін ризамыз, соның ішінде анонимді түрде де:\n{reviewLink}",
-  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына визит қалай өтті?\nПікір қалдырыңыз:\n{reviewLink}.\nАнонимді түрде де болады.",
-  "{clientName}, барбер {specialistNameGenitive} таңдағаныңыз үшін рақмет.\nСілтеме арқылы әсеріңізбен бөлісіңіз:\n{reviewLink}\nАнонимді түрде қалдыруға болады.",
-  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына визит аяқталды.\nМаманды бағалаңыз, анонимді түрде де болады:\n{reviewLink}",
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына келгеніңіз үшін рақмет.\nПікір қалдырыңыз — анонимді түрде де болады, мастер кім бағалағанын білмейді:\n{reviewLink}",
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына келгеніңіз үшін алғыс білдіреміз.\nПікір үшін ризамыз. Анонимді түрде де болады — атыңыз көрсетілмейді:\n{reviewLink}",
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына визит қалай өтті?\nПікір қалдырыңыз:\n{reviewLink}\nАнонимді түрде де болады — мастер кім бағалағанын білмейді.",
+  "{clientName}, барбер {specialistNameGenitive} таңдағаныңыз үшін рақмет.\nСілтеме арқылы әсеріңізбен бөлісіңіз:\n{reviewLink}\nАнонимді түрде болады, атыңызды мастерге көрсетпейміз.",
+  "{clientName}, сіздің барберіңіз {specialistNameDative} қабылдауына визит аяқталды.\nМаманды бағалаңыз — анонимді түрде де болады, мастер кім бағалағанын білмейді:\n{reviewLink}",
 ];
 
 const REMINDER_TEMPLATES_KZ = [
-  "{clientName}, барбер {specialistNameDative} қабылдауына қатысты пікір әлі қалдырылмаған:\n{reviewLink}",
-  "{clientName}, барбер {specialistNameGenitive} үшін пікір туралы еске саламыз.\nБұл небәрі бірнеше секунд алады:\n{reviewLink}",
-  "{clientName}, егер ыңғайлы болса — барбер {specialistNameDative} қабылдауына қатысты пікір қалдырыңыз:\n{reviewLink}",
+  "{clientName}, барбер {specialistNameDative} қабылдауына қатысты пікір әлі қалдырылмаған. Анонимді түрде де болады:\n{reviewLink}",
+  "{clientName}, барбер {specialistNameGenitive} үшін пікір туралы еске саламыз.\nБұл небәрі бірнеше секунд алады, анонимді түрде де болады:\n{reviewLink}",
+  "{clientName}, егер ыңғайлы болса — барбер {specialistNameDative} қабылдауына қатысты пікір қалдырыңыз. Мастер кім бағалағанын білмейді:\n{reviewLink}",
   "{clientName}, барбер {specialistNameDative} қабылдауына бағалау әлі аяқталмаған. Аяқтау, анонимді түрде де болады, немесе өткізіп жіберу: {reviewLink}",
-  "{clientName}, барбер {specialistNameDative} қабылдауын бағалаудың соңғы мүмкіндігі:\n{reviewLink}",
+  "{clientName}, барбер {specialistNameDative} қабылдауын бағалаудың соңғы мүмкіндігі. Анонимді түрде де болады:\n{reviewLink}",
 ];
 
 const REMINDER_OPENED_TEMPLATES = [

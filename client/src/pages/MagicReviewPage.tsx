@@ -64,6 +64,16 @@ const t = {
     newAccountP1: "Мы показываем все отзывы. Но для расчёта рейтинга учитываются отзывы от пользователей, которые уже немного знакомы с сервисом.",
     newAccountP2: "Ваш отзыв будет виден другим пользователям и поможет мастеру, а на рейтинг он начнёт влиять чуть позже.",
     newAccountButton: "Понятно",
+    forkTitle: "Как всё прошло?",
+    forkGood: "Всё отлично 👍",
+    forkBad: "Было что-то не так",
+    forkBack: "Назад",
+    improveLabel: "Что можно улучшить?",
+    improvePlaceholder: "Напишите, что было не так — это поможет стать лучше...",
+    privateLabel: "Не публиковать отзыв",
+    privateTooltip: "Отзыв увидит только сервис Rateus. Мастер его не увидит, но оценка повлияет на рейтинг.",
+    privateNote: "Мастер не узнает, кто оставил отзыв",
+    successPrivateText: "Ваша оценка учтена. Отзыв не будет опубликован — его увидит только сервис.",
   },
   kz: {
     pageTitle: "Пікір қалдыру",
@@ -117,6 +127,16 @@ const t = {
     newAccountP1: "Біз барлық пікірлерді көрсетеміз. Бірақ рейтингті есептеу үшін сервиспен танысқан пайдаланушылардың пікірлері ескеріледі.",
     newAccountP2: "Сіздің пікіріңіз басқа пайдаланушыларға көрінеді және мастерге көмектеседі, ал рейтингке кейінірек әсер ете бастайды.",
     newAccountButton: "Түсінікті",
+    forkTitle: "Бәрі қалай өтті?",
+    forkGood: "Бәрі керемет 👍",
+    forkBad: "Бір нәрсе ұнамады",
+    forkBack: "Артқа",
+    improveLabel: "Нені жақсартуға болады?",
+    improvePlaceholder: "Не ұнамағанын жазыңыз — бұл жақсаруға көмектеседі...",
+    privateLabel: "Пікірді жарияламау",
+    privateTooltip: "Пікірді тек Rateus сервисі көреді. Мастер оны көрмейді, бірақ баға рейтингке әсер етеді.",
+    privateNote: "Мастер кім пікір қалдырғанын білмейді",
+    successPrivateText: "Бағаңыз ескерілді. Пікір жарияланбайды — оны тек сервис көреді.",
   },
 };
 
@@ -209,6 +229,9 @@ export default function MagicReviewPage() {
   const [comment, setComment] = useState("");
   const [triggers, setTriggers] = useState<string[]>([]);
   const [hiddenName, setHiddenName] = useState(false);
+  // Fork screen: "Всё отлично" / "Было что-то не так" before the rating form.
+  const [flow, setFlow] = useState<'fork' | 'good' | 'bad'>('fork');
+  const [isPrivate, setIsPrivate] = useState(false);
   const [showNewAccountPopup, setShowNewAccountPopup] = useState(false);
   const [showSuccessScreen, setShowSuccessScreen] = useState(false);
   const [showTipsScreen, setShowTipsScreen] = useState(false);
@@ -321,7 +344,7 @@ export default function MagicReviewPage() {
 
   const activeToken = linkData?.token || token;
   const submitMutation = useMutation({
-    mutationFn: async (data: { rating: number; comment: string; triggers: string[]; showName: boolean; priceMismatch: boolean; geoLat?: number; geoLng?: number; geoStatus?: string }) => {
+    mutationFn: async (data: { rating: number; comment: string; triggers: string[]; showName: boolean; priceMismatch: boolean; isPrivate?: boolean; geoLat?: number; geoLng?: number; geoStatus?: string }) => {
       const res = await fetch(`/api/r/${activeToken}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -360,7 +383,7 @@ export default function MagicReviewPage() {
     }
     const priceTrigger = L.triggersNegative[L.triggersNegative.length - 1];
     submitMutation.mutate({ 
-      rating, comment, triggers, showName: !hiddenName, priceMismatch: triggers.includes(priceTrigger),
+      rating, comment, triggers, showName: isPrivate ? false : !hiddenName, priceMismatch: triggers.includes(priceTrigger), isPrivate,
       ...(geoData?.status === "ok" ? { geoLat: geoData.lat, geoLng: geoData.lng, geoStatus: "ok" } : { geoStatus: geoData?.status || "no_permission" }),
     });
   };
@@ -568,7 +591,7 @@ export default function MagicReviewPage() {
         </div>
         <h2 className="text-2xl font-bold mb-2">{L.successTitle}</h2>
         <p className="text-muted-foreground mb-8 max-w-xs mx-auto">
-          {L.successText(linkData?.specialistName || '')}
+          {isPrivate ? L.successPrivateText : L.successText(linkData?.specialistName || '')}
         </p>
         <button 
           onClick={() => setLocation(`/specialist/${linkData?.specialistId}`)}
@@ -605,7 +628,33 @@ export default function MagicReviewPage() {
         </p>
       </div>
 
-      {geoData && (
+      {flow === 'fork' && (
+        <div className="max-w-md mx-auto space-y-3 pt-4">
+          <p className="text-center text-sm text-muted-foreground mb-4">{L.forkTitle}</p>
+          <button
+            type="button"
+            onClick={() => setFlow('good')}
+            className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 active:scale-[0.98] transition-all"
+            data-testid="button-fork-good"
+          >
+            {L.forkGood}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFlow('bad');
+              setHiddenName(true);
+            }}
+            className="w-full py-4 rounded-xl bg-secondary text-secondary-foreground font-medium text-lg hover-elevate active:scale-[0.98] transition-all"
+            data-testid="button-fork-bad"
+          >
+            {L.forkBad}
+          </button>
+          <p className="text-center text-xs text-muted-foreground pt-2">{L.privateNote}</p>
+        </div>
+      )}
+
+      {flow !== 'fork' && geoData && (
         <div className="max-w-md mx-auto mb-4" data-testid="geo-status-badge">
           {geoData.status === "ok" ? (
             <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2">
@@ -621,7 +670,17 @@ export default function MagicReviewPage() {
         </div>
       )}
 
+      {flow !== 'fork' && (
       <form onSubmit={handleSubmit} className="space-y-8 max-w-md mx-auto">
+        <button
+          type="button"
+          onClick={() => { setFlow('fork'); setIsPrivate(false); }}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+          data-testid="button-fork-back"
+        >
+          <ChevronLeft size={14} />
+          {L.forkBack}
+        </button>
         <InteractiveStarRating
           rating={rating}
           hoveredStar={hoveredStar}
@@ -682,12 +741,42 @@ export default function MagicReviewPage() {
           />
         </div>
 
+        {flow === 'bad' && (
+          <div className="flex items-center justify-center gap-3 py-2">
+            <div className="flex items-center gap-2">
+              <label htmlFor="private-toggle" className="text-sm font-medium cursor-pointer">
+                {L.privateLabel}
+              </label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-full hover:bg-muted"
+                    data-testid="button-private-info"
+                  >
+                    <Info size={14} />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" className="max-w-xs text-sm p-3">
+                  <p>{L.privateTooltip}</p>
+                </PopoverContent>
+              </Popover>
+            </div>
+            <Switch
+              id="private-toggle"
+              checked={isPrivate}
+              onCheckedChange={setIsPrivate}
+              data-testid="switch-private"
+            />
+          </div>
+        )}
+
         <div className="space-y-2">
-          <label className="text-sm font-medium ml-1">{L.commentLabel}</label>
+          <label className="text-sm font-medium ml-1">{flow === 'bad' ? L.improveLabel : L.commentLabel}</label>
           <textarea
             rows={3}
             className="w-full bg-card border border-border rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all resize-none"
-            placeholder={L.commentPlaceholder}
+            placeholder={flow === 'bad' ? L.improvePlaceholder : L.commentPlaceholder}
             value={comment}
             onChange={e => setComment(e.target.value)}
             data-testid="textarea-comment"
@@ -700,7 +789,9 @@ export default function MagicReviewPage() {
           </Link>
         </div>
       </form>
+      )}
 
+      {flow !== 'fork' && (
       <div className="fixed bottom-0 left-0 right-0 z-[60] p-4 pb-6 bg-background border-t border-border">
         <button
           type="button"
@@ -712,6 +803,7 @@ export default function MagicReviewPage() {
           {submitMutation.isPending ? L.submitting : L.submitButton}
         </button>
       </div>
+      )}
 
       {showNewAccountPopup && (
         <div 
