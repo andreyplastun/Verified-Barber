@@ -23,4 +23,5 @@
 - [Altegio subscription 403 + marketplace gap](altegio-subscription-and-marketplace.md) — records API 403 "renew subscription" = master's Altegio unpaid (book_staff/company still 200); marketplace-installed cos never in /companies?my=1, so they rely only on webhooks.
 - [Querying prod data (Supabase REST)](prod-data-query-rest.md) — no prod DB password; read via PostgREST + service-role key FROM BASH (sandbox masks secrets); specialists has no created_at, date signups via users.role/created_at.
 - [Dev DB startup recalc](dev-db-startup-recalc.md) — dev server rewrites all rating columns on every restart; set rating test values after restart, and check which DB the server actually uses.
+- [Private service-only reviews](private-reviews.md) — publishReview=false + isPrivate=true; rating query OR-includes them; every raw-row endpoint must filter !isPrivate for non-admins.
 - [Specialist celebrations](specialist-celebrations.md) — dashboard milestone overlay dedupes via seen-snapshot + 0.05 margin; celebrations-seen is owner-gated, first-review-celebrated is intentionally public (profile page).
