@@ -65,7 +65,7 @@ const t = {
     newAccountP2: "Ваш отзыв будет виден другим пользователям и поможет мастеру, а на рейтинг он начнёт влиять чуть позже.",
     newAccountButton: "Понятно",
     forkTitle: "Как всё прошло?",
-    forkGood: "Всё отлично 👍",
+    forkGood: "Всё отлично",
     forkBad: "Было что-то не так",
     forkBack: "Назад",
     improveLabel: "Что можно улучшить?",
@@ -74,8 +74,7 @@ const t = {
     destPublicTitle: "Опубликовать анонимно",
     destPublicDesc: "Отзыв увидят все, но без вашего имени",
     destPrivateTitle: "Только сервису Rateus",
-    destPrivateDesc: "Никто не увидит отзыв, но оценка учтётся",
-    privateNote: "Мастер не узнает, кто оставил отзыв",
+    destPrivateDesc: "Отзыв не увидят ни специалисты, ни другие клиенты",
     successPrivateText: "Ваша оценка учтена. Отзыв не будет опубликован — его увидит только сервис.",
   },
   kz: {
@@ -131,7 +130,7 @@ const t = {
     newAccountP2: "Сіздің пікіріңіз басқа пайдаланушыларға көрінеді және мастерге көмектеседі, ал рейтингке кейінірек әсер ете бастайды.",
     newAccountButton: "Түсінікті",
     forkTitle: "Бәрі қалай өтті?",
-    forkGood: "Бәрі керемет 👍",
+    forkGood: "Бәрі керемет",
     forkBad: "Бір нәрсе ұнамады",
     forkBack: "Артқа",
     improveLabel: "Нені жақсартуға болады?",
@@ -140,8 +139,7 @@ const t = {
     destPublicTitle: "Анонимді түрде жариялау",
     destPublicDesc: "Пікірді бәрі көреді, бірақ атыңызсыз",
     destPrivateTitle: "Тек Rateus сервисіне",
-    destPrivateDesc: "Пікірді ешкім көрмейді, бірақ баға ескеріледі",
-    privateNote: "Мастер кім пікір қалдырғанын білмейді",
+    destPrivateDesc: "Пікірді мамандар да, басқа клиенттер де көрмейді",
     successPrivateText: "Бағаңыз ескерілді. Пікір жарияланбайды — оны тек сервис көреді.",
   },
 };
@@ -640,7 +638,7 @@ export default function MagicReviewPage() {
           <button
             type="button"
             onClick={() => setFlow('good')}
-            className="w-full py-4 rounded-xl bg-primary text-primary-foreground font-bold text-lg shadow-lg shadow-primary/25 active:scale-[0.98] transition-all"
+            className="w-full py-4 rounded-xl bg-card border-2 border-border text-foreground font-medium text-lg hover-elevate active:scale-[0.98] transition-all"
             data-testid="button-fork-good"
           >
             {L.forkGood}
@@ -651,12 +649,11 @@ export default function MagicReviewPage() {
               setFlow('bad');
               setHiddenName(true);
             }}
-            className="w-full py-4 rounded-xl bg-secondary text-secondary-foreground font-medium text-lg hover-elevate active:scale-[0.98] transition-all"
+            className="w-full py-4 rounded-xl bg-card border-2 border-border text-foreground font-medium text-lg hover-elevate active:scale-[0.98] transition-all"
             data-testid="button-fork-bad"
           >
             {L.forkBad}
           </button>
-          <p className="text-center text-xs text-muted-foreground pt-2">{L.privateNote}</p>
         </div>
       )}
 
@@ -774,7 +771,6 @@ export default function MagicReviewPage() {
               <span className="block font-medium text-sm">{L.destPrivateTitle}</span>
               <span className="block text-xs text-muted-foreground mt-0.5">{L.destPrivateDesc}</span>
             </button>
-            <p className="text-xs text-muted-foreground text-center pt-1">{L.privateNote}</p>
           </div>
         )}
 
