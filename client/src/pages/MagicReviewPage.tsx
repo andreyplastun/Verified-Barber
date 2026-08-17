@@ -70,8 +70,11 @@ const t = {
     forkBack: "Назад",
     improveLabel: "Что можно улучшить?",
     improvePlaceholder: "Напишите, что было не так — это поможет стать лучше...",
-    privateLabel: "Не публиковать отзыв",
-    privateTooltip: "Отзыв увидит только сервис Rateus. Мастер его не увидит, но оценка повлияет на рейтинг.",
+    destTitle: "Кому отправить отзыв?",
+    destPublicTitle: "Опубликовать анонимно",
+    destPublicDesc: "Отзыв увидят все, но без вашего имени",
+    destPrivateTitle: "Только сервису Rateus",
+    destPrivateDesc: "Никто не увидит отзыв, но оценка учтётся",
     privateNote: "Мастер не узнает, кто оставил отзыв",
     successPrivateText: "Ваша оценка учтена. Отзыв не будет опубликован — его увидит только сервис.",
   },
@@ -133,8 +136,11 @@ const t = {
     forkBack: "Артқа",
     improveLabel: "Нені жақсартуға болады?",
     improvePlaceholder: "Не ұнамағанын жазыңыз — бұл жақсаруға көмектеседі...",
-    privateLabel: "Пікірді жарияламау",
-    privateTooltip: "Пікірді тек Rateus сервисі көреді. Мастер оны көрмейді, бірақ баға рейтингке әсер етеді.",
+    destTitle: "Пікірді кімге жіберу?",
+    destPublicTitle: "Анонимді түрде жариялау",
+    destPublicDesc: "Пікірді бәрі көреді, бірақ атыңызсыз",
+    destPrivateTitle: "Тек Rateus сервисіне",
+    destPrivateDesc: "Пікірді ешкім көрмейді, бірақ баға ескеріледі",
     privateNote: "Мастер кім пікір қалдырғанын білмейді",
     successPrivateText: "Бағаңыз ескерілді. Пікір жарияланбайды — оны тек сервис көреді.",
   },
@@ -713,61 +719,62 @@ export default function MagicReviewPage() {
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-3 py-2">
-          <div className="flex items-center gap-2">
-            <label htmlFor="hidden-name-toggle" className="text-sm font-medium cursor-pointer">
-              {L.anonLabel}
-            </label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <button 
-                  type="button" 
-                  className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-full hover:bg-muted"
-                  data-testid="button-privacy-info"
-                >
-                  <Info size={14} />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent side="top" className="max-w-xs text-sm p-3">
-                <p>{L.anonTooltip}</p>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <Switch
-            id="hidden-name-toggle"
-            checked={hiddenName}
-            onCheckedChange={setHiddenName}
-            data-testid="switch-hidden-name"
-          />
-        </div>
-
-        {flow === 'bad' && (
+        {flow === 'good' && (
           <div className="flex items-center justify-center gap-3 py-2">
             <div className="flex items-center gap-2">
-              <label htmlFor="private-toggle" className="text-sm font-medium cursor-pointer">
-                {L.privateLabel}
+              <label htmlFor="hidden-name-toggle" className="text-sm font-medium cursor-pointer">
+                {L.anonLabel}
               </label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <button
-                    type="button"
+                  <button 
+                    type="button" 
                     className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded-full hover:bg-muted"
-                    data-testid="button-private-info"
+                    data-testid="button-privacy-info"
                   >
                     <Info size={14} />
                   </button>
                 </PopoverTrigger>
                 <PopoverContent side="top" className="max-w-xs text-sm p-3">
-                  <p>{L.privateTooltip}</p>
+                  <p>{L.anonTooltip}</p>
                 </PopoverContent>
               </Popover>
             </div>
             <Switch
-              id="private-toggle"
-              checked={isPrivate}
-              onCheckedChange={setIsPrivate}
-              data-testid="switch-private"
+              id="hidden-name-toggle"
+              checked={hiddenName}
+              onCheckedChange={setHiddenName}
+              data-testid="switch-hidden-name"
             />
+          </div>
+        )}
+
+        {flow === 'bad' && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium ml-1">{L.destTitle}</p>
+            <button
+              type="button"
+              onClick={() => setIsPrivate(false)}
+              className={`w-full text-left rounded-xl border-2 px-4 py-3 transition-all ${
+                !isPrivate ? "border-primary bg-primary/5" : "border-border bg-card"
+              }`}
+              data-testid="option-publish-anon"
+            >
+              <span className="block font-medium text-sm">{L.destPublicTitle}</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">{L.destPublicDesc}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsPrivate(true)}
+              className={`w-full text-left rounded-xl border-2 px-4 py-3 transition-all ${
+                isPrivate ? "border-primary bg-primary/5" : "border-border bg-card"
+              }`}
+              data-testid="option-private"
+            >
+              <span className="block font-medium text-sm">{L.destPrivateTitle}</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">{L.destPrivateDesc}</span>
+            </button>
+            <p className="text-xs text-muted-foreground text-center pt-1">{L.privateNote}</p>
           </div>
         )}
 
