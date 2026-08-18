@@ -71,6 +71,8 @@ const t = {
     improveLabel: "Что можно улучшить?",
     improvePlaceholder: "Напишите, что было не так — это поможет стать лучше...",
     destTitle: "Кому отправить отзыв?",
+    destNamedTitle: "Опубликовать с именем",
+    destNamedDesc: "Отзыв увидят все, вместе с вашим именем",
     destPublicTitle: "Опубликовать анонимно",
     destPublicDesc: "Отзыв увидят все, но без вашего имени",
     destPrivateTitle: "Только сервису Rateus",
@@ -136,6 +138,8 @@ const t = {
     improveLabel: "Нені жақсартуға болады?",
     improvePlaceholder: "Не ұнамағанын жазыңыз — бұл жақсаруға көмектеседі...",
     destTitle: "Пікірді кімге жіберу?",
+    destNamedTitle: "Атыңызбен жариялау",
+    destNamedDesc: "Пікірді бәрі көреді, атыңызбен бірге",
     destPublicTitle: "Анонимді түрде жариялау",
     destPublicDesc: "Пікірді бәрі көреді, бірақ атыңызсыз",
     destPrivateTitle: "Тек Rateus сервисіне",
@@ -751,14 +755,25 @@ export default function MagicReviewPage() {
             <p className="text-sm font-medium ml-1">{L.destTitle}</p>
             <button
               type="button"
-              onClick={() => setIsPrivate(false)}
+              onClick={() => { setIsPrivate(false); setHiddenName(true); }}
               className={`w-full text-left rounded-xl border-2 px-4 py-3 transition-all ${
-                !isPrivate ? "border-primary bg-primary/5" : "border-border bg-card"
+                !isPrivate && hiddenName ? "border-primary bg-primary/5" : "border-border bg-card"
               }`}
               data-testid="option-publish-anon"
             >
               <span className="block font-medium text-sm">{L.destPublicTitle}</span>
               <span className="block text-xs text-muted-foreground mt-0.5">{L.destPublicDesc}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsPrivate(false); setHiddenName(false); }}
+              className={`w-full text-left rounded-xl border-2 px-4 py-3 transition-all ${
+                !isPrivate && !hiddenName ? "border-primary bg-primary/5" : "border-border bg-card"
+              }`}
+              data-testid="option-publish-named"
+            >
+              <span className="block font-medium text-sm">{L.destNamedTitle}</span>
+              <span className="block text-xs text-muted-foreground mt-0.5">{L.destNamedDesc}</span>
             </button>
             <button
               type="button"
