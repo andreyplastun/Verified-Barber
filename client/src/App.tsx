@@ -26,6 +26,7 @@ import TermsPage from "@/pages/TermsPage";
 import OfferPage from "@/pages/OfferPage";
 import HowTrustWorksPage from "@/pages/HowTrustWorksPage";
 import JoinPage from "@/pages/JoinPage";
+import ForMastersPage from "@/pages/ForMastersPage";
 import ClaimProfilePage from "@/pages/ClaimProfilePage";
 import { Navigation } from "@/components/Navigation";
 import { InstallBanner } from "@/components/InstallBanner";
@@ -179,6 +180,7 @@ function Router() {
       <Route path="/specialist-signup" component={SpecialistSignup} />
       <Route path="/create-profile" component={SpecialistSignup} />
       <Route path="/join" component={JoinPage} />
+      <Route path="/for-masters" component={ForMastersPage} />
       <Route path="/privacy" component={PrivacyPage} />
       <Route path="/terms" component={TermsPage} />
       <Route path="/offer" component={OfferPage} />

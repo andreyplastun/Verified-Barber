@@ -1974,6 +1974,9 @@ export async function registerRoutes(
         'booking_click',
         // Specialist signup funnel
         'signup_page_view',
+        // Master landing funnel
+        'master_landing_view',
+        'master_landing_cta_click',
         'signup_submit_attempt',
         'signup_completed',
         // Soft activation events (v117)

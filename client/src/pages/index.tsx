@@ -411,6 +411,21 @@ export default function SpecialistList() {
             <ArrowRight size={18} className="shrink-0 text-primary" />
           </Link>
         )}
+        {!loading && role !== 'specialist' && (
+          <Link
+            href="/for-masters"
+            className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 hover:bg-muted/50 transition-colors"
+            data-testid="banner-for-masters"
+          >
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">Вы мастер?</p>
+              <p className="text-xs text-muted-foreground truncate">
+                Создайте профиль — отзывы и рейтинг останутся с вами
+              </p>
+            </div>
+            <ArrowRight size={18} className="shrink-0 text-primary" />
+          </Link>
+        )}
         {filteredAndSortedSpecialists.flatMap((specialist, index) => {
           const isGeo = geoStatus === 'active' && !!userCoords;
           const dist = isGeo ? specDistance(specialist as any, userCoords!) : null;
