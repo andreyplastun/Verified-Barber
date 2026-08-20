@@ -181,6 +181,7 @@ function Router() {
       <Route path="/create-profile" component={SpecialistSignup} />
       <Route path="/join" component={JoinPage} />
       <Route path="/for-masters" component={ForMastersPage} />
+      <Route path="/specialists" component={ForMastersPage} />
       <Route path="/privacy" component={PrivacyPage} />
       <Route path="/terms" component={TermsPage} />
       <Route path="/offer" component={OfferPage} />
