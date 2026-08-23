@@ -200,7 +200,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
                AND b.appointment_time < now()
            )::int AS uncompleted_count
     FROM specialists s
-    LEFT JOIN users u ON u.id = s.owner_user_id
+    LEFT JOIN users u ON u.id::text = s.owner_user_id::text
     LEFT JOIN bookings b ON b.specialist_id = s.id
     WHERE s.is_active = true
       AND ((s.phone IS NOT NULL AND s.phone <> '') OR (s.whatsapp IS NOT NULL AND s.whatsapp <> ''))
