@@ -27,3 +27,4 @@
 - [Private service-only reviews](private-reviews.md) — publishReview=false + isPrivate=true; rating query OR-includes them; every raw-row endpoint must filter !isPrivate for non-admins.
 - [Specialist celebrations](specialist-celebrations.md) — dashboard milestone overlay dedupes via seen-snapshot + 0.05 margin; celebrations-seen is owner-gated, first-review-celebrated is intentionally public (profile page).
 - [Prod schema type drift](prod-schema-type-drift.md) — prod owner_user_id is text vs uuid in dev; raw SQL joins need ::text casts or background loops crash silently (reminders died 6 wks); check types via PostgREST OpenAPI.
+- [AssistBot manual send](assistbot-manual-send.md) — AssistBot API silently drops non-prod-server calls (200, empty body); one-off sends from Rateus number go via a crafted wa_messages reminder row + worker.
