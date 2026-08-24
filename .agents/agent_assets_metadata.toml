@@ -6,3 +6,10 @@ id = "ilawB64gIg3Ik-10SInTR"
 uri = "file://chat_log_2026-03-14.md"
 type = "text"
 title = "Переписка за 14 марта 2026"
+
+[[outputs]]
+id = "lmjQ_oAKLp56O6EiV_MA4"
+uri = "file://CLAUDE.md"
+type = "text"
+title = "CLAUDE.md — контекст проекта Rateus"
+description = "Скачай этот файл и загрузи его в Claude Project."
