@@ -1,0 +1,133 @@
+Rateus — context for Claude
+
+Rateus is a Russian-language Kazakh platform for finding service specialists, booking visits, and collecting verified client reviews. The main audience is clients and barbers/specialists in Kazakhstan, especially Almaty.
+
+Main features:
+- public specialist directory with search, filters, categories, locations, and near-me sorting;
+- specialist profile pages with services, prices, photos, contacts, ratings, reviews, and booking links;
+- specialist self-registration, onboarding, profile claiming, and specialist dashboard;
+- manual bookings and Altegio-synchronized bookings;
+- visit completion and passwordless review collection through magic links;
+- weighted ratings and anti-fraud/trust logic;
+- Kaspi P2P tipping links;
+- WhatsApp notifications through AssistBot;
+- admin tools for specialists, bookings, reviews, WhatsApp queues, and settings.
+
+The UI is in Russian. Explain changes to the project owner in simple everyday Russian and focus on the result.
+
+TECH STACK
+
+- Frontend: React 18, TypeScript, Vite
+- Styling: Tailwind CSS, shadcn/ui, Radix UI
+- Routing: Wouter
+- Data fetching: TanStack React Query
+- Backend: Node.js, Express, TypeScript
+- Database: PostgreSQL through Drizzle ORM
+- Validation: Zod / drizzle-zod
+- Auth and storage: Supabase Auth and Supabase Storage
+- Maps: Leaflet and OpenStreetMap/Nominatim
+- WhatsApp provider: AssistBot
+
+PROJECT STRUCTURE
+
+- client/ — frontend
+- client/src/pages/ — page-level UI
+- client/src/components/ — reusable UI
+- server/ — Express routes, background jobs, integrations, and storage
+- shared/schema.ts — shared Drizzle database schema and types
+- script/ — build scripts
+
+Useful commands:
+
+npm run dev      local development server
+npm run check    TypeScript validation
+npm run build    production build
+
+ENVIRONMENTS AND DEPLOYMENT
+
+- Replit development workflow is Start application and runs npm run dev on port 5000.
+- Development normally uses the Replit/Helium PostgreSQL database.
+- Production runs on Railway and uses an external Supabase PostgreSQL database.
+- Production deploys from the main branch after the project owner pushes through the Git panel.
+- Use relative URLs for frontend-to-backend calls. Do not hardcode localhost or a development domain.
+- Never print, commit, paste, or request secrets.
+
+DATABASE RULES
+
+Production schema is not always identical to the local Drizzle schema.
+
+When adding a database column:
+1. Add it to shared/schema.ts.
+2. Add an idempotent ALTER TABLE ... ADD COLUMN IF NOT EXISTS statement to the startup auto-migration block in server/index.ts.
+3. Verify the column is present in both places.
+
+Production has known type drift: some owner/user identifiers are text in production while user IDs are uuid locally. Raw SQL joins between them must use explicit text casts where necessary, for example:
+
+u.id::text = s.owner_user_id::text
+
+All “today” calculations must use Asia/Almaty / UTC+5, not the server UTC date.
+
+AUTHENTICATION AND SECURITY
+
+- Supabase Auth is used for client and specialist accounts.
+- API requests use a verified Supabase JWT.
+- Do not trust a client-provided x-user-id; derive identity from the verified token.
+- Owner/admin authorization must be checked server-side.
+- Never expose service-role keys or provider tokens in frontend code.
+
+REVIEWS AND VISITS
+
+- A client normally gets a review magic link only after the visit is completed.
+- Magic links support phone-only clients without accounts.
+- Private reviews affect rating calculations but must not be exposed in public raw-review responses.
+- Review/rating changes may require recalculation of specialist rating fields.
+- Geolocation is a bonus only: being close can increase trust, but missing GPS, being far away, or missing permission must not reduce trust.
+- Time and IP are not review penalties. Phone repeat weighting is the primary repeat-review spam control.
+
+ALTEGIO
+
+- Altegio supports bidirectional booking synchronization and webhooks.
+- book_staff may include admins/non-masters. A real bookable master should have at least one service; filtering should fail open if the service lookup fails.
+- A 403 from the Altegio records API can mean the specialist subscription is unpaid.
+- Private-app/self-connect flows may not redirect back with a company ID, so keep the manual connect/link step unless webhook binding is verified.
+- A nominal Altegio connection with no actual Altegio booking data should not be treated as proof that a booking flowed through Altegio.
+
+WHATSAPP SAFETY
+
+WhatsApp is sent through AssistBot from the production server.
+
+Client messages:
+- primary messages have a shared daily limit and deliberate 12–15 minute spacing;
+- follow-ups are controlled by WA_FOLLOWUP_ENABLED and should not be enabled casually because they consume sending capacity;
+- direct AssistBot API calls from the Replit workspace may return HTTP 200 with an empty body while silently dropping the message;
+- one-off messages should be queued through the production wa_messages worker path.
+
+Specialist reminders:
+- scans run hourly, only during the 10:00–21:00 Almaty window;
+- one scan sends at most 8 reminders with a pause between sends;
+- hard cap: maximum 10 specialist WhatsApp reminders per Almaty calendar day;
+- ordinary specialists are spaced roughly weekly;
+- fresh signups can move between onboarding stages faster, but the same reminder type must not be repeated daily;
+- reminder types have lifetime caps;
+- opt-outs must be respected;
+- never loosen WhatsApp limits just to clear a backlog.
+
+ONBOARDING AND UX
+
+- Incomplete onboarding specialists are redirected back to onboarding from gated dashboard routes.
+- Onboarding CTAs that must work before onboarding is complete should link to public ungated routes.
+- New specialists should see “complete the visit” framing rather than implying mature booking history.
+- Address coordinates should only be set from an explicit suggestion, GPS action, or map tap. Do not silently snap an address to the first geocoder result.
+- Near-me sorting is client-side and requires specialist coordinates; specialists without coordinates go to the bottom.
+- Optional activation steps must not reduce the total activation score from 100 or block the core funnel.
+- Seasonal rating icon themes apply only to the tap-to-rate input. Public feeds, cards, and rating badges always use stars.
+
+CODING DISCIPLINE
+
+- Inspect existing code before editing and preserve current patterns.
+- Prefer small focused changes over broad rewrites.
+- Keep user-visible text in Russian.
+- Do not add mock data when a real database/API path is expected.
+- After behavior changes, run npm run check and restart the workflow if server/tooling code changed.
+- Check logs after restarting.
+- Do not claim a change is in production until it has been pushed and deployed.

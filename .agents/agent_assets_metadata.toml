@@ -13,3 +13,10 @@ uri = "file://CLAUDE.md"
 type = "text"
 title = "CLAUDE.md — контекст проекта Rateus"
 description = "Скачай этот файл и загрузи его в Claude Project."
+
+[[outputs]]
+id = "dfDsAnbW9ipaB6d9sV3_g"
+uri = "file://CLAUDE_CONTEXT.txt"
+type = "text"
+title = "CLAUDE_CONTEXT.txt — контекст Rateus"
+description = "Скачай этот текстовый файл и загрузи его в Claude Project."
