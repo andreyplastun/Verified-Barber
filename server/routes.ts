@@ -3991,7 +3991,15 @@ ${magicLink}`;
         return res.json({ status: "ok" });
       }
 
-      const existing = await storage.getBookingByAltegioId(altegioId);
+      let existing = await storage.getBookingByAltegioId(altegioId);
+
+      // Some Altegio webhook variants omit client_id on create and include it
+      // only on a later update/completion. Classify it as soon as it appears.
+      if (existing && altegioClientIdParsed && !existing.altegioClientId) {
+        const updated = await storage.reconcileAltegioBookingIdentity(existing.id, altegioClientIdParsed);
+        if (updated) existing = updated;
+        console.log(`[ALTEGIO-WEBHOOK-IDENTITY] Booking ${existing.id}: altegio_client_id=${altegioClientIdParsed}, newClient=${existing.isNewClient}`);
+      }
 
       switch (eventType) {
         case "appointment.created":
@@ -4027,25 +4035,19 @@ ${magicLink}`;
             customerName: clientName,
             specialistId,
           });
-          const newBooking = await storage.createBooking({
+          const { booking: newBooking, created } = await storage.createAltegioBooking({
             specialistId,
             customerName: clientName,
             customerPhone: clientPhone || null,
             appointmentTime,
-            status: "scheduled",
-          } as any);
-          await storage.updateBooking(newBooking.id, {
             altegioAppointmentId: altegioId,
             altegioStaffId: staffId || null,
             altegioClientId: identity.altegioClientId,
             normalizedPhone: identity.normalizedPhone,
-            isNewClient: identity.isNewClient,
             status: "scheduled",
-            updatedFrom: "altegio",
-            bookingSource: "altegio",
           });
-          console.log(`[ALTEGIO] Created booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}, newClient=${identity.isNewClient}`);
-          await markWebhookOutcome("booking_created", specialistId);
+          console.log(`[ALTEGIO] ${created ? "Created" : "Reused concurrently-created"} booking ${newBooking.id} for appointment ${altegioId}, company_id=${companyId}, newClient=${newBooking.isNewClient}`);
+          await markWebhookOutcome(created ? "booking_created" : "already_exists", specialistId);
           break;
         }
 
@@ -4078,26 +4080,20 @@ ${magicLink}`;
               customerName: clientName,
               specialistId,
             });
-            const newBooking = await storage.createBooking({
+            const { booking: newBooking, created } = await storage.createAltegioBooking({
               specialistId,
               customerName: clientName,
               customerPhone: clientPhone || null,
               appointmentTime,
-              status: "scheduled",
-            } as any);
-            await storage.updateBooking(newBooking.id, {
               altegioAppointmentId: altegioId,
               altegioStaffId: staffId || null,
               altegioClientId: identity.altegioClientId,
               normalizedPhone: identity.normalizedPhone,
-              isNewClient: identity.isNewClient,
               status: isNewVisitCompleted ? "completed" : "scheduled",
-              updatedFrom: "altegio",
-              bookingSource: "altegio",
             });
-            console.log(`[ALTEGIO] Created booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}, newClient=${identity.isNewClient}`);
+            console.log(`[ALTEGIO] ${created ? "Created" : "Reused concurrently-created"} booking ${newBooking.id} for missing appointment ${altegioId}${isNewVisitCompleted ? ' (completed)' : ''}, newClient=${newBooking.isNewClient}`);
 
-            if (isNewVisitCompleted) {
+            if (created && isNewVisitCompleted) {
               console.log(`[ALTEGIO] New booking ${newBooking.id} already completed, attempting magic link creation`);
               await tryCreateMagicLinkForCompletedVisit(newBooking.id, 'altegio_webhook_new_completed', { altegioStaffId: staffId, altegioCompanyId: companyId });
             }
@@ -4115,9 +4111,6 @@ ${magicLink}`;
             if (existing.isNewClient || !existing.normalizedPhone) {
               await handlePhoneAppearedLater(existing.id, clientPhone);
             }
-          }
-          if (altegioClientIdParsed && !existing.altegioClientId) {
-            updateData.altegioClientId = altegioClientIdParsed;
           }
           if (staffId && staffId !== existing.altegioStaffId) {
             let effectiveStaffId = staffId;
@@ -4159,6 +4152,11 @@ ${magicLink}`;
 
           if (Object.keys(updateData).length > 0) {
             await storage.updateBooking(existing.id, updateData);
+            const identityClientId = altegioClientIdParsed || existing.altegioClientId;
+            if (identityClientId) {
+              const reconciled = await storage.reconcileAltegioBookingIdentity(existing.id, identityClientId);
+              if (reconciled) existing = reconciled;
+            }
             console.log(`[ALTEGIO] Updated booking ${existing.id} for appointment ${altegioId}${isVisitCompleted ? ' (marked completed)' : ''}`);
           }
 

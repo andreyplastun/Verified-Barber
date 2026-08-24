@@ -214,6 +214,7 @@ app.use((req, res, next) => {
           ALTER TABLE bookings RENAME COLUMN is_guest TO is_new_client;
         END IF;
       END $$;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_new_client boolean DEFAULT false;
       ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS customer_phone text;
       ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS opened_at timestamp;
       ALTER TABLE magic_links ADD COLUMN IF NOT EXISTS review_submitted_at timestamp;
@@ -326,6 +327,7 @@ app.use((req, res, next) => {
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS deadline TIMESTAMP;
+      ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS sending_started_at TIMESTAMP;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS delivery_status TEXT;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS delivery_received_at TIMESTAMP;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS delivery_raw TEXT;
@@ -386,7 +388,38 @@ app.use((req, res, next) => {
       UPDATE wa_messages SET dedupe_key = CONCAT(message_type, '_', booking_id, '_', id)
       WHERE dedupe_key IS NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS wa_messages_dedupe_key_idx ON wa_messages (dedupe_key) WHERE dedupe_key IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS idx_bookings_specialist_altegio_client_time
+        ON bookings (specialist_id, altegio_client_id, appointment_time, id)
+        WHERE booking_source = 'altegio' AND altegio_client_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS bookings_altegio_appointment_id_unique
+        ON bookings (altegio_appointment_id)
+        WHERE altegio_appointment_id IS NOT NULL;
     `);
+
+    // Canonicalize the flag without enqueueing anything. This makes the
+    // chronologically first Altegio visit for each specialist/client pair the
+    // only new-client booking, while leaving message creation event-driven.
+    const newClientBackfill = await pool.query(`
+      WITH ranked AS (
+        SELECT
+          id,
+          ROW_NUMBER() OVER (
+            PARTITION BY specialist_id, altegio_client_id
+            ORDER BY appointment_time ASC, id ASC
+          ) = 1 AS should_be_new
+        FROM bookings
+        WHERE booking_source = 'altegio'
+          AND altegio_client_id IS NOT NULL
+      )
+      UPDATE bookings b
+      SET is_new_client = ranked.should_be_new
+      FROM ranked
+      WHERE b.id = ranked.id
+        AND b.is_new_client IS DISTINCT FROM ranked.should_be_new
+    `);
+    if ((newClientBackfill.rowCount || 0) > 0) {
+      console.log(`[STARTUP] Reconciled is_new_client on ${newClientBackfill.rowCount} Altegio bookings`);
+    }
 
     await pool.query(`
       UPDATE bookings SET status = 'scheduled' WHERE status IN ('pending', 'confirmed');

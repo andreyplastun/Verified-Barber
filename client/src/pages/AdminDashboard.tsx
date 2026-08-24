@@ -490,7 +490,7 @@ export default function AdminDashboard() {
     id: number; bookingId: number; customerPhone: string; customerName: string;
     specialistName: string; messageType: string; status: string; templateIndex: number;
     messageText: string; attempts: number; scheduledAt: string; sentAt: string | null;
-    lastError: string | null; skipReason: string | null; createdAt: string;
+    lastError: string | null; skipReason: string | null; priority: number; createdAt: string;
   };
 
   const { data: waSettings, refetch: refetchWaSettings } = useQuery<WaSettingsType>({
@@ -1624,6 +1624,14 @@ export default function AdminDashboard() {
                           <span>{msg.customerPhone}</span>
                           <span>•</span>
                           <span>{msg.messageType === "primary" ? "Основное" : "Напоминание"}</span>
+                          {msg.priority >= 100 && (
+                            <>
+                              <span>•</span>
+                              <Badge variant="outline" className="h-5 border-amber-500 text-amber-700">
+                                Новый клиент · приоритет
+                              </Badge>
+                            </>
+                          )}
                           <span>•</span>
                           <span>T{msg.templateIndex + 1}</span>
                         </div>

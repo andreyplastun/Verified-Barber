@@ -69,6 +69,8 @@ export async function resolveClientIdentity(params: {
   const normalized = normalizePhone(phone);
 
   if (altegioClientId) {
+    const hasPreviousBooking = await storage.hasAltegioClientBooking(specialistId, altegioClientId);
+    const isNewClient = !hasPreviousBooking;
     if (normalized) {
       const existingByPhone = await storage.getBookingsByNormalizedPhone(normalized);
       const conflicting = existingByPhone.find(
@@ -82,13 +84,13 @@ export async function resolveClientIdentity(params: {
     }
 
     console.log(
-      `[CLIENT_IDENTITY] Identity resolved via altegio_client_id=${altegioClientId}, phone=${normalized || "none"}, newClient=${!normalized}`
+      `[CLIENT_IDENTITY] Identity resolved via altegio_client_id=${altegioClientId}, specialist=${specialistId}, phone=${normalized || "none"}, newClient=${isNewClient}`
     );
 
     return {
       altegioClientId,
       normalizedPhone: normalized,
-      isNewClient: !normalized,
+      isNewClient,
       merged: false,
     };
   }
@@ -106,12 +108,12 @@ export async function resolveClientIdentity(params: {
   }
 
   console.log(
-    `[CLIENT_IDENTITY] New client created: name="${customerName}", specialist=${specialistId}, no phone, no altegio_client_id`
+    `[CLIENT_IDENTITY] Identity unresolved: name="${customerName}", specialist=${specialistId}, no phone, no altegio_client_id`
   );
   return {
     altegioClientId: null,
     normalizedPhone: null,
-    isNewClient: true,
+    isNewClient: false,
     merged: false,
   };
 }
@@ -145,18 +147,16 @@ export async function handlePhoneAppearedLater(
     await storage.updateBooking(bookingId, {
       customerPhone: newPhone,
       normalizedPhone: normalized,
-      isNewClient: false,
     });
-    console.log(`[CLIENT_UPDATED_PHONE] Booking ${bookingId}: phone set to ${normalized}, is_new_client=false (conflict kept separate)`);
+    console.log(`[CLIENT_UPDATED_PHONE] Booking ${bookingId}: phone set to ${normalized}, identity flag preserved (conflict kept separate)`);
     return { updated: true, conflict: true };
   }
 
   await storage.updateBooking(bookingId, {
     customerPhone: newPhone,
     normalizedPhone: normalized,
-    isNewClient: false,
   });
-  console.log(`[CLIENT_UPDATED_PHONE] Booking ${bookingId}: phone set to ${normalized}, is_new_client=false`);
+  console.log(`[CLIENT_UPDATED_PHONE] Booking ${bookingId}: phone set to ${normalized}, identity flag preserved`);
   return { updated: true, conflict: false };
 }
 

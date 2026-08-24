@@ -1258,6 +1258,12 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
 
     console.log(`[ALTEGIO-SYNC-APPTS] Company ${companyId}: fetched ${allAppointments.length} appointments (${page} pages)`);
 
+    // Process chronologically so the first stored occurrence of a client ID is
+    // also the earliest visit in this sync window.
+    allAppointments.sort((a, b) =>
+      new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
+    );
+
     for (const appt of allAppointments) {
       if (appt.deleted) {
         if (appt.company_id === 28196) {
@@ -1327,14 +1333,19 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
             customerPhone: clientPhone || null,
             updatedFrom: "altegio",
           };
-          if (altClientId && !existing.altegioClientId) {
-            updateFields.altegioClientId = altClientId;
-          }
           await storage.updateBooking(existing.id, updateFields);
           didUpdate = true;
         }
 
-        if (clientPhone && (existing.isNewClient || !existing.normalizedPhone)) {
+        if (altClientId && !existing.altegioClientId) {
+          const reconciled = await storage.reconcileAltegioBookingIdentity(existing.id, altClientId);
+          console.log(`[ALTEGIO-SYNC-IDENTITY] Booking ${existing.id}: altegio_client_id=${altClientId}, newClient=${reconciled?.isNewClient}`);
+          didUpdate = true;
+        } else if (existing.altegioClientId && (didUpdate || newApptTime !== existingApptTime)) {
+          await storage.reconcileAltegioBookingIdentity(existing.id);
+        }
+
+        if (clientPhone && !existing.normalizedPhone) {
           await handlePhoneAppearedLater(existing.id, clientPhone);
           didUpdate = true;
         }
@@ -1401,27 +1412,25 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           customerName: clientName,
           specialistId,
         });
-        const newBooking = await storage.createBooking({
+        let status: "scheduled" | "completed" = "scheduled";
+        if (appt.attendance === 1) status = "completed";
+
+        const { booking: newBooking, created } = await storage.createAltegioBooking({
           specialistId,
           customerName: clientName,
           customerPhone: clientPhone || null,
           appointmentTime,
-          status: "scheduled",
-        } as any);
-
-        let status: "scheduled" | "completed" = "scheduled";
-        if (appt.attendance === 1) status = "completed";
-
-        await storage.updateBooking(newBooking.id, {
           altegioAppointmentId: appt.id,
           altegioStaffId: appt.staff_id || null,
           altegioClientId: identity.altegioClientId,
           normalizedPhone: identity.normalizedPhone,
-          isNewClient: identity.isNewClient,
           status,
-          updatedFrom: "altegio",
-          bookingSource: "altegio",
         });
+        if (!created) {
+          console.log(`[ALTEGIO-SYNC-APPTS] Appointment ${appt.id} was created concurrently as booking ${newBooking.id}`);
+          skipped++;
+          continue;
+        }
         if (status === "completed" && opts?.onCompleted) {
           await opts.onCompleted(newBooking.id, { staffId: appt.staff_id, companyId: appt.company_id });
         }

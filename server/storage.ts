@@ -1,7 +1,7 @@
 import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
-import { eq, desc, and, lt, gte, asc, sql, or } from "drizzle-orm";
+import { eq, desc, and, lt, gte, asc, sql, or, inArray } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -45,10 +45,24 @@ export interface IStorage {
 
   // Bookings
   createBooking(booking: CreateBookingRequest): Promise<Booking>;
+  createAltegioBooking(booking: {
+    specialistId: number;
+    customerName: string;
+    customerPhone: string | null;
+    appointmentTime: Date;
+    altegioAppointmentId: number;
+    altegioStaffId: number | null;
+    altegioClientId: number | null;
+    normalizedPhone: string | null;
+    status: "scheduled" | "completed";
+  }): Promise<{ booking: Booking; created: boolean }>;
+  reconcileAltegioBookingIdentity(bookingId: number, altegioClientId?: number | null): Promise<Booking | undefined>;
   createBookingWithClient(booking: { specialistId: number; clientId: string; customerName: string; customerPhone: string; customerEmail: string; appointmentTime: Date }): Promise<Booking>;
   getBooking(id: number): Promise<Booking | undefined>;
   getBookingByAltegioId(altegioAppointmentId: number): Promise<Booking | undefined>;
   getBookingsByNormalizedPhone(normalizedPhone: string): Promise<Booking[]>;
+  hasAltegioClientBooking(specialistId: number, altegioClientId: number, excludeBookingId?: number): Promise<boolean>;
+  isFirstAltegioClientBooking(bookingId: number): Promise<boolean>;
   getRecentSpecialistManualBookings(specialistId: number, since: Date): Promise<Booking[]>;
   getInvalidPhoneCountToday(specialistId: number): Promise<number>;
   getRecentMagicLinkByPhone(specialistId: number, normalizedPhone: string, withinDays: number): Promise<boolean>;
@@ -714,6 +728,154 @@ export class DatabaseStorage implements IStorage {
     return newBooking;
   }
 
+  async createAltegioBooking(input: {
+    specialistId: number;
+    customerName: string;
+    customerPhone: string | null;
+    appointmentTime: Date;
+    altegioAppointmentId: number;
+    altegioStaffId: number | null;
+    altegioClientId: number | null;
+    normalizedPhone: string | null;
+    status: "scheduled" | "completed";
+  }): Promise<{ booking: Booking; created: boolean }> {
+    return db.transaction(async (tx) => {
+      if (input.altegioClientId) {
+        await tx.execute(sql`
+          SELECT pg_advisory_xact_lock(${input.specialistId}, ${input.altegioClientId})
+        `);
+      }
+
+      const [existing] = await tx.select().from(bookings)
+        .where(eq(bookings.altegioAppointmentId, input.altegioAppointmentId))
+        .limit(1);
+      if (existing) return { booking: existing, created: false };
+
+      let isNewClient = false;
+      if (input.altegioClientId) {
+        const earlier = await tx.execute(sql`
+          SELECT 1
+          FROM bookings
+          WHERE specialist_id = ${input.specialistId}
+            AND altegio_client_id = ${input.altegioClientId}
+            AND booking_source = 'altegio'
+            AND appointment_time <= ${input.appointmentTime}
+          LIMIT 1
+        `);
+        isNewClient = earlier.rows.length === 0;
+      }
+
+      const inserted = await tx.insert(bookings).values({
+        specialistId: input.specialistId,
+        customerName: input.customerName,
+        customerPhone: input.customerPhone,
+        appointmentTime: input.appointmentTime,
+        altegioAppointmentId: input.altegioAppointmentId,
+        altegioStaffId: input.altegioStaffId,
+        altegioClientId: input.altegioClientId,
+        normalizedPhone: input.normalizedPhone,
+        isNewClient,
+        status: input.status,
+        updatedFrom: "altegio",
+        bookingSource: "altegio",
+      } as any).onConflictDoNothing().returning();
+
+      if (inserted.length === 0) {
+        const [racedExisting] = await tx.select().from(bookings)
+          .where(eq(bookings.altegioAppointmentId, input.altegioAppointmentId))
+          .limit(1);
+        if (!racedExisting) throw new Error("Altegio booking conflict without existing row");
+        return { booking: racedExisting, created: false };
+      }
+
+      const newBooking = inserted[0];
+      if (isNewClient && input.altegioClientId) {
+        const displaced = await tx.update(bookings)
+          .set({ isNewClient: false })
+          .where(and(
+            eq(bookings.specialistId, input.specialistId),
+            eq(bookings.altegioClientId, input.altegioClientId),
+            eq(bookings.bookingSource, "altegio"),
+            eq(bookings.isNewClient, true),
+            sql`${bookings.id} != ${newBooking.id}`,
+          ))
+          .returning({ id: bookings.id });
+        if (displaced.length > 0) {
+          const displacedIds = displaced.map((row) => row.id);
+          await tx.update(waMessages)
+            .set({
+              status: "skipped",
+              skipReason: "superseded_by_earlier_altegio_visit",
+              sendingStartedAt: null,
+            })
+            .where(and(
+              inArray(waMessages.bookingId, displacedIds),
+              eq(waMessages.messageType, "primary"),
+              gte(waMessages.priority, 100),
+              eq(waMessages.status, "queued"),
+            ));
+        }
+      }
+
+      return { booking: newBooking, created: true };
+    });
+  }
+
+  async reconcileAltegioBookingIdentity(
+    bookingId: number,
+    altegioClientId?: number | null,
+  ): Promise<Booking | undefined> {
+    return db.transaction(async (tx) => {
+      let [booking] = await tx.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+      if (!booking) return undefined;
+      const clientId = altegioClientId ?? booking.altegioClientId;
+      if (!clientId || booking.bookingSource !== "altegio") return booking;
+
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${booking.specialistId}, ${clientId})`);
+      if (booking.altegioClientId !== clientId) {
+        [booking] = await tx.update(bookings)
+          .set({ altegioClientId: clientId, updatedFrom: "altegio" })
+          .where(eq(bookings.id, bookingId))
+          .returning();
+      }
+
+      const ranked = await tx.execute(sql`
+        WITH ranked AS (
+          SELECT id, ROW_NUMBER() OVER (ORDER BY appointment_time ASC, id ASC) = 1 AS should_be_new
+          FROM bookings
+          WHERE specialist_id = ${booking.specialistId}
+            AND altegio_client_id = ${clientId}
+            AND booking_source = 'altegio'
+        )
+        UPDATE bookings b
+        SET is_new_client = ranked.should_be_new
+        FROM ranked
+        WHERE b.id = ranked.id
+          AND b.is_new_client IS DISTINCT FROM ranked.should_be_new
+        RETURNING b.id, b.is_new_client
+      `);
+      const demotedIds = ranked.rows
+        .filter((row: any) => row.is_new_client === false)
+        .map((row: any) => Number(row.id));
+      if (demotedIds.length > 0) {
+        await tx.update(waMessages)
+          .set({
+            status: "skipped",
+            skipReason: "superseded_by_earlier_altegio_visit",
+            sendingStartedAt: null,
+          })
+          .where(and(
+            inArray(waMessages.bookingId, demotedIds),
+            eq(waMessages.messageType, "primary"),
+            gte(waMessages.priority, 100),
+            eq(waMessages.status, "queued"),
+          ));
+      }
+      const [refreshed] = await tx.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+      return refreshed;
+    });
+  }
+
   async createBookingWithClient(booking: { specialistId: number; clientId: string; customerName: string; customerPhone: string; customerEmail: string; appointmentTime: Date }): Promise<Booking> {
     const [newBooking] = await db.insert(bookings).values({
       specialistId: booking.specialistId,
@@ -739,6 +901,46 @@ export class DatabaseStorage implements IStorage {
 
   async getBookingsByNormalizedPhone(normalizedPhone: string): Promise<Booking[]> {
     return await db.select().from(bookings).where(eq(bookings.normalizedPhone, normalizedPhone));
+  }
+
+  async hasAltegioClientBooking(
+    specialistId: number,
+    altegioClientId: number,
+    excludeBookingId?: number,
+  ): Promise<boolean> {
+    const result = await db.execute(sql`
+      SELECT 1
+      FROM bookings
+      WHERE specialist_id = ${specialistId}
+        AND altegio_client_id = ${altegioClientId}
+        AND booking_source = 'altegio'
+        ${excludeBookingId ? sql`AND id != ${excludeBookingId}` : sql``}
+      LIMIT 1
+    `);
+    return result.rows.length > 0;
+  }
+
+  async isFirstAltegioClientBooking(bookingId: number): Promise<boolean> {
+    const result = await db.execute(sql`
+      SELECT
+        b.booking_source = 'altegio'
+        AND b.altegio_client_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM bookings earlier
+          WHERE earlier.specialist_id = b.specialist_id
+            AND earlier.altegio_client_id = b.altegio_client_id
+            AND earlier.booking_source = 'altegio'
+            AND (
+              earlier.appointment_time < b.appointment_time
+              OR (earlier.appointment_time = b.appointment_time AND earlier.id < b.id)
+            )
+        ) AS is_first
+      FROM bookings b
+      WHERE b.id = ${bookingId}
+      LIMIT 1
+    `);
+    return (result.rows[0] as any)?.is_first === true;
   }
 
   async getRecentSpecialistManualBookings(specialistId: number, since: Date): Promise<Booking[]> {
@@ -1337,12 +1539,12 @@ export class DatabaseStorage implements IStorage {
 
   async markWaMessageSending(id: number): Promise<void> {
     await db.update(waMessages)
-      .set({ status: "sending" })
+      .set({ status: "sending", sendingStartedAt: new Date() })
       .where(eq(waMessages.id, id));
   }
 
   async markWaMessageSent(id: number, assistbotMessageId?: string | null): Promise<void> {
-    const updateData: Record<string, any> = { status: "sent", sentAt: new Date() };
+    const updateData: Record<string, any> = { status: "sent", sentAt: new Date(), sendingStartedAt: null };
     if (assistbotMessageId) {
       updateData.assistbotMessageId = assistbotMessageId;
     }
@@ -1357,18 +1559,18 @@ export class DatabaseStorage implements IStorage {
     const newAttempts = msg.attempts + 1;
     if (newAttempts >= msg.maxAttempts || !nextScheduledAt) {
       await db.update(waMessages)
-        .set({ status: "failed", attempts: newAttempts, lastError: error })
+        .set({ status: "failed", attempts: newAttempts, lastError: error, sendingStartedAt: null })
         .where(eq(waMessages.id, id));
     } else {
       await db.update(waMessages)
-        .set({ status: "queued", attempts: newAttempts, lastError: error, scheduledAt: nextScheduledAt })
+        .set({ status: "queued", attempts: newAttempts, lastError: error, scheduledAt: nextScheduledAt, sendingStartedAt: null })
         .where(eq(waMessages.id, id));
     }
   }
 
   async markWaMessageSkipped(id: number, reason: string): Promise<void> {
     await db.update(waMessages)
-      .set({ status: "skipped", skipReason: reason })
+      .set({ status: "skipped", skipReason: reason, sendingStartedAt: null })
       .where(eq(waMessages.id, id));
   }
 

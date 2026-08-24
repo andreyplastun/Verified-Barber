@@ -1,29 +1,37 @@
 import { storage } from "./storage";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { appConfig, waMessages, magicLinks } from "@shared/schema";
 import { eq, and, asc, sql } from "drizzle-orm";
+import { isValidKzPhone, normalizePhone } from "./client-identity";
+import type { PoolClient } from "pg";
 
 const IS_PRODUCTION = process.env.REPL_SLUG === 'rateus' || process.env.RAILWAY_ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production';
 
-async function acquirePhoneLock(phone: string, ttlSeconds: number = 30): Promise<boolean> {
+async function acquirePhoneLock(phone: string): Promise<PoolClient | null> {
   const lockKey = hashPhoneToLockId(phone);
+  const client = await pool.connect();
   try {
-    const result = await db.execute(sql`SELECT pg_try_advisory_lock(${lockKey}) as acquired`);
-    if (!(result.rows[0] as any)?.acquired) {
-      return false;
+    const result = await client.query("SELECT pg_try_advisory_lock($1) AS acquired", [lockKey]);
+    if (!result.rows[0]?.acquired) {
+      client.release();
+      return null;
     }
-    setTimeout(async () => {
-      try { await db.execute(sql`SELECT pg_advisory_unlock(${lockKey})`); } catch {}
-    }, ttlSeconds * 1000);
-    return true;
+    return client;
   } catch {
-    return false;
+    client.release();
+    return null;
   }
 }
 
-async function releasePhoneLock(phone: string): Promise<void> {
+async function releasePhoneLock(phone: string, client: PoolClient): Promise<void> {
   const lockKey = hashPhoneToLockId(phone);
-  try { await db.execute(sql`SELECT pg_advisory_unlock(${lockKey})`); } catch {}
+  try {
+    await client.query("SELECT pg_advisory_unlock($1)", [lockKey]);
+  } catch {
+    // Closing/releasing the dedicated session also releases its advisory lock.
+  } finally {
+    client.release();
+  }
 }
 
 function hashPhoneToLockId(phone: string): number {
@@ -92,6 +100,8 @@ const WINDOW_START_HOUR = 10;
 const WINDOW_START_MINUTE = 0;
 const PRIMARY_END_HOUR = 21;
 const PRIMARY_END_MINUTE = 45;
+const PRIORITY_NEW_CLIENT_END_HOUR = 23;
+const PRIORITY_NEW_CLIENT_END_MINUTE = 58;
 const FOLLOWUP_END_HOUR = 20;
 const FOLLOWUP_END_MINUTE = 0;
 const SEND_WINDOW_MINUTES = (PRIMARY_END_HOUR * 60 + PRIMARY_END_MINUTE) - (WINDOW_START_HOUR * 60 + WINDOW_START_MINUTE);
@@ -112,6 +122,34 @@ function isPrimaryPastQuiet(): boolean {
   const h = getAlmatyHour();
   const m = getAlmatyMinute();
   return h > PRIMARY_END_HOUR || (h === PRIMARY_END_HOUR && m >= PRIMARY_END_MINUTE);
+}
+
+function isPriorityNewClientPastQuiet(): boolean {
+  const h = getAlmatyHour();
+  const m = getAlmatyMinute();
+  return h > PRIORITY_NEW_CLIENT_END_HOUR ||
+    (h === PRIORITY_NEW_CLIENT_END_HOUR && m >= PRIORITY_NEW_CLIENT_END_MINUTE);
+}
+
+function getAlmatyCutoff(now: Date, hour: number, minute: number): Date {
+  const almaty = new Date(now.getTime() + ALMATY_UTC_OFFSET * 3600000);
+  return new Date(Date.UTC(
+    almaty.getUTCFullYear(),
+    almaty.getUTCMonth(),
+    almaty.getUTCDate(),
+    hour - ALMATY_UTC_OFFSET,
+    minute,
+    0,
+    0,
+  ));
+}
+
+export const NEW_CLIENT_PRIORITY = 100;
+
+export function isPriorityNewClientMessage(
+  msg: Pick<typeof waMessages.$inferSelect, "messageType" | "priority">,
+): boolean {
+  return msg.messageType === "primary" && msg.priority >= NEW_CLIENT_PRIORITY;
 }
 
 function isFollowupPastQuiet(): boolean {
@@ -304,6 +342,10 @@ function getMinIntervalMs(): number {
   return (12 + Math.random() * 3) * 60000;
 }
 
+function getPriorityNewClientMinIntervalMs(): number {
+  return (4 + Math.random() * 2) * 60000;
+}
+
 async function getLastSentAt(): Promise<number> {
   const result = await db.execute(sql`
     SELECT MAX(sent_at) as last_sent
@@ -330,7 +372,13 @@ async function getAssistBotToken(): Promise<string | null> {
   return null;
 }
 
-async function sendViaAssistBot(phone: string, text: string, bookingId: number, source: string = "unknown"): Promise<string | null> {
+async function sendViaAssistBot(
+  phone: string,
+  text: string,
+  bookingId: number,
+  source: string = "unknown",
+  idempotencyTimestamp: number = Date.now(),
+): Promise<string | null> {
   if (!IS_PRODUCTION) {
     console.log(`[WA_ENV_GUARD] BLOCKED send in non-production env. source=${source} phone=${phone} booking=${bookingId}`);
     throw new Error(`[ENV_GUARD] WA sending blocked in non-production environment`);
@@ -363,7 +411,7 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number, 
     ? `+${cleanPhone}`
     : `+7${cleanPhone}`;
 
-  const messageUniqueId = `rateus_${source}_${bookingId}_${Date.now()}`;
+  const messageUniqueId = `rateus_${source}_${bookingId}_${idempotencyTimestamp}`;
   const payload = {
     destination_params: [
       {
@@ -387,6 +435,7 @@ async function sendViaAssistBot(phone: string, text: string, bookingId: number, 
       "Content-Type": "application/json",
     },
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(60_000),
   });
 
   const respBody = await response.text();
@@ -543,7 +592,12 @@ export async function enqueueReviewMessage(params: {
   validateReviewLink(params.reviewLink, `enqueue_${params.messageType}_booking=${params.bookingId}`);
 
   const dedupeKey = `${params.messageType}_${params.bookingId}`;
-  const cleanPhone = params.customerPhone.replace(/\D/g, "");
+  const normalizedPhone = normalizePhone(params.customerPhone);
+  if (!isValidKzPhone(normalizedPhone)) {
+    console.log(`[WA_QUEUE] Skipping ${params.messageType} for booking=${params.bookingId}: invalid phone`);
+    return;
+  }
+  const cleanPhone = normalizedPhone!.replace(/\D/g, "");
 
   const isOptedOut = await storage.isWaOptedOut(cleanPhone);
   if (isOptedOut) {
@@ -551,38 +605,57 @@ export async function enqueueReviewMessage(params: {
     return;
   }
 
+  let booking = params.messageType === "primary"
+    ? await storage.getBooking(params.bookingId)
+    : undefined;
+  let priority = 0;
+
   if (params.messageType === "primary") {
-    const booking = await storage.getBooking(params.bookingId);
-    if (booking && !isVisitToday(booking.appointmentTime)) {
+    if (!booking) {
+      console.log(`[WA_QUEUE] Skipping primary for booking=${params.bookingId}: booking not found`);
+      return;
+    }
+    if (!isVisitToday(booking.appointmentTime)) {
       console.log(`[WA_QUEUE] Skipping primary for booking=${params.bookingId}: visit not today (appt=${booking.appointmentTime})`);
       return;
+    }
+    if (booking.bookingSource === "altegio" && booking.altegioClientId) {
+      const isFirst = await storage.isFirstAltegioClientBooking(booking.id);
+      if (booking.isNewClient !== isFirst) {
+        const updated = await storage.updateBooking(booking.id, { isNewClient: isFirst } as any);
+        if (updated) booking = updated;
+        console.log(`[WA_NEW_CLIENT_RECONCILE] booking=${booking.id} altegioClientId=${booking.altegioClientId} isNewClient=${isFirst}`);
+      }
+      if (isFirst) priority = NEW_CLIENT_PRIORITY;
     }
   }
 
   if (params.messageType === "primary" && !params.isSpecialistAction) {
     const existingQueued = await db.execute(sql`
-      SELECT wm.id, wm.booking_id, b.appointment_time 
+      SELECT wm.id, wm.booking_id, wm.priority, b.appointment_time
       FROM wa_messages wm
       JOIN bookings b ON b.id = wm.booking_id
       WHERE wm.customer_phone = ${cleanPhone} 
       AND wm.message_type = 'primary'
-      AND wm.status IN ('queued', 'sending')
+      AND wm.status = 'queued'
       ORDER BY b.appointment_time DESC
     `);
 
     if (existingQueued.rows.length > 0) {
-      const booking = await storage.getBooking(params.bookingId);
       const newApptTime = booking?.appointmentTime ? new Date(booking.appointmentTime) : new Date(0);
 
       for (const existing of existingQueued.rows as any[]) {
         const existingApptTime = existing.appointment_time ? new Date(existing.appointment_time) : new Date(0);
-        if (newApptTime >= existingApptTime) {
+        const existingPriority = Number(existing.priority || 0);
+        const shouldReplace = priority > existingPriority ||
+          (priority === existingPriority && newApptTime >= existingApptTime);
+        if (shouldReplace) {
           await db.update(waMessages)
             .set({ status: "skipped", skipReason: "superseded_by_newer_visit" } as any)
             .where(eq(waMessages.id, existing.id));
-          console.log(`[WA_PHONE_CENTRIC] Superseded msg=${existing.id} booking=${existing.booking_id} (older visit) in favor of booking=${params.bookingId} phone=${cleanPhone}`);
+          console.log(`[WA_PHONE_CENTRIC] Superseded msg=${existing.id} booking=${existing.booking_id} priority=${existingPriority} in favor of booking=${params.bookingId} priority=${priority} phone=${cleanPhone}`);
         } else {
-          console.log(`[WA_PHONE_CENTRIC] Skipping enqueue for booking=${params.bookingId}: existing msg=${existing.id} booking=${existing.booking_id} has newer visit phone=${cleanPhone}`);
+          console.log(`[WA_PHONE_CENTRIC] Skipping enqueue for booking=${params.bookingId}: existing msg=${existing.id} booking=${existing.booking_id} has priority=${existingPriority} phone=${cleanPhone}`);
           return;
         }
       }
@@ -610,15 +683,33 @@ export async function enqueueReviewMessage(params: {
   let deadline: Date | null = null;
 
   if (params.messageType === "primary") {
-    const delayMinutes = 10 + Math.random() * 10;
-    scheduledAt = new Date(now.getTime() + delayMinutes * 60000);
-    // Let the message wait for its rate-limit slot, but never past today's quiet-hours
-    // cutoff (21:45 Almaty). The worker's expired_after_wait guard uses this deadline,
-    // so capping it here prevents any primary from being sent after quiet hours.
-    const almaty = new Date(now.getTime() + ALMATY_UTC_OFFSET * 3600000);
-    const quietCutoffMs = Date.UTC(almaty.getUTCFullYear(), almaty.getUTCMonth(), almaty.getUTCDate(), PRIMARY_END_HOUR - ALMATY_UTC_OFFSET, PRIMARY_END_MINUTE, 0, 0);
-    deadline = new Date(Math.min(now.getTime() + PRIMARY_DEADLINE_MINUTES * 60000, quietCutoffMs));
-    console.log(`[WA_QUEUE] Primary: booking=${params.bookingId} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline.toISOString()} (delay=${Math.round(delayMinutes)}min)`);
+    if (priority >= NEW_CLIENT_PRIORITY) {
+      const cutoff = getAlmatyCutoff(
+        now,
+        PRIORITY_NEW_CLIENT_END_HOUR,
+        PRIORITY_NEW_CLIENT_END_MINUTE,
+      );
+      if (now >= cutoff) {
+        console.log(`[WA_QUEUE] Skipping priority new-client primary for booking=${params.bookingId}: after same-day cutoff`);
+        return;
+      }
+      const delayMinutes = 1 + Math.random() * 2;
+      scheduledAt = new Date(Math.min(
+        now.getTime() + delayMinutes * 60000,
+        cutoff.getTime() - 5000,
+      ));
+      deadline = cutoff;
+      console.log(`[WA_QUEUE] Priority new-client primary: booking=${params.bookingId} priority=${priority} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline.toISOString()} (delay=${Math.round(delayMinutes)}min)`);
+    } else {
+      const delayMinutes = 10 + Math.random() * 10;
+      scheduledAt = new Date(now.getTime() + delayMinutes * 60000);
+      const quietCutoff = getAlmatyCutoff(now, PRIMARY_END_HOUR, PRIMARY_END_MINUTE);
+      deadline = new Date(Math.min(
+        now.getTime() + PRIMARY_DEADLINE_MINUTES * 60000,
+        quietCutoff.getTime(),
+      ));
+      console.log(`[WA_QUEUE] Primary: booking=${params.bookingId} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline.toISOString()} (delay=${Math.round(delayMinutes)}min)`);
+    }
   } else {
     const delayMs = params.delayMs || randomMinutes(20 * 60, 24 * 60);
     scheduledAt = new Date(now.getTime() + delayMs);
@@ -640,6 +731,7 @@ export async function enqueueReviewMessage(params: {
       scheduledAt,
       deadline,
       dedupeKey,
+      priority,
     } as any).onConflictDoNothing();
   } catch (err: any) {
     if (err.code === '23505' && err.constraint?.includes('dedupe')) {
@@ -649,7 +741,7 @@ export async function enqueueReviewMessage(params: {
     throw err;
   }
 
-  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline?.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
+  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} priority=${priority} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline?.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
 }
 
 async function createFollowup(msg: typeof waMessages.$inferSelect, opts?: { baseDateMs?: number }): Promise<void> {
@@ -872,11 +964,11 @@ async function refreshLinkIfExpired(msg: typeof waMessages.$inferSelect): Promis
 }
 
 async function doSend(msg: typeof waMessages.$inferSelect, source: string = "queue"): Promise<boolean> {
-  const lockAcquired = await acquirePhoneLock(msg.customerPhone);
-  if (!lockAcquired) {
+  const phoneLockClient = await acquirePhoneLock(msg.customerPhone);
+  if (!phoneLockClient) {
     console.log(`[WA_LOCK] Could not acquire lock for phone=${msg.customerPhone} msg=${msg.id} booking=${msg.bookingId} — will retry next cycle`);
     await db.update(waMessages)
-      .set({ status: "queued" } as any)
+      .set({ status: "queued", sendingStartedAt: null } as any)
       .where(eq(waMessages.id, msg.id));
     return false;
   }
@@ -912,7 +1004,7 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
           return false;
         }
         await db.update(waMessages)
-          .set({ scheduledAt: deferTo, status: "queued" } as any)
+          .set({ scheduledAt: deferTo, status: "queued", sendingStartedAt: null } as any)
           .where(eq(waMessages.id, msg.id));
         console.log(`[WA_COOLDOWN] Deferred msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} phone=${msg.customerPhone} reason=${cooldown.reason} defer_to=${deferTo.toISOString()}`);
         return false;
@@ -920,7 +1012,13 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
     }
 
     msg = await refreshLinkIfExpired(msg);
-    const assistbotMessageId = await sendViaAssistBot(msg.customerPhone, msg.messageText, msg.bookingId, `${source}_${msg.messageType}`);
+    const assistbotMessageId = await sendViaAssistBot(
+      msg.customerPhone,
+      msg.messageText,
+      msg.bookingId,
+      `${source}_${msg.messageType}`,
+      msg.createdAt ? new Date(msg.createdAt).getTime() : 946684800000 + msg.id,
+    );
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
     console.log(`[WA_SENT] msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} scheduledAt=${msg.scheduledAt} actualSendTime=${new Date().toISOString()} reason=SENT`);
 
@@ -939,23 +1037,25 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
       await storage.markWaMessageFailed(msg.id, err.message);
       console.error(`[WA_PROCESSOR] Failed permanently msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} error=${err.message} attempts=${newAttempts}/${msg.maxAttempts}`);
     } else {
-      const retryDelayMs = randomMinutes(10, 30);
+      const retryDelayMs = isPriorityNewClientMessage(msg)
+        ? randomMinutes(1, 3)
+        : randomMinutes(10, 30);
       const nextScheduledAt = new Date(Date.now() + retryDelayMs);
       await storage.markWaMessageFailed(msg.id, err.message, nextScheduledAt);
       console.error(`[WA_PROCESSOR] Failed msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} error=${err.message} attempt=${newAttempts}/${msg.maxAttempts} retry_at=${nextScheduledAt.toISOString()}`);
     }
     return false;
   } finally {
-    await releasePhoneLock(msg.customerPhone);
+    await releasePhoneLock(msg.customerPhone, phoneLockClient);
   }
 }
 
 export async function sendWaMessageNow(messageId: number): Promise<{ success: boolean; error?: string }> {
   const claimed = await db.update(waMessages)
-    .set({ status: "sending" } as any)
+    .set({ status: "sending", sendingStartedAt: new Date() } as any)
     .where(and(
       eq(waMessages.id, messageId),
-      sql`${waMessages.status} IN ('queued', 'sending')`
+      eq(waMessages.status, "queued")
     ))
     .returning();
 
@@ -971,7 +1071,7 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
     const primaryCheck = await checkPrimaryBeforeFollowup(msg);
     if (primaryCheck !== "ok") {
       await db.update(waMessages)
-        .set({ status: "queued" } as any)
+        .set({ status: "queued", sendingStartedAt: null } as any)
         .where(eq(waMessages.id, msg.id));
       return { success: false, error: "Primary ещё не отправлен — follow-up ждёт" };
     }
@@ -1059,14 +1159,14 @@ async function deduplicateQueueByPhone(): Promise<number> {
   const dupes = await db.execute(sql`
     WITH ranked AS (
       SELECT wm.id, wm.booking_id, wm.customer_phone, wm.message_type,
-             b.appointment_time, b.price,
+             wm.priority, b.appointment_time, b.price,
              ROW_NUMBER() OVER (
                PARTITION BY wm.customer_phone, wm.message_type
-               ORDER BY b.appointment_time DESC NULLS LAST, b.price DESC NULLS LAST, wm.id DESC
+               ORDER BY wm.priority DESC, b.appointment_time DESC NULLS LAST, b.price DESC NULLS LAST, wm.id DESC
              ) as rn
       FROM wa_messages wm
       JOIN bookings b ON b.id = wm.booking_id
-      WHERE wm.status IN ('queued', 'sending')
+      WHERE wm.status = 'queued'
     )
     SELECT id, booking_id, customer_phone, message_type FROM ranked WHERE rn > 1
   `);
@@ -1103,8 +1203,33 @@ function tickSleep(): number {
 export async function startWaWorkerLoop(): Promise<void> {
   console.log(`[WA_WORKER] Continuous loop started`);
 
+  // Only one app instance may dispatch queue messages. The lock is bound to
+  // this dedicated PostgreSQL session and is automatically released if the
+  // instance dies or loses its database connection.
+  let dispatcherClient: PoolClient;
+  while (true) {
+    dispatcherClient = await pool.connect();
+    const dispatcherLock = await dispatcherClient.query(
+      "SELECT pg_try_advisory_lock($1) AS acquired",
+      [0x57414451],
+    );
+    if (dispatcherLock.rows[0]?.acquired) break;
+    dispatcherClient.release();
+    console.log("[WA_WORKER] Another instance owns the dispatcher lease; retrying in 30s");
+    await sleep(30000);
+  }
+  console.log("[WA_WORKER] Acquired global dispatcher lease");
+
   while (true) {
     try {
+      try {
+        await dispatcherClient.query("SELECT 1");
+      } catch (leaseError: any) {
+        console.error(`[WA_WORKER] Dispatcher lease session lost: ${leaseError.message}; reacquiring`);
+        try { dispatcherClient.release(true); } catch {}
+        return startWaWorkerLoop();
+      }
+
       const settings = await getWaSettings();
       if (!settings.enabled) {
         await sleep(30000);
@@ -1112,11 +1237,6 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       const effectiveLimit = getWarmupDailyLimit(settings.warmupStartDate, settings.dailyLimit);
-      if (effectiveLimit <= 0) {
-        await sleep(30000);
-        continue;
-      }
-
       if (isBeforeWindowStart()) {
         const nowMs = Date.now();
         const almatyMs = nowMs + ALMATY_UTC_OFFSET * 3600000;
@@ -1129,8 +1249,11 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       const stuckResult = await db.update(waMessages)
-        .set({ status: "queued" } as any)
-        .where(eq(waMessages.status, "sending"))
+        .set({ status: "queued", sendingStartedAt: null } as any)
+        .where(and(
+          eq(waMessages.status, "sending"),
+          sql`COALESCE(${waMessages.sendingStartedAt}, ${waMessages.createdAt}) < NOW() - INTERVAL '10 minutes'`,
+        ))
         .returning({ id: waMessages.id, bookingId: waMessages.bookingId });
       if (stuckResult.length > 0) {
         console.log(`[WA_PROCESSOR] Recovered ${stuckResult.length} stuck 'sending' messages: ${stuckResult.map(r => `msg=${r.id}/booking=${r.bookingId}`).join(', ')}`);
@@ -1164,6 +1287,7 @@ export async function startWaWorkerLoop(): Promise<void> {
           )
         )
         .orderBy(
+          sql`${waMessages.priority} DESC`,
           sql`CASE WHEN ${waMessages.messageType} = 'reminder' THEN 0 ELSE 1 END`,
           sql`COALESCE(${waMessages.deadline}, '2099-01-01'::timestamp) ASC`,
         )
@@ -1203,6 +1327,7 @@ export async function startWaWorkerLoop(): Promise<void> {
       heartbeatCounter = 0;
 
       const msgDeadline = (msg as any).deadline ? new Date((msg as any).deadline) : null;
+      const isPriorityNewClient = isPriorityNewClientMessage(msg);
 
       if (msgDeadline && Date.now() > msgDeadline.getTime()) {
         const reason = msg.messageType === "primary" ? "expired_primary" : "expired_followup";
@@ -1211,9 +1336,14 @@ export async function startWaWorkerLoop(): Promise<void> {
         continue;
       }
 
-      if (msg.messageType === "primary" && isPrimaryPastQuiet()) {
+      if (msg.messageType === "primary" && !isPriorityNewClient && isPrimaryPastQuiet()) {
         await storage.markWaMessageSkipped(msg.id, "quiet_hours_primary");
         console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary reason=quiet_hours_primary (past 21:45)`);
+        continue;
+      }
+      if (isPriorityNewClient && isPriorityNewClientPastQuiet()) {
+        await storage.markWaMessageSkipped(msg.id, "quiet_hours_priority_new_client");
+        console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=primary priority=${msg.priority} reason=quiet_hours_priority_new_client (past 23:58)`);
         continue;
       }
 
@@ -1277,13 +1407,18 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       const sentToday = await storage.countWaMessagesSentToday();
-      if (sentToday >= effectiveLimit) {
+      if (!isPriorityNewClient && sentToday >= effectiveLimit) {
         console.log(`[WA_PROCESSOR] Daily limit reached: ${sentToday}/${effectiveLimit}. msg=${msg.id} stays queued.`);
         await sleep(idleSleep());
         continue;
       }
+      if (isPriorityNewClient && sentToday >= effectiveLimit) {
+        console.log(`[WA_PRIORITY_BYPASS] msg=${msg.id} booking=${msg.bookingId} priority=${msg.priority} bypassing daily limit ${sentToday}/${effectiveLimit}`);
+      }
 
-      const minInterval = getMinIntervalMs();
+      let minInterval = isPriorityNewClient
+        ? getPriorityNewClientMinIntervalMs()
+        : getMinIntervalMs();
 
       if (msgDeadline) {
         const timeLeft = msgDeadline.getTime() - Date.now();
@@ -1304,6 +1439,7 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       let rateLimitSkipped = false;
+      let preemptedByPriority = false;
       while (true) {
         const lastSentMs = await getLastSentAt();
         const now = Date.now();
@@ -1325,8 +1461,24 @@ export async function startWaWorkerLoop(): Promise<void> {
         const chunkMs = Math.min(waitTime, tickSleep());
         console.log(`[WA_RATE_LIMIT] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} — sleeping ${Math.round(chunkMs / 1000)}s chunk (remaining=${Math.round(waitTime / 1000)}s, minInterval=${Math.round(minInterval / 60000)}min)`);
         await sleep(chunkMs);
+        if (!isPriorityNewClient) {
+          const [higherPriority] = await db.select({ id: waMessages.id })
+            .from(waMessages)
+            .where(and(
+              eq(waMessages.status, "queued"),
+              sql`${waMessages.scheduledAt} <= NOW()`,
+              sql`${waMessages.priority} > ${msg.priority}`,
+            ))
+            .limit(1);
+          if (higherPriority) {
+            preemptedByPriority = true;
+            console.log(`[WA_PREEMPT] msg=${msg.id} booking=${msg.bookingId} yielding rate-limit wait to priority msg=${higherPriority.id}`);
+            break;
+          }
+        }
       }
       if (rateLimitSkipped) continue;
+      if (preemptedByPriority) continue;
 
       if (msgDeadline && Date.now() > msgDeadline.getTime()) {
         await storage.markWaMessageSkipped(msg.id, "expired_after_wait");
@@ -1334,21 +1486,32 @@ export async function startWaWorkerLoop(): Promise<void> {
         continue;
       }
 
-      await db.update(waMessages)
-        .set({ status: "sending" } as any)
-        .where(eq(waMessages.id, msg.id));
+      const claimed = await db.update(waMessages)
+        .set({ status: "sending", sendingStartedAt: new Date() } as any)
+        .where(and(
+          eq(waMessages.id, msg.id),
+          eq(waMessages.status, "queued"),
+        ))
+        .returning();
+      if (claimed.length === 0) {
+        console.log(`[WA_CLAIM] msg=${msg.id} booking=${msg.bookingId} already claimed by another worker`);
+        continue;
+      }
 
-      const result = await doSend({ ...msg, status: "sending" as any }, "queue");
+      const result = await doSend(claimed[0], "queue");
 
       if (result) {
         workerConsecutiveFailures = 0;
-        console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} sentToday=${sentToday + 1}/${effectiveLimit} nextIn=${Math.round(minInterval / 60000)}min`);
-        await sleep(minInterval);
+        console.log(`[WA_PROCESSOR] Sent msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} priority=${msg.priority} sentToday=${sentToday + 1}/${effectiveLimit} nextEligibleIn=${Math.round(minInterval / 60000)}min`);
+        // Re-check the queue frequently so a newly-arrived priority client is
+        // not hidden behind a long normal-message sleep. The last-sent guard
+        // above still enforces the selected message's interval.
+        await sleep(Math.min(minInterval, tickSleep()));
       } else {
         const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
         if (refreshed?.status === "sending") {
           await db.update(waMessages)
-            .set({ status: "queued" } as any)
+            .set({ status: "queued", sendingStartedAt: null } as any)
             .where(eq(waMessages.id, msg.id));
         }
         if (refreshed && (refreshed.status === "queued" || refreshed.status === "skipped" || refreshed.status === "failed")) {
