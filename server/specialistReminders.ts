@@ -10,6 +10,7 @@ const WINDOW_END_HOUR = 21; // stop sending at/after 21:00 Almaty
 const SCAN_INTERVAL_MS = 60 * 60 * 1000; // hourly
 const FIRST_RUN_DELAY_MS = 30 * 1000;
 const MAX_PER_SCAN = 8;
+const MAX_PER_DAY = 10; // hard cap for all specialist WhatsApp reminders per Almaty day
 const SEND_SPACING_MS = 20 * 1000;
 const DAY_MS = 86400000;
 const MIN_DAYS_BETWEEN = 7; // never more than 1 reminder per specialist per week
@@ -49,6 +50,25 @@ function almatyHour(): number {
 function withinWindow(): boolean {
   const h = almatyHour();
   return h >= WINDOW_START_HOUR && h < WINDOW_END_HOUR;
+}
+
+function almatyDayBounds(): { start: Date; end: Date } {
+  const now = new Date();
+  const almatyMs = now.getTime() + ALMATY_UTC_OFFSET * 3600000;
+  const almaty = new Date(almatyMs);
+  const startUtcMs = Date.UTC(
+    almaty.getUTCFullYear(),
+    almaty.getUTCMonth(),
+    almaty.getUTCDate(),
+    -ALMATY_UTC_OFFSET,
+    0,
+    0,
+    0,
+  );
+  return {
+    start: new Date(startUtcMs),
+    end: new Date(startUtcMs + DAY_MS),
+  };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -157,15 +177,39 @@ async function claimReminder(
   phone: string,
   type: ReminderType,
   dedupeKey: string,
-): Promise<number | null> {
-  const r = await db.execute(sql`
-    INSERT INTO specialist_reminders (specialist_id, phone, reminder_type, status, message_text, dedupe_key)
-    VALUES (${specialistId}, ${phone}, ${type}, 'sending', '', ${dedupeKey})
-    ON CONFLICT (dedupe_key) DO NOTHING
-    RETURNING id
-  `);
-  const row = r.rows[0] as any;
-  return row ? Number(row.id) : null;
+  dayBounds: { start: Date; end: Date },
+): Promise<{ id: number | null; dailyCapReached: boolean }> {
+  return db.transaction(async (tx) => {
+    // Serialize slot claims across overlapping server instances during deploys.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(81427301)`);
+
+    const dailyUsageResult = await tx.execute(sql`
+      SELECT COUNT(*)::int AS count
+      FROM specialist_reminders
+      WHERE (
+        status = 'sent'
+        AND sent_at >= ${dayBounds.start}
+        AND sent_at < ${dayBounds.end}
+      ) OR (
+        status = 'sending'
+        AND created_at >= ${dayBounds.start}
+        AND created_at < ${dayBounds.end}
+      )
+    `);
+    const dailyUsage = Number((dailyUsageResult.rows[0] as any)?.count || 0);
+    if (dailyUsage >= MAX_PER_DAY) {
+      return { id: null, dailyCapReached: true };
+    }
+
+    const r = await tx.execute(sql`
+      INSERT INTO specialist_reminders (specialist_id, phone, reminder_type, status, message_text, dedupe_key)
+      VALUES (${specialistId}, ${phone}, ${type}, 'sending', '', ${dedupeKey})
+      ON CONFLICT (dedupe_key) DO NOTHING
+      RETURNING id
+    `);
+    const row = r.rows[0] as any;
+    return { id: row ? Number(row.id) : null, dailyCapReached: false };
+  });
 }
 
 async function finalizeReminder(
@@ -188,6 +232,20 @@ async function finalizeReminder(
 export async function runSpecialistReminderScan(): Promise<void> {
   if (!withinWindow()) return;
   if (!(await isEnabled())) return;
+
+  const dayBounds = almatyDayBounds();
+  const dailySentResult = await db.execute(sql`
+    SELECT COUNT(*)::int AS count
+    FROM specialist_reminders
+    WHERE status = 'sent'
+      AND sent_at >= ${dayBounds.start}
+      AND sent_at < ${dayBounds.end}
+  `);
+  const dailySent = Number((dailySentResult.rows[0] as any)?.count || 0);
+  if (dailySent >= MAX_PER_DAY) {
+    console.log(`[SPEC_REMINDER] daily cap reached: ${dailySent}/${MAX_PER_DAY} sent today (Almaty)`);
+    return;
+  }
 
   const res = await db.execute(sql`
     SELECT s.id, s.name, s.phone, s.image_url, s.base_service_price, s.base_service_name,
@@ -226,7 +284,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
   let sent = 0;
 
   for (const c of candidates) {
-    if (sent >= MAX_PER_SCAN) break;
+    if (sent >= MAX_PER_SCAN || dailySent + sent >= MAX_PER_DAY) break;
     if (!withinWindow()) break; // re-check: a long scan must not spill past 21:00
 
     const seg = segmentFor(c);
@@ -250,7 +308,12 @@ export async function runSpecialistReminderScan(): Promise<void> {
     if (!cleanPhone) continue;
 
     // Claim before sending so overlapping scans / instances cannot double-send.
-    const claimId = await claimReminder(c.id, cleanPhone, type, dedupeKeyFor(c.id, type));
+    const claim = await claimReminder(c.id, cleanPhone, type, dedupeKeyFor(c.id, type), dayBounds);
+    if (claim.dailyCapReached) {
+      console.log(`[SPEC_REMINDER] daily cap reached while scanning: ${MAX_PER_DAY}/${MAX_PER_DAY} reserved or sent today (Almaty)`);
+      break;
+    }
+    const claimId = claim.id;
     if (claimId == null) continue;
 
     if (await storage.isWaOptedOut(cleanPhone)) {
@@ -275,7 +338,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
     }
   }
 
-  if (sent > 0) console.log(`[SPEC_REMINDER] scan complete: ${sent} reminder(s) sent`);
+  if (sent > 0) console.log(`[SPEC_REMINDER] scan complete: ${sent} reminder(s) sent (${dailySent + sent}/${MAX_PER_DAY} today)`);
 }
 
 export function startSpecialistReminderLoop(): void {
