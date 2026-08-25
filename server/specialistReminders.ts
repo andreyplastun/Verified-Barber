@@ -22,9 +22,8 @@ const FRESH_MIN_DAYS_BETWEEN = 1;
 const MAX_PROFILE_REMINDERS = 3; // profile/first-visit nudges capped at 3 total
 const MAX_CLAIM_REMINDERS = 3; // claim-ownership nudges capped at 3 total
 const MAX_UNCOMPLETED_REMINDERS = 4; // "finish your visits" nudges capped at 4 total
-const INACTIVE_DAYS = 14;
 
-type ReminderType = "claim_ownership" | "profile_incomplete" | "no_first_visit" | "uncompleted_visits" | "inactive";
+type ReminderType = "claim_ownership" | "profile_incomplete" | "no_first_visit" | "uncompleted_visits";
 
 interface Candidate {
   id: number;
@@ -40,7 +39,6 @@ interface Candidate {
   owner_user_id: string | null;
   booking_count: number;
   uncompleted_count: number;
-  last_booking_at: string | null;
 }
 
 function almatyHour(): number {
@@ -123,15 +121,13 @@ function segmentFor(c: Candidate): { type: ReminderType; missing: string[] } | n
   // Self-created visits that already happened but were never marked completed:
   // the specialist is waiting for reviews that will never arrive.
   if (c.uncompleted_count > 0) return { type: "uncompleted_visits", missing };
-  const last = c.last_booking_at ? new Date(c.last_booking_at).getTime() : 0;
-  if (Date.now() - last > INACTIVE_DAYS * DAY_MS) return { type: "inactive", missing };
   return null;
 }
 
 function buildMessage(type: ReminderType, missing: string[], specialistId: number, c?: Candidate): string {
   if (type === "claim_ownership") {
     const link = `${BASE_URL}/specialist/${specialistId}`;
-    return `Здравствуйте! Это Rateus — сервис отзывов и онлайн-записи к мастерам в Алматы (www.rateus.kz). Мы уже создали вашу страницу, чтобы клиенты находили вас и оставляли отзывы. Профиль пока не привязан к вам — заберите его, чтобы управлять записями, фото и отзывами. Нажмите «Забрать» на странице:\n${link}`;
+    return `Здравствуйте! Профиль пока не привязан к вашему аккаунту. Чтобы управлять записями, фото и отзывами, нажмите «Забрать» на странице:\n${link}`;
   }
   if (type === "profile_incomplete") {
     const link = `${BASE_URL}/specialist-dashboard?guide=profile`;
@@ -152,21 +148,18 @@ function buildMessage(type: ReminderType, missing: string[], specialistId: numbe
   }
   if (type === "uncompleted_visits") {
     const link = `${BASE_URL}/specialist-dashboard`;
-    return `У вас есть незавершённые визиты. Отзыв клиенту уходит только ПОСЛЕ завершения визита.\nЧто сделать: откройте кабинет → визит → «Завершить визит». Это займёт минуту:\n${link}`;
+    return `У вас есть визиты, ожидающие отметки о завершении. Отметьте их, чтобы клиентам ушёл запрос на отзыв:\n${link}`;
   }
-  const link = `${BASE_URL}/specialist-dashboard?guide=create-visit`;
-  return `Вы давно не отмечали визиты на Rateus. Отметьте завершённые визиты — клиенты оставят отзывы и поднимут ваш рейтинг:\n${link}`;
+  throw new Error(`Unknown specialist reminder type: ${type}`);
 }
 
-// Period bucket so a given (specialist, type) can be reminded at most once per
-// window. Profile/first-visit nudges bucket weekly; inactive every 14 days.
+// Weekly period bucket so a given (specialist, type) is not repeated too often.
 // INTENTIONAL for fresh signups: the 1-day gap (FRESH_MIN_DAYS_BETWEEN) only
 // speeds up *transitions between stages* (profile_incomplete -> no_first_visit).
 // Repeats of the SAME type stay weekly via this bucket, so a fresh specialist
 // who ignores the first nudge is not spammed daily with the same text.
 function dedupeKeyFor(specialistId: number, type: ReminderType): string {
-  const periodMs = type === "inactive" ? INACTIVE_DAYS * DAY_MS : MIN_DAYS_BETWEEN * DAY_MS;
-  const bucket = Math.floor(Date.now() / periodMs);
+  const bucket = Math.floor(Date.now() / (MIN_DAYS_BETWEEN * DAY_MS));
   return `${specialistId}:${type}:${bucket}`;
 }
 
@@ -251,7 +244,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
     SELECT s.id, s.name, s.phone, s.image_url, s.base_service_price, s.base_service_name,
            s.booking_url, s.whatsapp, s.instagram, s.owner_user_id,
            u.created_at AS owner_created_at,
-           COUNT(b.id)::int AS booking_count, MAX(b.created_at) AS last_booking_at,
+           COUNT(b.id)::int AS booking_count,
            COUNT(b.id) FILTER (
              WHERE b.booking_source = 'specialist_manual'
                AND b.status NOT IN ('completed', 'cancelled')
@@ -272,8 +265,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
       MAX(sent_at) FILTER (WHERE status = 'sent') AS last_sent,
       COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type = 'claim_ownership') AS claim_sent,
       COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type = 'uncompleted_visits') AS uncompleted_sent,
-      COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type IN ('profile_incomplete', 'no_first_visit')) AS profile_sent,
-      MAX(sent_at) FILTER (WHERE status = 'sent' AND reminder_type = 'inactive') AS last_inactive
+      COUNT(*) FILTER (WHERE status = 'sent' AND reminder_type IN ('profile_incomplete', 'no_first_visit')) AS profile_sent
     FROM specialist_reminders
     GROUP BY specialist_id
   `);
@@ -299,7 +291,6 @@ export async function runSpecialistReminderScan(): Promise<void> {
     if (type === "claim_ownership" && Number(f?.claim_sent || 0) >= MAX_CLAIM_REMINDERS) continue;
     if (type === "uncompleted_visits" && Number(f?.uncompleted_sent || 0) >= MAX_UNCOMPLETED_REMINDERS) continue;
     if ((type === "profile_incomplete" || type === "no_first_visit") && Number(f?.profile_sent || 0) >= MAX_PROFILE_REMINDERS) continue;
-    if (type === "inactive" && f?.last_inactive && now - new Date(f.last_inactive).getTime() < INACTIVE_DAYS * DAY_MS) continue;
 
     // WA reminders go out over WhatsApp, so target the contact phone if set,
     // otherwise fall back to the WhatsApp number (many specialists fill only that).
