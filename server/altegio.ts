@@ -3,6 +3,7 @@ import { db } from "./db";
 import { appConfig, bookings, reviews } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater } from "./client-identity";
+import { getAltegioInvalidatedBookingStatus } from "./altegio-attendance-policy";
 
 const ALTEGIO_BASE_URL = "https://api.alteg.io/api/v1";
 
@@ -23,12 +24,12 @@ function getCityForBranch(companyId: number): string {
   return BRANCH_CITY_MAP[companyId] || "Алматы";
 }
 
-export const STAFF_ID_ALIASES: Record<number, { primaryStaffId: number; primaryCompanyId: number }> = {
-  1394519: { primaryStaffId: 57457, primaryCompanyId: 37245 },
-  2194088: { primaryStaffId: 57457, primaryCompanyId: 37245 },
-  2668559: { primaryStaffId: 2668558, primaryCompanyId: 37245 },
-  2982468: { primaryStaffId: 2982463, primaryCompanyId: 25692 },
-  2874598: { primaryStaffId: 2874603, primaryCompanyId: 766817 },
+export const STAFF_ID_ALIASES: Record<number, { primaryStaffId: number; primaryCompanyId: number; aliasCompanyId: number }> = {
+  1394519: { primaryStaffId: 57457, primaryCompanyId: 37245, aliasCompanyId: 469919 },
+  2194088: { primaryStaffId: 57457, primaryCompanyId: 37245, aliasCompanyId: 766817 },
+  2668559: { primaryStaffId: 2668558, primaryCompanyId: 37245, aliasCompanyId: 766817 },
+  2982468: { primaryStaffId: 2982463, primaryCompanyId: 25692, aliasCompanyId: 25692 },
+  2874598: { primaryStaffId: 2874603, primaryCompanyId: 766817, aliasCompanyId: 766817 },
 };
 
 interface AltegioConfig {
@@ -591,6 +592,7 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
         STAFF_ID_ALIASES[staff.id] = {
           primaryStaffId: (sameNameSameCity as any).altegioStaffId,
           primaryCompanyId: (sameNameSameCity as any).altegioCompanyId,
+          aliasCompanyId: staffCompanyId,
         };
         console.log(`[ALTEGIO-AUTOMAP] Same-city alias: "${staff.name}" (staffId=${staff.id}, company=${staffCompanyId}) → "${sameNameSameCity.name}" (id=${sameNameSameCity.id}, staffId=${(sameNameSameCity as any).altegioStaffId})`);
       }
@@ -653,6 +655,9 @@ export async function autoMapAltegioStaff(): Promise<{ mapped: number; skipped: 
         altegioStaffId: staff.id,
         altegioCompanyId: staffCompanyId,
         altegioConnectionStatus: "connected",
+        altegioHistoryStatus: "unknown",
+        altegioHistoryCheckedAt: null,
+        altegioHistoryError: null,
       } as any);
       (match as any).altegioStaffId = staff.id;
       (match as any).altegioCompanyId = staffCompanyId;
@@ -724,6 +729,7 @@ export async function mergeDuplicateSpecialists(): Promise<void> {
           STAFF_ID_ALIASES[(dup as any).altegioStaffId] = {
             primaryStaffId: (primary as any).altegioStaffId,
             primaryCompanyId: (primary as any).altegioCompanyId,
+            aliasCompanyId: (dup as any).altegioCompanyId,
           };
         }
 
@@ -1204,6 +1210,151 @@ export async function fetchUpcomingAppointments(companyId: number, options?: { s
   }
 }
 
+const HISTORY_BACKFILL_START_DATE = "2010-01-01";
+const HISTORY_RETRY_MS = 6 * 60 * 60 * 1000;
+const HISTORY_STALE_PENDING_MS = 60 * 60 * 1000;
+const HISTORY_MAX_PAGES_PER_TARGET = 500;
+
+export async function backfillPendingAltegioHistories(maxSpecialists = 1): Promise<{
+  ready: number;
+  unavailable: number;
+  skipped: number;
+}> {
+  const now = Date.now();
+  const allSpecialists = await storage.getSpecialists();
+  const candidates = allSpecialists.filter((specialist: any) => {
+    if (!specialist.altegioStaffId || !specialist.altegioCompanyId) return false;
+    if (specialist.altegioConnectionStatus !== "connected") return false;
+    if (specialist.altegioHistoryStatus === "ready") return false;
+    const checkedAt = specialist.altegioHistoryCheckedAt
+      ? new Date(specialist.altegioHistoryCheckedAt).getTime()
+      : 0;
+    if (specialist.altegioHistoryStatus === "pending" && now - checkedAt < HISTORY_STALE_PENDING_MS) {
+      return false;
+    }
+    if (specialist.altegioHistoryStatus === "unavailable" && now - checkedAt < HISTORY_RETRY_MS) {
+      return false;
+    }
+    return true;
+  }).slice(0, Math.max(0, maxSpecialists));
+
+  let ready = 0;
+  let unavailable = 0;
+  const skipped = Math.max(0, allSpecialists.length - candidates.length);
+  const endDate = new Date().toISOString().slice(0, 10);
+
+  for (const specialist of candidates as any[]) {
+    await storage.updateSpecialist(specialist.id, {
+      altegioHistoryStatus: "pending",
+      altegioHistoryCheckedAt: new Date(),
+      altegioHistoryError: null,
+    } as any);
+
+    const targetMap = new Map<string, { companyId: number; staffId: number }>();
+    const addTarget = (companyId: number, staffId: number) => {
+      targetMap.set(`${companyId}:${staffId}`, { companyId, staffId });
+    };
+    addTarget(Number(specialist.altegioCompanyId), Number(specialist.altegioStaffId));
+    for (const [aliasStaffIdRaw, alias] of Object.entries(STAFF_ID_ALIASES)) {
+      if (
+        alias.primaryStaffId === Number(specialist.altegioStaffId)
+        && alias.primaryCompanyId === Number(specialist.altegioCompanyId)
+      ) {
+        addTarget(alias.aliasCompanyId, Number(aliasStaffIdRaw));
+      }
+    }
+
+    const firstByClient = new Map<number, {
+      altegioClientId: number;
+      firstAppointmentAt: Date;
+      firstAltegioAppointmentId: number;
+    }>();
+    let failure: string | null = null;
+
+    for (const target of targetMap.values()) {
+      let windowStart = new Date(`${HISTORY_BACKFILL_START_DATE}T00:00:00.000Z`);
+      const finalDate = new Date(`${endDate}T00:00:00.000Z`);
+      while (windowStart <= finalDate && !failure) {
+        const windowEnd = new Date(windowStart);
+        windowEnd.setUTCDate(windowEnd.getUTCDate() + 364);
+        if (windowEnd > finalDate) windowEnd.setTime(finalDate.getTime());
+        const startDate = windowStart.toISOString().slice(0, 10);
+        const windowEndDate = windowEnd.toISOString().slice(0, 10);
+        let page = 1;
+        let fetched = 0;
+
+        while (page <= HISTORY_MAX_PAGES_PER_TARGET) {
+          const result = await fetchUpcomingAppointments(target.companyId, {
+            staffId: target.staffId,
+            startDate,
+            endDate: windowEndDate,
+            page,
+            count: 200,
+          });
+          if (!result.success || !result.appointments) {
+            failure = `company=${target.companyId} staff=${target.staffId} window=${startDate}:${windowEndDate}: ${result.error || "history_fetch_failed"}`;
+            break;
+          }
+          fetched += result.appointments.length;
+          for (const appointment of result.appointments) {
+            const clientId = appointment.client?.id ? Number(appointment.client.id) : null;
+            if (!clientId || appointment.deleted || appointment.attendance !== 1) continue;
+            const appointmentAt = new Date(appointment.datetime);
+            if (Number.isNaN(appointmentAt.getTime())) continue;
+            const current = firstByClient.get(clientId);
+            if (
+              !current
+              || appointmentAt < current.firstAppointmentAt
+              || (
+                appointmentAt.getTime() === current.firstAppointmentAt.getTime()
+                && appointment.id < current.firstAltegioAppointmentId
+              )
+            ) {
+              firstByClient.set(clientId, {
+                altegioClientId: clientId,
+                firstAppointmentAt: appointmentAt,
+                firstAltegioAppointmentId: appointment.id,
+              });
+            }
+          }
+          if (
+            result.appointments.length < 200
+            || (result.total != null && fetched >= result.total)
+          ) {
+            break;
+          }
+          page++;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+        if (!failure && page > HISTORY_MAX_PAGES_PER_TARGET) {
+          failure = `company=${target.companyId} staff=${target.staffId} window=${startDate}:${windowEndDate}: history_page_limit`;
+          break;
+        }
+        windowStart = new Date(windowEnd);
+        windowStart.setUTCDate(windowStart.getUTCDate() + 1);
+      }
+      if (failure) break;
+    }
+
+    if (failure) {
+      await storage.updateSpecialist(specialist.id, {
+        altegioHistoryStatus: "unavailable",
+        altegioHistoryCheckedAt: new Date(),
+        altegioHistoryError: failure.slice(0, 500),
+      } as any);
+      console.warn(`[ALTEGIO-HISTORY] specialist=${specialist.id} unavailable: ${failure}`);
+      unavailable++;
+      continue;
+    }
+
+    await storage.replaceAltegioClientHistory(specialist.id, [...firstByClient.values()]);
+    console.log(`[ALTEGIO-HISTORY] specialist=${specialist.id} ready, clients=${firstByClient.size}, targets=${targetMap.size}`);
+    ready++;
+  }
+
+  return { ready, unavailable, skipped };
+}
+
 export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId: number, altegioInfo?: { staffId?: number; companyId?: number }) => Promise<any> }): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
   const config = getConfig();
   if (!config) {
@@ -1265,20 +1416,23 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
     );
 
     for (const appt of allAppointments) {
-      if (appt.deleted) {
-        if (appt.company_id === 28196) {
-          console.log(`[ALTEGIO-SYNC-DELETED] appt=${appt.id} staff_id=${appt.staff_id} company=${appt.company_id} client=${appt.client?.name} date=${appt.datetime}`);
-        }
-        skipped++; continue;
-      }
-      if (appt.attendance === -1) {
-        if (appt.company_id === 28196) {
-          console.log(`[ALTEGIO-SYNC-CANCELLED] appt=${appt.id} staff_id=${appt.staff_id} company=${appt.company_id} client=${appt.client?.name} date=${appt.datetime}`);
+      const existing = await storage.getBookingByAltegioId(appt.id);
+      const invalidatedStatus = getAltegioInvalidatedBookingStatus(
+        existing?.status || "scheduled",
+        appt.attendance,
+        appt.deleted,
+      );
+      if (invalidatedStatus) {
+        if (existing && existing.status !== invalidatedStatus) {
+          await storage.updateBooking(existing.id, {
+            status: invalidatedStatus,
+            updatedFrom: "altegio",
+          } as any);
+          console.log(`[ALTEGIO-SYNC-INVALIDATED] booking=${existing.id} attendance=${appt.attendance} deleted=${appt.deleted} moved_to=${invalidatedStatus}`);
         }
         skipped++; continue;
       }
 
-      const existing = await storage.getBookingByAltegioId(appt.id);
       if (existing) {
         const apptTime = new Date(appt.datetime);
         const clientName = appt.client?.name || "Клиент Altegio";
@@ -1442,6 +1596,15 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
   }
 
   console.log(`[ALTEGIO-SYNC-APPTS] Complete: ${imported} imported, ${updated} updated, ${skipped} skipped, ${errors.length} errors`);
+  try {
+    const history = await backfillPendingAltegioHistories(1);
+    if (history.ready > 0 || history.unavailable > 0) {
+      console.log(`[ALTEGIO-HISTORY] cycle: ready=${history.ready}, unavailable=${history.unavailable}`);
+    }
+  } catch (historyError: any) {
+    console.error(`[ALTEGIO-HISTORY] Backfill cycle failed: ${historyError.message}`);
+  }
+
   return { imported, updated, skipped, errors };
 }
 

@@ -9,6 +9,7 @@ import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
 import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig, resolveBookform, verifyAltegioCompany } from "./altegio";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
+import { getAltegioInvalidatedBookingStatus } from "./altegio-attendance-policy";
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
 import { appConfig } from "@shared/schema";
@@ -106,35 +107,39 @@ async function sendReviewLinkDirect(booking: any, link: string, source: string):
   const specialist = await storage.getSpecialist(booking.specialistId);
   const specialistDative = toDativeCase(specialist?.name || "специалисту");
   const reviewText = `Спасибо за визит к ${specialistDative}!\n\nОставьте отзыв по ссылке:\n${link}`;
-  const waResult = await sendDirectWaMessage(phone, reviewText, booking.id);
-  console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} phone=${phone} link=${link} success=${waResult.success}`);
-
-  if (waResult.success) {
-    try {
-      const cleanPhone = phone.replace(/\D/g, "");
-      const now = new Date();
-      await db.insert(waMessages).values({
-        bookingId: booking.id,
-        specialistId: booking.specialistId,
-        customerPhone: cleanPhone,
-        customerName: booking.customerName || "",
-        specialistName: specialist?.name || "",
-        reviewLink: link,
-        messageType: "primary",
-        templateIndex: 0,
-        messageText: reviewText,
-        scheduledAt: now,
-        sentAt: now,
-        status: "sent",
-        dedupeKey: `specialist_direct_${booking.id}`,
-      });
-      console.log(`[SPECIALIST_SEND] Recorded in wa_messages: booking=${booking.id} phone=${cleanPhone}`);
-    } catch (recordErr: any) {
-      console.error(`[SPECIALIST_SEND] Failed to record in wa_messages: booking=${booking.id} error=${recordErr.message}`);
+  const existing = await storage.getWaMessageByBookingAndType(booking.id, "primary");
+  if (existing) {
+    if (existing.status === "queued") {
+      await db.update(waMessages)
+        .set({ scheduledAt: new Date() })
+        .where(eq(waMessages.id, existing.id));
+      console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} existing_msg=${existing.id} moved_to_dispatcher_front`);
+      return true;
     }
+    console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} existing_msg=${existing.id} status=${existing.status} not_duplicated`);
+    return existing.status === "sent";
   }
 
-  return waResult.success;
+  const cleanPhone = phone.replace(/\D/g, "");
+  const [queued] = await db.insert(waMessages).values({
+    bookingId: booking.id,
+    specialistId: booking.specialistId,
+    customerPhone: cleanPhone,
+    customerName: booking.customerName || "",
+    specialistName: specialist?.name || "",
+    reviewLink: link,
+    messageType: "primary",
+    templateIndex: 0,
+    messageText: reviewText,
+    scheduledAt: new Date(),
+    priority: 0,
+    status: "queued",
+    maxAttempts: 3,
+    attempts: 0,
+    dedupeKey: `specialist_direct_${booking.id}`,
+  } as any).onConflictDoNothing().returning();
+  console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} queued_msg=${queued?.id || "deduped"} via=safe_dispatcher`);
+  return true;
 }
 
 // Company-level Altegio connection check. Must mirror frontend isAltegioConnected.
@@ -3742,6 +3747,9 @@ ${magicLink}`;
           altegioStaffId: effectiveStaffId,
           altegioCompanyId: companyId,
           altegioConnectionStatus: "connected",
+          altegioHistoryStatus: "unknown",
+          altegioHistoryCheckedAt: null,
+          altegioHistoryError: null,
           ...(bookingUrlToStore ? { bookingUrl: bookingUrlToStore } : {}),
         } as any);
         console.log(`[ALTEGIO] Connected to master: specialist=${user.specialistId}, altegioStaffId=${effectiveStaffId}, companyId=${companyId}${resolvedStaffId && effectiveStaffId === resolvedStaffId ? " (from personal booking form)" : ""}`);
@@ -3751,6 +3759,9 @@ ${magicLink}`;
           altegioStaffId: null,
           altegioCompanyId: companyId,
           altegioConnectionStatus: "connected",
+          altegioHistoryStatus: "unknown",
+          altegioHistoryCheckedAt: null,
+          altegioHistoryError: null,
           ...(bookingUrlToStore ? { bookingUrl: bookingUrlToStore } : {}),
         } as any);
         console.log(`[ALTEGIO] Company connected (individual): specialist=${user.specialistId}, companyId=${companyId}`);
@@ -3782,6 +3793,9 @@ ${magicLink}`;
         altegioStaffId: null,
         altegioCompanyId: null,
         altegioConnectionStatus: "disconnected",
+        altegioHistoryStatus: "unknown",
+        altegioHistoryCheckedAt: null,
+        altegioHistoryError: null,
       } as any);
 
       console.log(`[ALTEGIO] Disconnected: specialist=${user.specialistId}`);
@@ -4102,6 +4116,7 @@ ${magicLink}`;
 
           const attendanceConfirmed = attendance === 1 || attendance === "1";
           const isVisitCompleted = attendanceConfirmed && existing.status !== "completed";
+          const invalidatedStatus = getAltegioInvalidatedBookingStatus(existing.status, attendance);
 
           const updateData: any = {};
           if (datetime) updateData.appointmentTime = new Date(datetime);
@@ -4148,6 +4163,9 @@ ${magicLink}`;
               console.log(`[NOT_COMPLETED_RESTORED] booking=${existing.id} reason=attendance_1 appointmentId=${altegioId}`);
             }
             console.log(`[VISIT_STATUS_AUTO] booking=${existing.id} status=completed source=altegio_attendance_1 appointmentId=${altegioId}`);
+          } else if (invalidatedStatus) {
+            updateData.status = invalidatedStatus;
+            console.log(`[VISIT_STATUS_AUTO] booking=${existing.id} status=${invalidatedStatus} source=altegio_attendance_${attendance} appointmentId=${altegioId}`);
           }
 
           if (Object.keys(updateData).length > 0) {
@@ -4765,7 +4783,14 @@ ${magicLink}`;
     try {
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
-      const { enabled, warmupStartDate, dailyLimit, followupEnabled } = req.body;
+      const {
+        enabled,
+        warmupStartDate,
+        dailyLimit,
+        priorityDailyLimit,
+        hardDailyLimit,
+        followupEnabled,
+      } = req.body;
       if (typeof enabled === "boolean") {
         await setWaSetting("WA_SENDING_ENABLED", String(enabled));
       }
@@ -4775,11 +4800,17 @@ ${magicLink}`;
       if (typeof dailyLimit === "number" && dailyLimit > 0) {
         await setWaSetting("WA_DAILY_LIMIT", String(dailyLimit));
       }
+      if (typeof priorityDailyLimit === "number" && priorityDailyLimit >= 0) {
+        await setWaSetting("WA_PRIORITY_DAILY_LIMIT", String(priorityDailyLimit));
+      }
+      if (typeof hardDailyLimit === "number" && hardDailyLimit > 0) {
+        await setWaSetting("WA_HARD_DAILY_LIMIT", String(hardDailyLimit));
+      }
       if (typeof followupEnabled === "boolean") {
         await setWaSetting("WA_FOLLOWUP_ENABLED", String(followupEnabled));
       }
       const settings = await getWaSettings();
-      console.log(`[WA_SETTINGS] Updated by admin ${userId}: enabled=${settings.enabled} warmup=${settings.warmupStartDate} limit=${settings.dailyLimit} followup=${settings.followupEnabled}`);
+      console.log(`[WA_SETTINGS] Updated by admin ${userId}: enabled=${settings.enabled} warmup=${settings.warmupStartDate} ordinaryLimit=${settings.dailyLimit} priorityLimit=${settings.priorityDailyLimit} hardLimit=${settings.hardDailyLimit} followup=${settings.followupEnabled}`);
       res.json(settings);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -5103,9 +5134,9 @@ ${magicLink}`;
       const messageId = parseInt(req.params.id);
       if (isNaN(messageId)) return res.status(400).json({ message: "Невалидный ID" });
       const result = await sendWaMessageNow(messageId);
-      console.log(`[WA_FORCE_SEND] Admin ${userId} force-sent msg=${messageId}: ${JSON.stringify(result)}`);
+      console.log(`[WA_SEND_NOW] Admin ${userId} queued msg=${messageId} at dispatcher front: ${JSON.stringify(result)}`);
       if (!result.success) return res.status(400).json({ message: result.error });
-      res.json({ success: true });
+      res.json({ success: true, queued: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

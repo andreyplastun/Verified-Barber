@@ -142,6 +142,9 @@ app.use((req, res, next) => {
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_staff_id integer;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_company_id integer;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_connection_status text DEFAULT 'disconnected';
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_history_status text NOT NULL DEFAULT 'unknown';
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_history_checked_at timestamp;
+      ALTER TABLE specialists ADD COLUMN IF NOT EXISTS altegio_history_error text;
       ALTER TABLE specialists ADD COLUMN IF NOT EXISTS booking_url text;
       CREATE TABLE IF NOT EXISTS rating_theme (
         id serial PRIMARY KEY,
@@ -206,6 +209,7 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS review_eligibility boolean;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS review_eligibility_reason text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS altegio_client_id integer;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS first_visit_status text NOT NULL DEFAULT 'unknown';
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS is_guest boolean DEFAULT false;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS normalized_phone text;
       DO $$ BEGIN
@@ -323,6 +327,17 @@ app.use((req, res, next) => {
       ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS specialist_reminders_dedupe_key_uniq ON specialist_reminders (dedupe_key);
 
+      CREATE TABLE IF NOT EXISTS altegio_client_history (
+        id serial PRIMARY KEY,
+        specialist_id integer NOT NULL,
+        altegio_client_id integer NOT NULL,
+        first_appointment_at timestamp NOT NULL,
+        first_altegio_appointment_id integer NOT NULL,
+        updated_at timestamp NOT NULL DEFAULT now()
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS altegio_client_history_specialist_client_uniq
+        ON altegio_client_history (specialist_id, altegio_client_id);
+
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS assistbot_message_id TEXT;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
       ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0;
@@ -381,6 +396,8 @@ app.use((req, res, next) => {
       INSERT INTO app_config (key, value) VALUES ('WA_SENDING_ENABLED', 'true') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_WARMUP_START_DATE', '') ON CONFLICT (key) DO NOTHING;
       INSERT INTO app_config (key, value) VALUES ('WA_DAILY_LIMIT', '35') ON CONFLICT (key) DO NOTHING;
+      INSERT INTO app_config (key, value) VALUES ('WA_PRIORITY_DAILY_LIMIT', '10') ON CONFLICT (key) DO NOTHING;
+      INSERT INTO app_config (key, value) VALUES ('WA_HARD_DAILY_LIMIT', '40') ON CONFLICT (key) DO NOTHING;
     `);
 
     // Backfill dedupe_key for existing wa_messages and create unique index
@@ -396,29 +413,45 @@ app.use((req, res, next) => {
         WHERE altegio_appointment_id IS NOT NULL;
     `);
 
-    // Canonicalize the flag without enqueueing anything. This makes the
-    // chronologically first Altegio visit for each specialist/client pair the
-    // only new-client booking, while leaving message creation event-driven.
+    // A locally-earliest row is not proof of a real first visit unless the
+    // specialist's complete Altegio history has been backfilled. Existing
+    // installs therefore fail closed until the history worker confirms coverage.
     const newClientBackfill = await pool.query(`
-      WITH ranked AS (
-        SELECT
-          id,
-          ROW_NUMBER() OVER (
-            PARTITION BY specialist_id, altegio_client_id
-            ORDER BY appointment_time ASC, id ASC
-          ) = 1 AS should_be_new
-        FROM bookings
-        WHERE booking_source = 'altegio'
-          AND altegio_client_id IS NOT NULL
-      )
       UPDATE bookings b
-      SET is_new_client = ranked.should_be_new
-      FROM ranked
-      WHERE b.id = ranked.id
-        AND b.is_new_client IS DISTINCT FROM ranked.should_be_new
+      SET
+        first_visit_status = CASE
+          WHEN s.altegio_history_status = 'ready' THEN b.first_visit_status
+          ELSE 'unknown'
+        END,
+        is_new_client = CASE
+          WHEN s.altegio_history_status = 'ready' THEN b.first_visit_status = 'confirmed_new'
+          ELSE false
+        END
+      FROM specialists s
+      WHERE b.specialist_id = s.id
+        AND b.booking_source = 'altegio'
+        AND (
+          (s.altegio_history_status <> 'ready' AND (b.first_visit_status <> 'unknown' OR b.is_new_client = true))
+          OR (s.altegio_history_status = 'ready' AND b.is_new_client IS DISTINCT FROM (b.first_visit_status = 'confirmed_new'))
+        )
     `);
     if ((newClientBackfill.rowCount || 0) > 0) {
-      console.log(`[STARTUP] Reconciled is_new_client on ${newClientBackfill.rowCount} Altegio bookings`);
+      console.log(`[STARTUP] Fail-closed first-visit reconciliation on ${newClientBackfill.rowCount} Altegio bookings`);
+    }
+
+    const downgradedUnknownPriority = await pool.query(`
+      UPDATE wa_messages wm
+      SET priority = 0
+      FROM bookings b
+      WHERE wm.booking_id = b.id
+        AND wm.status = 'queued'
+        AND wm.message_type = 'primary'
+        AND wm.priority >= 100
+        AND b.first_visit_status <> 'confirmed_new'
+      RETURNING wm.id
+    `);
+    if ((downgradedUnknownPriority.rowCount || 0) > 0) {
+      console.log(`[STARTUP] Downgraded ${downgradedUnknownPriority.rowCount} unconfirmed queued priority messages`);
     }
 
     await pool.query(`

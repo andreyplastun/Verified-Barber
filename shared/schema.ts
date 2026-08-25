@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, uuid, pgEnum, real } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, uuid, pgEnum, real, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { relations } from "drizzle-orm";
@@ -119,6 +119,9 @@ export const specialists = pgTable("specialists", {
   altegioStaffId: integer("altegio_staff_id"), // Altegio team member ID
   altegioCompanyId: integer("altegio_company_id"), // Altegio location/company ID
   altegioConnectionStatus: text("altegio_connection_status").default("disconnected"), // 'connected' | 'error' | 'disconnected'
+  altegioHistoryStatus: text("altegio_history_status", { enum: ["unknown", "pending", "ready", "unavailable"] }).default("unknown").notNull(),
+  altegioHistoryCheckedAt: timestamp("altegio_history_checked_at"),
+  altegioHistoryError: text("altegio_history_error"),
   // Booking channels — used by "Записаться" button with priority: bookingUrl → whatsapp → instagram → phone
   bookingUrl: text("booking_url"), // Universal booking widget URL (Altegio, YClients, custom — any https link)
   whatsapp: text("whatsapp"), // Phone number specifically for WhatsApp contact (digits, any format)
@@ -163,12 +166,25 @@ export const bookings = pgTable("bookings", {
   altegioOperationId: text("altegio_operation_id"),
   altegioClientId: integer("altegio_client_id"),
   isNewClient: boolean("is_new_client").default(false),
+  firstVisitStatus: text("first_visit_status", { enum: ["unknown", "confirmed_new", "confirmed_returning"] }).default("unknown").notNull(),
   normalizedPhone: text("normalized_phone"),
   bookingSource: text("booking_source", { enum: ["specialist_manual", "altegio", "client_app"] }),
   invalidPhone: boolean("invalid_phone").default(false),
   price: integer("price"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+export const altegioClientHistory = pgTable("altegio_client_history", {
+  id: serial("id").primaryKey(),
+  specialistId: integer("specialist_id").notNull(),
+  altegioClientId: integer("altegio_client_id").notNull(),
+  firstAppointmentAt: timestamp("first_appointment_at").notNull(),
+  firstAltegioAppointmentId: integer("first_altegio_appointment_id").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  specialistClientUnique: uniqueIndex("altegio_client_history_specialist_client_uniq")
+    .on(table.specialistId, table.altegioClientId),
+}));
 
 export const reviews = pgTable("reviews", {
   id: serial("id").primaryKey(),

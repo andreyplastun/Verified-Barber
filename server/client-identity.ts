@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import type { Booking } from "@shared/schema";
+import type { AltegioFirstVisitStatus } from "./storage";
 
 const VALID_KZ_MOBILE_PREFIXES = new Set([
   "700", "701", "702", "703", "704", "705", "706", "707", "708", "709",
@@ -55,6 +56,7 @@ export interface ClientIdentityResult {
   altegioClientId: number | null;
   normalizedPhone: string | null;
   isNewClient: boolean;
+  firstVisitStatus: AltegioFirstVisitStatus;
   merged: boolean;
   mergedFromBookingId?: number;
 }
@@ -69,8 +71,6 @@ export async function resolveClientIdentity(params: {
   const normalized = normalizePhone(phone);
 
   if (altegioClientId) {
-    const hasPreviousBooking = await storage.hasAltegioClientBooking(specialistId, altegioClientId);
-    const isNewClient = !hasPreviousBooking;
     if (normalized) {
       const existingByPhone = await storage.getBookingsByNormalizedPhone(normalized);
       const conflicting = existingByPhone.find(
@@ -84,13 +84,14 @@ export async function resolveClientIdentity(params: {
     }
 
     console.log(
-      `[CLIENT_IDENTITY] Identity resolved via altegio_client_id=${altegioClientId}, specialist=${specialistId}, phone=${normalized || "none"}, newClient=${isNewClient}`
+      `[CLIENT_IDENTITY] Identity resolved via altegio_client_id=${altegioClientId}, specialist=${specialistId}, phone=${normalized || "none"}, firstVisitStatus=unknown_until_appointment_reconcile`
     );
 
     return {
       altegioClientId,
       normalizedPhone: normalized,
-      isNewClient,
+      isNewClient: false,
+      firstVisitStatus: "unknown",
       merged: false,
     };
   }
@@ -103,6 +104,7 @@ export async function resolveClientIdentity(params: {
       altegioClientId: null,
       normalizedPhone: normalized,
       isNewClient: false,
+      firstVisitStatus: "unknown",
       merged: false,
     };
   }
@@ -114,6 +116,7 @@ export async function resolveClientIdentity(params: {
     altegioClientId: null,
     normalizedPhone: null,
     isNewClient: false,
+    firstVisitStatus: "unknown",
     merged: false,
   };
 }

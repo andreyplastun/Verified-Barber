@@ -8,6 +8,8 @@
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "tsc",
+    "test": "tsx --test server/**/*.test.ts",
+    "test:wa-db": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/smoke-wa-dispatcher.sql",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

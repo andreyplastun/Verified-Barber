@@ -1,7 +1,10 @@
-import { specialists, bookings, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
+import { specialists, bookings, altegioClientHistory, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, gte, asc, sql, or, inArray } from "drizzle-orm";
+
+export type AltegioFirstVisitStatus = "unknown" | "confirmed_new" | "confirmed_returning";
+const NEW_CLIENT_PRIORITY_SQL = 100;
 
 export interface IStorage {
   // Users
@@ -63,6 +66,11 @@ export interface IStorage {
   getBookingsByNormalizedPhone(normalizedPhone: string): Promise<Booking[]>;
   hasAltegioClientBooking(specialistId: number, altegioClientId: number, excludeBookingId?: number): Promise<boolean>;
   isFirstAltegioClientBooking(bookingId: number): Promise<boolean>;
+  getAltegioFirstVisitStatus(bookingId: number): Promise<AltegioFirstVisitStatus>;
+  replaceAltegioClientHistory(
+    specialistId: number,
+    rows: Array<{ altegioClientId: number; firstAppointmentAt: Date; firstAltegioAppointmentId: number }>,
+  ): Promise<void>;
   getRecentSpecialistManualBookings(specialistId: number, since: Date): Promise<Booking[]>;
   getInvalidPhoneCountToday(specialistId: number): Promise<number>;
   getRecentMagicLinkByPhone(specialistId: number, normalizedPhone: string, withinDays: number): Promise<boolean>;
@@ -740,7 +748,7 @@ export class DatabaseStorage implements IStorage {
     status: "scheduled" | "completed";
   }): Promise<{ booking: Booking; created: boolean }> {
     return db.transaction(async (tx) => {
-      if (input.altegioClientId) {
+      if (input.altegioClientId && input.status === "completed") {
         await tx.execute(sql`
           SELECT pg_advisory_xact_lock(${input.specialistId}, ${input.altegioClientId})
         `);
@@ -751,19 +759,56 @@ export class DatabaseStorage implements IStorage {
         .limit(1);
       if (existing) return { booking: existing, created: false };
 
-      let isNewClient = false;
+      let firstVisitStatus: AltegioFirstVisitStatus = "unknown";
+      let historyReady = false;
       if (input.altegioClientId) {
-        const earlier = await tx.execute(sql`
-          SELECT 1
-          FROM bookings
-          WHERE specialist_id = ${input.specialistId}
-            AND altegio_client_id = ${input.altegioClientId}
-            AND booking_source = 'altegio'
-            AND appointment_time <= ${input.appointmentTime}
+        const coverage = await tx.execute(sql`
+          SELECT altegio_history_status
+          FROM specialists
+          WHERE id = ${input.specialistId}
           LIMIT 1
         `);
-        isNewClient = earlier.rows.length === 0;
+        historyReady = (coverage.rows[0] as any)?.altegio_history_status === "ready";
+        if (historyReady) {
+          const first = await tx.execute(sql`
+            INSERT INTO altegio_client_history (
+              specialist_id, altegio_client_id, first_appointment_at,
+              first_altegio_appointment_id, updated_at
+            )
+            VALUES (
+              ${input.specialistId}, ${input.altegioClientId}, ${input.appointmentTime},
+              ${input.altegioAppointmentId}, NOW()
+            )
+            ON CONFLICT (specialist_id, altegio_client_id) DO UPDATE
+            SET
+              first_appointment_at = CASE
+                WHEN EXCLUDED.first_appointment_at < altegio_client_history.first_appointment_at
+                  OR (
+                    EXCLUDED.first_appointment_at = altegio_client_history.first_appointment_at
+                    AND EXCLUDED.first_altegio_appointment_id < altegio_client_history.first_altegio_appointment_id
+                  )
+                THEN EXCLUDED.first_appointment_at
+                ELSE altegio_client_history.first_appointment_at
+              END,
+              first_altegio_appointment_id = CASE
+                WHEN EXCLUDED.first_appointment_at < altegio_client_history.first_appointment_at
+                  OR (
+                    EXCLUDED.first_appointment_at = altegio_client_history.first_appointment_at
+                    AND EXCLUDED.first_altegio_appointment_id < altegio_client_history.first_altegio_appointment_id
+                  )
+                THEN EXCLUDED.first_altegio_appointment_id
+                ELSE altegio_client_history.first_altegio_appointment_id
+              END,
+              updated_at = NOW()
+            RETURNING first_altegio_appointment_id
+          `);
+          firstVisitStatus =
+            Number((first.rows[0] as any)?.first_altegio_appointment_id) === input.altegioAppointmentId
+              ? "confirmed_new"
+              : "confirmed_returning";
+        }
       }
+      const isNewClient = firstVisitStatus === "confirmed_new";
 
       const inserted = await tx.insert(bookings).values({
         specialistId: input.specialistId,
@@ -775,6 +820,7 @@ export class DatabaseStorage implements IStorage {
         altegioClientId: input.altegioClientId,
         normalizedPhone: input.normalizedPhone,
         isNewClient,
+        firstVisitStatus,
         status: input.status,
         updatedFrom: "altegio",
         bookingSource: "altegio",
@@ -788,33 +834,47 @@ export class DatabaseStorage implements IStorage {
         return { booking: racedExisting, created: false };
       }
 
-      const newBooking = inserted[0];
-      if (isNewClient && input.altegioClientId) {
-        const displaced = await tx.update(bookings)
-          .set({ isNewClient: false })
-          .where(and(
-            eq(bookings.specialistId, input.specialistId),
-            eq(bookings.altegioClientId, input.altegioClientId),
-            eq(bookings.bookingSource, "altegio"),
-            eq(bookings.isNewClient, true),
-            sql`${bookings.id} != ${newBooking.id}`,
-          ))
-          .returning({ id: bookings.id });
-        if (displaced.length > 0) {
-          const displacedIds = displaced.map((row) => row.id);
-          await tx.update(waMessages)
-            .set({
-              status: "skipped",
-              skipReason: "superseded_by_earlier_altegio_visit",
-              sendingStartedAt: null,
-            })
-            .where(and(
-              inArray(waMessages.bookingId, displacedIds),
-              eq(waMessages.messageType, "primary"),
-              gte(waMessages.priority, 100),
-              eq(waMessages.status, "queued"),
-            ));
-        }
+      let newBooking = inserted[0];
+      if (historyReady && input.altegioClientId) {
+        await tx.execute(sql`
+          UPDATE bookings b
+          SET
+            first_visit_status = CASE
+              WHEN b.altegio_appointment_id = h.first_altegio_appointment_id
+                THEN 'confirmed_new'
+              ELSE 'confirmed_returning'
+            END,
+            is_new_client = b.altegio_appointment_id = h.first_altegio_appointment_id
+          FROM altegio_client_history h
+          WHERE h.specialist_id = ${input.specialistId}
+            AND h.altegio_client_id = ${input.altegioClientId}
+            AND b.specialist_id = h.specialist_id
+            AND b.altegio_client_id = h.altegio_client_id
+            AND b.booking_source = 'altegio'
+            AND b.status = 'completed'
+        `);
+        await tx.execute(sql`
+          UPDATE bookings
+          SET first_visit_status = 'unknown', is_new_client = false
+          WHERE specialist_id = ${input.specialistId}
+            AND altegio_client_id = ${input.altegioClientId}
+            AND booking_source = 'altegio'
+            AND status <> 'completed'
+        `);
+        await tx.execute(sql`
+          UPDATE wa_messages wm
+          SET priority = 0
+          FROM bookings b
+          WHERE wm.booking_id = b.id
+            AND wm.status = 'queued'
+            AND wm.message_type = 'primary'
+            AND wm.priority >= ${NEW_CLIENT_PRIORITY_SQL}
+            AND b.specialist_id = ${input.specialistId}
+            AND b.altegio_client_id = ${input.altegioClientId}
+            AND b.first_visit_status <> 'confirmed_new'
+        `);
+        const [refreshed] = await tx.select().from(bookings).where(eq(bookings.id, newBooking.id)).limit(1);
+        if (refreshed) newBooking = refreshed;
       }
 
       return { booking: newBooking, created: true };
@@ -839,38 +899,97 @@ export class DatabaseStorage implements IStorage {
           .returning();
       }
 
-      const ranked = await tx.execute(sql`
-        WITH ranked AS (
-          SELECT id, ROW_NUMBER() OVER (ORDER BY appointment_time ASC, id ASC) = 1 AS should_be_new
-          FROM bookings
-          WHERE specialist_id = ${booking.specialistId}
-            AND altegio_client_id = ${clientId}
-            AND booking_source = 'altegio'
-        )
-        UPDATE bookings b
-        SET is_new_client = ranked.should_be_new
-        FROM ranked
-        WHERE b.id = ranked.id
-          AND b.is_new_client IS DISTINCT FROM ranked.should_be_new
-        RETURNING b.id, b.is_new_client
+      const coverage = await tx.execute(sql`
+        SELECT altegio_history_status
+        FROM specialists
+        WHERE id = ${booking.specialistId}
+        LIMIT 1
       `);
-      const demotedIds = ranked.rows
-        .filter((row: any) => row.is_new_client === false)
-        .map((row: any) => Number(row.id));
-      if (demotedIds.length > 0) {
+      const historyReady = (coverage.rows[0] as any)?.altegio_history_status === "ready";
+      if (!historyReady || !booking.altegioAppointmentId || booking.status !== "completed") {
+        await tx.update(bookings)
+          .set({ firstVisitStatus: "unknown", isNewClient: false })
+          .where(eq(bookings.id, bookingId));
         await tx.update(waMessages)
-          .set({
-            status: "skipped",
-            skipReason: "superseded_by_earlier_altegio_visit",
-            sendingStartedAt: null,
-          })
+          .set({ priority: 0 })
           .where(and(
-            inArray(waMessages.bookingId, demotedIds),
+            eq(waMessages.bookingId, bookingId),
             eq(waMessages.messageType, "primary"),
             gte(waMessages.priority, 100),
             eq(waMessages.status, "queued"),
           ));
+        const [unknown] = await tx.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
+        return unknown;
       }
+
+      await tx.execute(sql`
+        INSERT INTO altegio_client_history (
+          specialist_id, altegio_client_id, first_appointment_at,
+          first_altegio_appointment_id, updated_at
+        )
+        VALUES (
+          ${booking.specialistId}, ${clientId}, ${booking.appointmentTime},
+          ${booking.altegioAppointmentId}, NOW()
+        )
+        ON CONFLICT (specialist_id, altegio_client_id) DO UPDATE
+        SET
+          first_appointment_at = CASE
+            WHEN EXCLUDED.first_appointment_at < altegio_client_history.first_appointment_at
+              OR (
+                EXCLUDED.first_appointment_at = altegio_client_history.first_appointment_at
+                AND EXCLUDED.first_altegio_appointment_id < altegio_client_history.first_altegio_appointment_id
+              )
+            THEN EXCLUDED.first_appointment_at
+            ELSE altegio_client_history.first_appointment_at
+          END,
+          first_altegio_appointment_id = CASE
+            WHEN EXCLUDED.first_appointment_at < altegio_client_history.first_appointment_at
+              OR (
+                EXCLUDED.first_appointment_at = altegio_client_history.first_appointment_at
+                AND EXCLUDED.first_altegio_appointment_id < altegio_client_history.first_altegio_appointment_id
+              )
+            THEN EXCLUDED.first_altegio_appointment_id
+            ELSE altegio_client_history.first_altegio_appointment_id
+          END,
+          updated_at = NOW()
+      `);
+      await tx.execute(sql`
+        UPDATE bookings b
+        SET
+          first_visit_status = CASE
+            WHEN b.altegio_appointment_id = h.first_altegio_appointment_id
+              THEN 'confirmed_new'
+            ELSE 'confirmed_returning'
+          END,
+          is_new_client = b.altegio_appointment_id = h.first_altegio_appointment_id
+        FROM altegio_client_history h
+        WHERE h.specialist_id = ${booking.specialistId}
+          AND h.altegio_client_id = ${clientId}
+          AND b.specialist_id = h.specialist_id
+          AND b.altegio_client_id = h.altegio_client_id
+          AND b.booking_source = 'altegio'
+          AND b.status = 'completed'
+      `);
+      await tx.execute(sql`
+        UPDATE bookings
+        SET first_visit_status = 'unknown', is_new_client = false
+        WHERE specialist_id = ${booking.specialistId}
+          AND altegio_client_id = ${clientId}
+          AND booking_source = 'altegio'
+          AND status <> 'completed'
+      `);
+      await tx.execute(sql`
+        UPDATE wa_messages wm
+        SET priority = 0
+        FROM bookings b
+        WHERE wm.booking_id = b.id
+          AND wm.status = 'queued'
+          AND wm.message_type = 'primary'
+          AND wm.priority >= ${NEW_CLIENT_PRIORITY_SQL}
+          AND b.specialist_id = ${booking.specialistId}
+          AND b.altegio_client_id = ${clientId}
+          AND b.first_visit_status <> 'confirmed_new'
+      `);
       const [refreshed] = await tx.select().from(bookings).where(eq(bookings.id, bookingId)).limit(1);
       return refreshed;
     });
@@ -921,26 +1040,153 @@ export class DatabaseStorage implements IStorage {
   }
 
   async isFirstAltegioClientBooking(bookingId: number): Promise<boolean> {
+    return (await this.getAltegioFirstVisitStatus(bookingId)) === "confirmed_new";
+  }
+
+  async getAltegioFirstVisitStatus(bookingId: number): Promise<AltegioFirstVisitStatus> {
     const result = await db.execute(sql`
       SELECT
-        b.booking_source = 'altegio'
-        AND b.altegio_client_id IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1
-          FROM bookings earlier
-          WHERE earlier.specialist_id = b.specialist_id
-            AND earlier.altegio_client_id = b.altegio_client_id
-            AND earlier.booking_source = 'altegio'
-            AND (
-              earlier.appointment_time < b.appointment_time
-              OR (earlier.appointment_time = b.appointment_time AND earlier.id < b.id)
-            )
-        ) AS is_first
+        CASE
+          WHEN b.booking_source <> 'altegio'
+            OR b.altegio_client_id IS NULL
+            OR b.altegio_appointment_id IS NULL
+            OR b.status <> 'completed'
+            OR s.altegio_history_status <> 'ready'
+            OR h.first_altegio_appointment_id IS NULL
+            THEN 'unknown'
+          WHEN h.first_altegio_appointment_id = b.altegio_appointment_id
+            THEN 'confirmed_new'
+          ELSE 'confirmed_returning'
+        END AS first_visit_status
       FROM bookings b
+      JOIN specialists s ON s.id = b.specialist_id
+      LEFT JOIN altegio_client_history h
+        ON h.specialist_id = b.specialist_id
+       AND h.altegio_client_id = b.altegio_client_id
       WHERE b.id = ${bookingId}
       LIMIT 1
     `);
-    return (result.rows[0] as any)?.is_first === true;
+    const status = (result.rows[0] as any)?.first_visit_status;
+    return status === "confirmed_new" || status === "confirmed_returning" ? status : "unknown";
+  }
+
+  async replaceAltegioClientHistory(
+    specialistId: number,
+    rows: Array<{ altegioClientId: number; firstAppointmentAt: Date; firstAltegioAppointmentId: number }>,
+  ): Promise<void> {
+    await db.transaction(async (tx) => {
+      await tx.delete(altegioClientHistory)
+        .where(eq(altegioClientHistory.specialistId, specialistId));
+
+      for (let i = 0; i < rows.length; i += 500) {
+        const chunk = rows.slice(i, i + 500).map((row) => ({
+          specialistId,
+          altegioClientId: row.altegioClientId,
+          firstAppointmentAt: row.firstAppointmentAt,
+          firstAltegioAppointmentId: row.firstAltegioAppointmentId,
+          updatedAt: new Date(),
+        }));
+        if (chunk.length > 0) {
+          await tx.insert(altegioClientHistory).values(chunk);
+        }
+      }
+
+      // Cover records created in the narrow race between the API snapshot and
+      // this transaction. A complete backfill proves that a locally-unseen
+      // client is new as of the snapshot, so the earliest local row is safe to
+      // merge into the compact first-visit index.
+      await tx.execute(sql`
+        INSERT INTO altegio_client_history (
+          specialist_id, altegio_client_id, first_appointment_at,
+          first_altegio_appointment_id, updated_at
+        )
+        SELECT DISTINCT ON (b.altegio_client_id)
+          b.specialist_id,
+          b.altegio_client_id,
+          b.appointment_time,
+          b.altegio_appointment_id,
+          NOW()
+        FROM bookings b
+        WHERE b.specialist_id = ${specialistId}
+          AND b.booking_source = 'altegio'
+          AND b.status = 'completed'
+          AND b.altegio_client_id IS NOT NULL
+          AND b.altegio_appointment_id IS NOT NULL
+        ORDER BY b.altegio_client_id, b.appointment_time ASC, b.altegio_appointment_id ASC
+        ON CONFLICT (specialist_id, altegio_client_id) DO UPDATE
+        SET
+          first_appointment_at = LEAST(
+            altegio_client_history.first_appointment_at,
+            EXCLUDED.first_appointment_at
+          ),
+          first_altegio_appointment_id = CASE
+            WHEN EXCLUDED.first_appointment_at < altegio_client_history.first_appointment_at
+              OR (
+                EXCLUDED.first_appointment_at = altegio_client_history.first_appointment_at
+                AND EXCLUDED.first_altegio_appointment_id < altegio_client_history.first_altegio_appointment_id
+              )
+            THEN EXCLUDED.first_altegio_appointment_id
+            ELSE altegio_client_history.first_altegio_appointment_id
+          END,
+          updated_at = NOW()
+      `);
+
+      await tx.update(specialists)
+        .set({
+          altegioHistoryStatus: "ready",
+          altegioHistoryCheckedAt: new Date(),
+          altegioHistoryError: null,
+        })
+        .where(eq(specialists.id, specialistId));
+
+      await tx.execute(sql`
+        UPDATE bookings b
+        SET
+          first_visit_status = CASE
+            WHEN h.first_altegio_appointment_id = b.altegio_appointment_id
+              THEN 'confirmed_new'
+            WHEN h.first_altegio_appointment_id IS NOT NULL
+              THEN 'confirmed_returning'
+            ELSE 'unknown'
+          END,
+          is_new_client = h.first_altegio_appointment_id = b.altegio_appointment_id
+        FROM altegio_client_history h
+        WHERE b.specialist_id = ${specialistId}
+          AND b.booking_source = 'altegio'
+          AND b.status = 'completed'
+          AND h.specialist_id = b.specialist_id
+          AND h.altegio_client_id = b.altegio_client_id
+      `);
+
+      await tx.execute(sql`
+        UPDATE bookings b
+        SET first_visit_status = 'unknown', is_new_client = false
+        WHERE b.specialist_id = ${specialistId}
+          AND b.booking_source = 'altegio'
+          AND (
+            b.status <> 'completed'
+            OR b.altegio_client_id IS NULL
+            OR NOT EXISTS (
+              SELECT 1
+              FROM altegio_client_history h
+              WHERE h.specialist_id = b.specialist_id
+                AND h.altegio_client_id = b.altegio_client_id
+            )
+          )
+      `);
+
+      await tx.execute(sql`
+        UPDATE wa_messages wm
+        SET priority = 0
+        FROM bookings b
+        WHERE wm.booking_id = b.id
+          AND wm.status = 'queued'
+          AND wm.message_type = 'primary'
+          AND wm.priority >= ${NEW_CLIENT_PRIORITY_SQL}
+          AND b.specialist_id = ${specialistId}
+          AND b.first_visit_status <> 'confirmed_new'
+      `);
+    });
   }
 
   async getRecentSpecialistManualBookings(specialistId: number, since: Date): Promise<Booking[]> {
@@ -1030,19 +1276,169 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(bookings.appointmentTime));
   }
 
+  private async invalidateAltegioHistoryForIndexedAppointment(
+    specialistId: number,
+    altegioAppointmentId: number,
+    reason: string,
+  ): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const invalidated = await tx.execute(sql`
+        UPDATE specialists s
+        SET
+          altegio_history_status = 'unknown',
+          altegio_history_checked_at = NULL,
+          altegio_history_error = ${reason}
+        WHERE s.id = ${specialistId}
+          AND EXISTS (
+            SELECT 1
+            FROM altegio_client_history h
+            WHERE h.specialist_id = s.id
+              AND h.first_altegio_appointment_id = ${altegioAppointmentId}
+          )
+        RETURNING s.id
+      `);
+      if (invalidated.rows.length === 0) return false;
+
+      await tx.execute(sql`
+        UPDATE bookings
+        SET first_visit_status = 'unknown', is_new_client = false
+        WHERE specialist_id = ${specialistId}
+          AND booking_source = 'altegio'
+      `);
+      await tx.execute(sql`
+        UPDATE wa_messages wm
+        SET priority = 0
+        FROM bookings b
+        WHERE wm.booking_id = b.id
+          AND wm.status = 'queued'
+          AND wm.message_type = 'primary'
+          AND wm.priority >= ${NEW_CLIENT_PRIORITY_SQL}
+          AND b.specialist_id = ${specialistId}
+      `);
+      console.warn(`[ALTEGIO-HISTORY] Invalidated specialist=${specialistId} appointment=${altegioAppointmentId} reason=${reason}`);
+      return true;
+    });
+  }
+
+  private async invalidateAltegioHistoryForSpecialist(
+    specialistId: number,
+    reason: string,
+  ): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const invalidated = await tx.execute(sql`
+        UPDATE specialists
+        SET
+          altegio_history_status = 'unknown',
+          altegio_history_checked_at = NULL,
+          altegio_history_error = ${reason}
+        WHERE id = ${specialistId}
+          AND altegio_history_status <> 'unknown'
+        RETURNING id
+      `);
+      if (invalidated.rows.length === 0) return false;
+
+      await tx.execute(sql`
+        UPDATE bookings
+        SET first_visit_status = 'unknown', is_new_client = false
+        WHERE specialist_id = ${specialistId}
+          AND booking_source = 'altegio'
+      `);
+      await tx.execute(sql`
+        UPDATE wa_messages wm
+        SET priority = 0
+        FROM bookings b
+        WHERE wm.booking_id = b.id
+          AND wm.status = 'queued'
+          AND wm.message_type = 'primary'
+          AND wm.priority >= ${NEW_CLIENT_PRIORITY_SQL}
+          AND b.specialist_id = ${specialistId}
+      `);
+      console.warn(`[ALTEGIO-HISTORY] Invalidated specialist=${specialistId} reason=${reason}`);
+      return true;
+    });
+  }
+
   async updateBookingStatus(id: number, status: any): Promise<Booking | undefined> {
+    const [before] = await db.select().from(bookings).where(eq(bookings.id, id)).limit(1);
     const [updated] = await db.update(bookings)
       .set({ status })
       .where(eq(bookings.id, id))
       .returning();
+    if (
+      before?.bookingSource === "altegio"
+      && before.status === "completed"
+      && status !== "completed"
+      && before.altegioAppointmentId
+    ) {
+      await this.invalidateAltegioHistoryForIndexedAppointment(
+        before.specialistId,
+        before.altegioAppointmentId,
+        `indexed_visit_status_changed_to_${status}`,
+      );
+    }
+    if (
+      updated
+      && status === "completed"
+      && updated.bookingSource === "altegio"
+      && updated.altegioClientId
+    ) {
+      return await this.reconcileAltegioBookingIdentity(updated.id);
+    }
     return updated;
   }
 
   async updateBooking(id: number, data: Partial<Booking>): Promise<Booking | undefined> {
+    const needsBefore = data.status !== undefined
+      || data.appointmentTime !== undefined
+      || data.specialistId !== undefined;
+    const [before] = needsBefore
+      ? await db.select().from(bookings).where(eq(bookings.id, id)).limit(1)
+      : [undefined];
     const [updated] = await db.update(bookings)
       .set(data)
       .where(eq(bookings.id, id))
       .returning();
+    if (before?.bookingSource === "altegio" && before.altegioAppointmentId) {
+      const specialistChanged = updated && updated.specialistId !== before.specialistId;
+      const completedWasRemoved = before.status === "completed" && updated?.status !== "completed";
+      const appointmentTimeChanged = before.status === "completed"
+        && updated
+        && Math.abs(
+          new Date(before.appointmentTime).getTime() - new Date(updated.appointmentTime).getTime(),
+        ) > 60_000;
+      if (specialistChanged || completedWasRemoved || appointmentTimeChanged) {
+        const reason = specialistChanged
+          ? "indexed_visit_specialist_changed"
+          : completedWasRemoved
+            ? `indexed_visit_status_changed_to_${updated?.status || "unknown"}`
+            : "indexed_visit_time_changed";
+        await this.invalidateAltegioHistoryForIndexedAppointment(
+          before.specialistId,
+          before.altegioAppointmentId,
+          reason,
+        );
+        if (specialistChanged && updated?.status === "completed") {
+          await this.invalidateAltegioHistoryForSpecialist(
+            updated.specialistId,
+            "completed_visit_reassigned_to_specialist",
+          );
+        }
+      }
+    }
+    if (
+      updated
+      && updated.status === "completed"
+      && updated.bookingSource === "altegio"
+      && updated.altegioClientId
+      && (
+        data.status === "completed"
+        || data.appointmentTime !== undefined
+        || data.altegioClientId !== undefined
+        || data.specialistId !== undefined
+      )
+    ) {
+      return await this.reconcileAltegioBookingIdentity(updated.id);
+    }
     return updated;
   }
 
