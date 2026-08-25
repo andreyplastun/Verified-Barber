@@ -28,4 +28,4 @@
 - [Specialist celebrations](specialist-celebrations.md) — dashboard milestone overlay dedupes via seen-snapshot + 0.05 margin; celebrations-seen is owner-gated, first-review-celebrated is intentionally public (profile page).
 - [Prod schema type drift](prod-schema-type-drift.md) — prod owner_user_id is text vs uuid in dev; raw SQL joins need ::text casts or background loops crash silently (reminders died 6 wks); check types via PostgREST OpenAPI.
 - [AssistBot manual send](assistbot-manual-send.md) — AssistBot API silently drops non-prod-server calls (200, empty body); one-off sends from Rateus number go via a crafted wa_messages reminder row + worker.
-- [Altegio first-visit concurrency](altegio-first-visit-concurrency.md) — first-client classification must be transactional, chronology-ranked, and coupled to queue demotion; WA dispatch uses one monitored DB lease.
+- [Altegio first-visit safety](altegio-first-visit-concurrency.md) — first-client priority requires complete history plus transactional chronology; unknown coverage must fail closed, never bypass limits.
