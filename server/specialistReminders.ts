@@ -127,7 +127,7 @@ function segmentFor(c: Candidate): { type: ReminderType; missing: string[] } | n
 function buildMessage(type: ReminderType, missing: string[], specialistId: number, c?: Candidate): string {
   if (type === "claim_ownership") {
     const link = `${BASE_URL}/specialist/${specialistId}`;
-    return `Здравствуйте! Профиль пока не привязан к вашему аккаунту. Чтобы управлять записями, фото и отзывами, нажмите «Забрать» на странице:\n${link}`;
+    return `Здравствуйте! На Rateus.kz зарегистрирована страница специалиста на ваше имя. Чтобы подтвердить, что это вы, и получить доступ к управлению профилем, перейдите по ссылке:\n${link}`;
   }
   if (type === "profile_incomplete") {
     const link = `${BASE_URL}/specialist-dashboard?guide=profile`;
