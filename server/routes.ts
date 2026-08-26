@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
-import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata, waMessages, altegioWebhookLog, analyticsEvents } from "@shared/schema";
+import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type MagicLink, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata, waMessages, altegioWebhookLog, analyticsEvents } from "@shared/schema";
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
@@ -16,6 +16,14 @@ import { appConfig } from "@shared/schema";
 import { enqueueReviewMessage, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
 import { getSpecialistAchievements } from "./achievements";
 import { authenticateRequest } from "./auth";
+import {
+  answerVisitConfirmation,
+  getVisitConfirmationByToken,
+  requestPaymentForBooking,
+  supersedeVisitConfirmation,
+  type VisitConfirmationPublic,
+} from "./visit-confirmations";
+import { randomBytes } from "crypto";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 
@@ -202,7 +210,15 @@ async function resolveAltegioSpecialist(
   return { specialist: null, companyOnly: false };
 }
 
-export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, source: string, opts?: { altegioStaffId?: number; altegioCompanyId?: number }): Promise<boolean> {
+export async function tryCreateMagicLinkForCompletedVisit(
+  bookingId: number,
+  source: string,
+  opts?: {
+    altegioStaffId?: number;
+    altegioCompanyId?: number;
+    suppressWhatsApp?: boolean;
+  },
+): Promise<boolean> {
   try {
     let booking = await storage.getBooking(bookingId);
     const specAction = isSpecialistAction(source);
@@ -319,20 +335,24 @@ export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, sou
         console.log(`[MAGIC_LINK] booking=${bookingId}: phone from user profile: ${customerPhone}`);
       }
     }
-    const magicLink = await storage.createMagicLink(
-      booking.clientId || null,
+    const linkResult = await getOrCreatePrimaryMagicLinkSerialized({
+      userId: booking.clientId || null,
       bookingId,
-      booking.specialistId,
-      false,
-      hasClientId ? null : customerPhone
-    );
+      specialistId: booking.specialistId,
+      customerPhone: hasClientId ? null : customerPhone,
+    });
+    if (!linkResult.created) {
+      console.log(`[MAGIC_LINK] Concurrent creator already made link for booking ${bookingId} (source=${source})`);
+      return false;
+    }
+    const magicLink = linkResult.link;
     const specForLink = await storage.getSpecialist(booking.specialistId);
     const fullLink = (specForLink?.slug && magicLink.shortCode)
       ? buildShortReviewLink(specForLink.slug, magicLink.shortCode)
       : buildReviewLink(magicLink.token);
     console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
 
-    if (customerPhone) {
+    if (customerPhone && !opts?.suppressWhatsApp) {
       if (specAction) {
         await sendReviewLinkDirect(booking, fullLink, source);
       } else {
@@ -352,8 +372,10 @@ export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, sou
           console.error(`[WA_QUEUE_ERROR] booking=${bookingId} error=${waErr.message}`);
         }
       }
-    } else {
+    } else if (!customerPhone) {
       console.log(`[WA_SKIP] booking=${bookingId}: no phone number available for WhatsApp (clientId=${booking.clientId}, normalizedPhone=${booking.normalizedPhone}, customerPhone=${booking.customerPhone}) source=${source}`);
+    } else {
+      console.log(`[WA_SKIP] booking=${bookingId}: WhatsApp suppressed because the client is already on the confirmation page (source=${source})`);
     }
 
     return true;
@@ -361,6 +383,64 @@ export async function tryCreateMagicLinkForCompletedVisit(bookingId: number, sou
     console.error(`[MAGIC_LINK_ERROR] booking=${bookingId} source=${source} error=${err.message}`);
     return false;
   }
+}
+
+async function getOrCreatePrimaryMagicLinkSerialized(params: {
+  userId: string | null;
+  bookingId: number;
+  specialistId: number;
+  customerPhone: string | null;
+}): Promise<{ link: MagicLink; created: boolean }> {
+  const client = await pool.connect();
+  let created = false;
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [837211, params.bookingId]);
+
+    const existing = await client.query(
+      `SELECT id FROM magic_links
+       WHERE booking_id = $1
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [params.bookingId],
+    );
+
+    if (existing.rows.length === 0) {
+      const token = randomBytes(12).toString("base64url");
+      const shortCodeResult = await client.query(
+        "SELECT nextval('magic_link_short_code_seq')::int AS code",
+      );
+      const shortCode = Number(shortCodeResult.rows[0].code);
+      await client.query(
+        `INSERT INTO magic_links (
+           token, short_code, user_id, booking_id, specialist_id,
+           customer_phone, expires_at, is_followup
+         ) VALUES ($1, $2, $3, $4, $5, $6, NOW() + INTERVAL '7 days', false)`,
+        [
+          token,
+          shortCode,
+          params.userId,
+          params.bookingId,
+          params.specialistId,
+          params.customerPhone,
+        ],
+      );
+      created = true;
+    }
+
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  const link = await storage.getMagicLinkByBookingId(params.bookingId);
+  if (!link) {
+    throw new Error(`Magic link missing after serialized creation for booking ${params.bookingId}`);
+  }
+  return { link, created };
 }
 
 function buildReviewLink(token: string): string {
@@ -430,6 +510,109 @@ export async function registerRoutes(
   // SECURITY: derive caller identity from the verified Supabase JWT only.
   // Strips any spoofed client-supplied x-user-id before route handlers run.
   app.use("/api", authenticateRequest);
+
+  async function buildVisitConfirmationResponse(
+    token: string,
+  ): Promise<VisitConfirmationPublic | null> {
+    const confirmation = await getVisitConfirmationByToken(token);
+    if (!confirmation) return null;
+
+    let reviewUrl: string | null = null;
+    if (confirmation.confirmationStatus === "confirmed" || confirmation.bookingStatus === "completed") {
+      let link = await storage.getMagicLinkByBookingId(confirmation.bookingId);
+      if (!link && confirmation.confirmationStatus === "confirmed") {
+        const booking = await storage.getBooking(confirmation.bookingId);
+        if (booking?.reviewEligibility !== false) {
+          await tryCreateMagicLinkForCompletedVisit(
+            confirmation.bookingId,
+            "client_visit_confirmation_recovery",
+            { suppressWhatsApp: true },
+          );
+          link = await storage.getMagicLinkByBookingId(confirmation.bookingId);
+        }
+      }
+      if (link) {
+        const specialist = await storage.getSpecialist((link as any).specialistId);
+        reviewUrl = specialist?.slug && link.shortCode
+          ? `/review/${specialist.slug}/${link.shortCode}`
+          : `/r/${link.token}`;
+      }
+    }
+
+    return {
+      status: confirmation.confirmationStatus,
+      specialistName: confirmation.specialistName,
+      specialistImageUrl: confirmation.specialistImageUrl,
+      appointmentTime: confirmation.appointmentTime.toISOString(),
+      reviewUrl,
+    };
+  }
+
+  app.get("/api/visit-confirmations/:token", async (req, res) => {
+    try {
+      const response = await buildVisitConfirmationResponse(req.params.token);
+      if (!response) {
+        return res.status(404).json({ message: "Ссылка подтверждения не найдена" });
+      }
+      res.json(response);
+    } catch (error: any) {
+      console.error("[VISIT_CONFIRMATION] GET error:", error);
+      res.status(500).json({ message: "Не удалось открыть подтверждение визита" });
+    }
+  });
+
+  app.post("/api/visit-confirmations/:token/respond", async (req, res) => {
+    try {
+      const parsed = z.object({ answer: z.enum(["yes", "no"]) }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Выберите «Да» или «Нет»" });
+      }
+
+      const before = await getVisitConfirmationByToken(req.params.token);
+      if (!before) {
+        return res.status(404).json({ message: "Ссылка подтверждения не найдена" });
+      }
+      const booking = await storage.getBooking(before.bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Визит не найден" });
+      }
+
+      const specialist = await storage.getSpecialist(booking.specialistId);
+      const trustWeight = await specialistHasWorkingAltegio(specialist) ? 0.3 : 0.6;
+      const result = await answerVisitConfirmation(
+        req.params.token,
+        parsed.data.answer,
+        trustWeight,
+      );
+
+      if (result.outcome === "confirmed") {
+        await tryCreateMagicLinkForCompletedVisit(
+          result.bookingId,
+          "client_visit_confirmation",
+          { suppressWhatsApp: true },
+        );
+        console.log(
+          `[VISIT_CONFIRMATION] booking=${result.bookingId} answer=yes status=completed changed=${result.changed} trustWeight=${trustWeight}`,
+        );
+      } else if (result.outcome === "declined" && result.changed) {
+        console.log(`[VISIT_CONFIRMATION] booking=${result.bookingId} answer=no status=cancelled`);
+      }
+
+      const response = await buildVisitConfirmationResponse(req.params.token);
+      if (!response) {
+        return res.status(404).json({ message: "Ссылка подтверждения не найдена" });
+      }
+      res.json(response);
+    } catch (error: any) {
+      const statusCode = Number(error?.statusCode) || 500;
+      console.error("[VISIT_CONFIRMATION] POST error:", error);
+      res.status(statusCode).json({
+        message: statusCode === 404
+          ? "Ссылка подтверждения не найдена"
+          : "Не удалось сохранить ответ",
+      });
+    }
+  });
 
   // Liveness probe - responds immediately (no DB check)
   app.get("/health", (_req, res) => {
@@ -2371,6 +2554,7 @@ ${magicLink}`;
         isNewClient: !normalized,
         bookingSource: "specialist_manual",
         invalidPhone: phoneIsInvalid,
+        visitConfirmationEligible: true,
       } as any);
 
       console.log(`[SPECIALIST_BOOKING] Created booking: specialistId=${user.specialistId}, customer=${customerName}, time=${appointmentTime}, source=specialist_manual, invalidPhone=${phoneIsInvalid}`);
@@ -2432,12 +2616,11 @@ ${magicLink}`;
       const formattedKaspiPhone = `+${digits.slice(0,1)} ${digits.slice(1,4)} ${digits.slice(4,7)} ${digits.slice(7,9)} ${digits.slice(9,11)}`;
       const formattedPrice = price.toLocaleString('ru-KZ');
 
-      const updated = await storage.updateBooking(bookingId, {
-        status: "payment_requested",
-        paymentRequestedAt: new Date(),
-        completionType: "with_payment",
-        price: price,
-      } as any);
+      const paymentRequested = await requestPaymentForBooking(bookingId, price);
+      if (!paymentRequested) {
+        return res.status(409).json({ message: "Статус визита уже изменился" });
+      }
+      const updated = await storage.getBooking(bookingId);
 
       let waSent = false;
       const customerPhone = booking.customerPhone || booking.normalizedPhone || null;
@@ -2571,11 +2754,25 @@ ${magicLink}`;
       const hasAltegio = isManualBooking && (await specialistHasWorkingAltegio(specialist));
       const trustWeight = isManualBooking ? (hasAltegio ? 0.3 : 0.6) : 1.0;
 
-      const updated = await storage.updateBooking(bookingId, {
-        status: "completed",
-        completionType: "with_review",
-        visitTrustWeight: trustWeight,
-      } as any);
+      const completionResult = await pool.query(
+        `UPDATE bookings
+         SET status = 'completed',
+             completion_type = 'with_review',
+             visit_trust_weight = $2
+         WHERE id = $1 AND status = 'ready_to_complete'
+         RETURNING id`,
+        [bookingId, trustWeight],
+      );
+      if (completionResult.rows.length === 0) {
+        const current = await storage.getBooking(bookingId);
+        return res.status(409).json({
+          message: current?.status === "completed"
+            ? "Визит уже завершён"
+            : "Статус визита уже изменился",
+        });
+      }
+      await supersedeVisitConfirmation(bookingId, "visit_completed_by_specialist");
+      const updated = await storage.getBooking(bookingId);
 
       if (isManualBooking && hasAltegio) {
         console.log(`[ANTIFRAUD] booking=${bookingId} specialist=${booking.specialistId}: manual booking with Altegio connected, trustWeight=${trustWeight}`);
@@ -2650,7 +2847,19 @@ ${magicLink}`;
         return res.status(409).json({ message: "Нельзя отменить визит — отзыв уже отправлен" });
       }
 
-      const updated = await storage.updateBookingStatus(bookingId, "cancelled");
+      const cancellationResult = await pool.query(
+        `UPDATE bookings
+         SET status = 'cancelled'
+         WHERE id = $1
+           AND status IN ('scheduled', 'ready_to_complete', 'payment_requested')
+         RETURNING id`,
+        [bookingId],
+      );
+      if (cancellationResult.rows.length === 0) {
+        return res.status(409).json({ message: "Статус визита уже изменился" });
+      }
+      await supersedeVisitConfirmation(bookingId, "visit_cancelled_by_specialist");
+      const updated = await storage.getBooking(bookingId);
 
       const specialist = await storage.getSpecialist(booking.specialistId);
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";

@@ -10,6 +10,7 @@
     "check": "tsc",
     "test": "tsx --test server/**/*.test.ts",
     "test:wa-db": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/smoke-wa-dispatcher.sql",
+    "test:visit-confirm-db": "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f scripts/smoke-visit-confirmation.sql && tsx scripts/smoke-visit-confirmation-race.ts",
     "db:push": "drizzle-kit push"
   },
   "dependencies": {

@@ -170,6 +170,14 @@ export const bookings = pgTable("bookings", {
   normalizedPhone: text("normalized_phone"),
   bookingSource: text("booking_source", { enum: ["specialist_manual", "altegio", "client_app"] }),
   invalidPhone: boolean("invalid_phone").default(false),
+  visitConfirmationEligible: boolean("visit_confirmation_eligible").default(false).notNull(),
+  visitConfirmationToken: text("visit_confirmation_token"),
+  visitConfirmationStatus: text("visit_confirmation_status", {
+    enum: ["pending", "confirmed", "declined", "expired", "superseded"],
+  }),
+  visitConfirmationSentAt: timestamp("visit_confirmation_sent_at"),
+  visitConfirmationRespondedAt: timestamp("visit_confirmation_responded_at"),
+  visitConfirmationExpiresAt: timestamp("visit_confirmation_expires_at"),
   price: integer("price"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -409,6 +417,12 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
   id: true, 
   status: true, 
   hasReview: true, 
+  visitConfirmationEligible: true,
+  visitConfirmationToken: true,
+  visitConfirmationStatus: true,
+  visitConfirmationSentAt: true,
+  visitConfirmationRespondedAt: true,
+  visitConfirmationExpiresAt: true,
   createdAt: true 
 });
 
@@ -464,7 +478,7 @@ export const waMessages = pgTable("wa_messages", {
   customerName: text("customer_name").notNull(),
   specialistName: text("specialist_name").notNull(),
   reviewLink: text("review_link").notNull(),
-  messageType: text("message_type", { enum: ["primary", "reminder"] }).notNull(),
+  messageType: text("message_type", { enum: ["primary", "reminder", "visit_confirmation"] }).notNull(),
   status: text("status", { enum: ["queued", "sending", "sent", "failed", "skipped"] }).default("queued").notNull(),
   templateIndex: integer("template_index").notNull(),
   messageText: text("message_text").notNull(),

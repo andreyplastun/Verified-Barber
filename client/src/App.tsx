@@ -28,6 +28,7 @@ import HowTrustWorksPage from "@/pages/HowTrustWorksPage";
 import JoinPage from "@/pages/JoinPage";
 import ForMastersPage from "@/pages/ForMastersPage";
 import ClaimProfilePage from "@/pages/ClaimProfilePage";
+import VisitConfirmationPage from "@/pages/VisitConfirmationPage";
 import { Navigation } from "@/components/Navigation";
 import { InstallBanner } from "@/components/InstallBanner";
 import { useOnboardingSeen } from "@/hooks/useOnboardingSeen";
@@ -187,6 +188,7 @@ function Router() {
       <Route path="/offer" component={OfferPage} />
       <Route path="/how-trust-works" component={HowTrustWorksPage} />
       <Route path="/claim/:token" component={ClaimProfilePage} />
+      <Route path="/visit-confirm/:token" component={VisitConfirmationPage} />
       <Route component={NotFound} />
     </Switch>
   );
@@ -199,13 +201,13 @@ function AppContent() {
   useEffect(() => {
     // Don't count review-link openings (WhatsApp magic links) as real app visits.
     const path = window.location.pathname;
-    const isReviewLink = path.startsWith('/r/') || path.startsWith('/review/');
+    const isReviewLink = path.startsWith('/r/') || path.startsWith('/review/') || path.startsWith('/visit-confirm/');
     if (!isReviewLink) {
       trackAppOpen();
     }
   }, []);
-  const hideNavigation = location.startsWith('/r/') || location.startsWith('/claim/') || location.startsWith('/review/');
-  const isCriticalFlow = location.startsWith('/r/') || location.startsWith('/review/') || location.startsWith('/book/') || location.startsWith('/claim/');
+  const hideNavigation = location.startsWith('/r/') || location.startsWith('/claim/') || location.startsWith('/review/') || location.startsWith('/visit-confirm/');
+  const isCriticalFlow = location.startsWith('/r/') || location.startsWith('/review/') || location.startsWith('/book/') || location.startsWith('/claim/') || location.startsWith('/visit-confirm/');
   const hideInstallBanner = isCriticalFlow || location === '/auth' || location === '/join' || !user || user.role === 'admin';
 
   const onboardingType = user?.role === "specialist" ? "pro" : "client";

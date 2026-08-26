@@ -10,6 +10,7 @@ import {
   type FirstVisitStatus,
 } from "./wa-dispatch-policy";
 import type { PoolClient } from "pg";
+import { getVisitConfirmationSendAt } from "./visit-confirmation-policy";
 
 const IS_PRODUCTION = process.env.REPL_SLUG === 'rateus' || process.env.RAILWAY_ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production';
 
@@ -464,8 +465,13 @@ async function sendViaAssistBot(
     delivery_callback_url: "https://www.rateus.kz/api/webhooks/assistbot-delivery",
   };
 
-  console.log(`[WA_SEND] source=${source} phone=${phoneFormatted} bookingId=${bookingId} text="${text}"`);
-  console.log(`[WA_LINK] source=${source} booking=${bookingId} link=${text.match(/https?:\/\/[^\s]+/)?.[0] || 'NO_LINK_FOUND'}`);
+  const containsVisitConfirmationToken = source.includes("visit_confirmation");
+  if (containsVisitConfirmationToken) {
+    console.log(`[WA_SEND] source=${source} bookingId=${bookingId} content=[redacted]`);
+  } else {
+    console.log(`[WA_SEND] source=${source} phone=${phoneFormatted} bookingId=${bookingId} text="${text}"`);
+    console.log(`[WA_LINK] source=${source} booking=${bookingId} link=${text.match(/https?:\/\/[^\s]+/)?.[0] || 'NO_LINK_FOUND'}`);
+  }
 
   const response = await fetch("https://lk.assistbot.ru/api/web/index.php/sms/", {
     method: "POST",
@@ -480,6 +486,10 @@ async function sendViaAssistBot(
   const respBody = await response.text();
 
   if (!response.ok) {
+    if (containsVisitConfirmationToken) {
+      console.error(`[WA_SEND] AssistBot error: bookingId=${bookingId} status=${response.status} body=[redacted]`);
+      throw new Error(`AssistBot visit confirmation error ${response.status}`);
+    }
     console.error(`[WA_SEND] AssistBot error: status=${response.status} body=${respBody.substring(0, 500)}`);
     throw new Error(`AssistBot API error ${response.status}: ${respBody.substring(0, 300)}`);
   }
@@ -498,14 +508,26 @@ async function sendViaAssistBot(
     (respJson?.success === false ? (respJson?.message || "success=false") : null) ||
     (respJson?.status && /^(error|fail|reject)/i.test(String(respJson.status)) ? respJson.status : null);
 
-  console.log(`[WA_SEND] Response: phone=${phoneFormatted} bookingId=${bookingId} http=${response.status} body=${respBody.substring(0, 400)}`);
+  console.log(
+    containsVisitConfirmationToken
+      ? `[WA_SEND] Response: bookingId=${bookingId} http=${response.status} body=[redacted]`
+      : `[WA_SEND] Response: phone=${phoneFormatted} bookingId=${bookingId} http=${response.status} body=${respBody.substring(0, 400)}`,
+  );
 
   if (explicitError) {
+    if (containsVisitConfirmationToken) {
+      console.error(`[WA_SEND] AssistBot returned error envelope: bookingId=${bookingId} error=[redacted]`);
+      throw new Error("AssistBot visit confirmation returned an error");
+    }
     console.error(`[WA_SEND] AssistBot returned 200 but with error envelope: ${JSON.stringify(explicitError)}`);
     throw new Error(`AssistBot returned error: ${typeof explicitError === "string" ? explicitError : JSON.stringify(explicitError).substring(0, 200)}`);
   }
 
-  console.log(`[WA_SEND] Success: phone=${phoneFormatted} bookingId=${bookingId} assistbot_id=${assistbotMessageId}`);
+  console.log(
+    containsVisitConfirmationToken
+      ? `[WA_SEND] Success: bookingId=${bookingId} assistbot_id=${assistbotMessageId}`
+      : `[WA_SEND] Success: phone=${phoneFormatted} bookingId=${bookingId} assistbot_id=${assistbotMessageId}`,
+  );
 
   return assistbotMessageId;
 }
@@ -1071,6 +1093,14 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
       msg.createdAt ? new Date(msg.createdAt).getTime() : 946684800000 + msg.id,
     );
     await storage.markWaMessageSent(msg.id, assistbotMessageId);
+    if (msg.messageType === "visit_confirmation") {
+      await db.update(bookings)
+        .set({ visitConfirmationSentAt: new Date() } as any)
+        .where(and(
+          eq(bookings.id, msg.bookingId),
+          eq(bookings.visitConfirmationStatus, "pending"),
+        ));
+    }
     console.log(`[WA_SENT] msg=${msg.id} type=${msg.messageType} booking=${msg.bookingId} scheduledAt=${msg.scheduledAt} actualSendTime=${new Date().toISOString()} reason=SENT`);
 
     if (msg.messageType === "primary") {
@@ -1240,6 +1270,14 @@ async function claimWaMessageForDispatch(
         WHERE b.id = wm.booking_id
           AND b.status <> 'cancelled'
           AND COALESCE(b.has_review, false) = false
+           AND (
+             wm.message_type <> 'visit_confirmation'
+             OR (
+               b.status = 'ready_to_complete'
+               AND b.visit_confirmation_status = 'pending'
+               AND b.visit_confirmation_expires_at > NOW()
+             )
+           )
       )
       ${priorityGuard}
     RETURNING wm.id
@@ -1428,7 +1466,11 @@ export async function startWaWorkerLoop(): Promise<void> {
         }
 
         if (msgDeadline && Date.now() > msgDeadline.getTime()) {
-          const reason = candidate.messageType === "primary" ? "expired_primary" : "expired_followup";
+          const reason = candidate.messageType === "primary"
+            ? "expired_primary"
+            : candidate.messageType === "visit_confirmation"
+              ? "expired_visit_confirmation"
+              : "expired_followup";
           await storage.markWaMessageSkipped(candidate.id, reason);
           console.log(`[WA_SKIP] msg=${candidate.id} booking=${candidate.bookingId} type=${candidate.messageType} scheduledAt=${candidate.scheduledAt} deadline=${msgDeadline.toISOString()} actualTime=${new Date().toISOString()} reason=${reason}`);
           return false;
@@ -1454,6 +1496,19 @@ export async function startWaWorkerLoop(): Promise<void> {
           console.log(`[WA_SKIP] msg=${candidate.id} booking=${candidate.bookingId} type=reminder reason=quiet_hours_followup (past 20:00)`);
           return false;
         }
+        if (candidate.messageType === "visit_confirmation") {
+          const nextAllowed = getVisitConfirmationSendAt(new Date());
+          if (nextAllowed.getTime() > Date.now() + 1000) {
+            await db.update(waMessages)
+              .set({ scheduledAt: nextAllowed } as any)
+              .where(and(
+                eq(waMessages.id, candidate.id),
+                eq(waMessages.status, "queued"),
+              ));
+            console.log(`[WA_DEFER] msg=${candidate.id} booking=${candidate.bookingId} type=visit_confirmation next=${nextAllowed.toISOString()} reason=quiet_hours`);
+            return false;
+          }
+        }
 
         if (await storage.isWaOptedOut(candidate.customerPhone)) {
           await storage.markWaMessageSkipped(candidate.id, "opt_out");
@@ -1472,6 +1527,13 @@ export async function startWaWorkerLoop(): Promise<void> {
         }
         if (booking.status === "cancelled") {
           await storage.markWaMessageSkipped(candidate.id, "booking_cancelled");
+          return false;
+        }
+        if (
+          candidate.messageType === "visit_confirmation" &&
+          (booking.status !== "ready_to_complete" || booking.visitConfirmationStatus !== "pending")
+        ) {
+          await storage.markWaMessageSkipped(candidate.id, "visit_confirmation_superseded");
           return false;
         }
         if (candidate.messageType === "primary" && !isVisitToday(booking.appointmentTime)) {
@@ -1572,7 +1634,11 @@ export async function startWaWorkerLoop(): Promise<void> {
       if (msgDeadline) {
         const timeLeft = msgDeadline.getTime() - Date.now();
         if (timeLeft <= 0) {
-          const reason = msg.messageType === "primary" ? "expired_primary" : "expired_followup";
+          const reason = msg.messageType === "primary"
+            ? "expired_primary"
+            : msg.messageType === "visit_confirmation"
+              ? "expired_visit_confirmation"
+              : "expired_followup";
           await storage.markWaMessageSkipped(msg.id, reason);
           console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=${reason} (pre-rate-limit check, timeLeft=${Math.round(timeLeft/1000)}s)`);
           continue;

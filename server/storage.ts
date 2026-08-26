@@ -147,7 +147,7 @@ export interface IStorage {
     customerName: string;
     specialistName: string;
     reviewLink: string;
-    messageType: "primary" | "reminder";
+    messageType: "primary" | "reminder" | "visit_confirmation";
     templateIndex: number;
     messageText: string;
     scheduledAt: Date;

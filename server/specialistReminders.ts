@@ -248,6 +248,7 @@ export async function runSpecialistReminderScan(): Promise<void> {
            COUNT(b.id) FILTER (
              WHERE b.booking_source = 'specialist_manual'
                AND b.status NOT IN ('completed', 'cancelled')
+                AND b.visit_confirmation_status IS NULL
                AND b.appointment_time < now()
            )::int AS uncompleted_count
     FROM specialists s

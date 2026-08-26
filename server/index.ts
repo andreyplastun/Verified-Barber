@@ -6,6 +6,7 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import { startWaWorkerLoop, getWaSettings } from "./whatsapp";
 import { startSpecialistReminderLoop } from "./specialistReminders";
+import { runVisitConfirmationScan } from "./visit-confirmations";
 import { syncUpcomingAppointments, isAltegioConfigured } from "./altegio";
 import { tryCreateMagicLinkForCompletedVisit } from "./routes";
 import { readFileSync, existsSync } from "fs";
@@ -103,6 +104,10 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
+  const isVisitConfirmationPath = /^\/api\/visit-confirmations\/[^/]+/.test(path);
+  const loggedPath = isVisitConfirmationPath
+    ? path.replace(/^\/api\/visit-confirmations\/[^/]+/, "/api/visit-confirmations/[redacted]")
+    : path;
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;
@@ -114,8 +119,8 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
+      let logLine = `${req.method} ${loggedPath} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse && !isVisitConfirmationPath) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
@@ -349,6 +354,12 @@ app.use((req, res, next) => {
 
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invalid_phone boolean DEFAULT false;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_eligible boolean NOT NULL DEFAULT false;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_token text;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_status text;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_sent_at timestamp;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_responded_at timestamp;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_expires_at timestamp;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS price integer;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_email text;
 
@@ -411,6 +422,18 @@ app.use((req, res, next) => {
       CREATE UNIQUE INDEX IF NOT EXISTS bookings_altegio_appointment_id_unique
         ON bookings (altegio_appointment_id)
         WHERE altegio_appointment_id IS NOT NULL;
+    `);
+    await pool.query(`
+      CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS bookings_visit_confirmation_token_unique
+        ON bookings (visit_confirmation_token)
+        WHERE visit_confirmation_token IS NOT NULL
+    `);
+    await pool.query(`
+      CREATE INDEX CONCURRENTLY IF NOT EXISTS bookings_visit_confirmation_candidates_idx
+        ON bookings (appointment_time, id)
+        WHERE booking_source = 'specialist_manual'
+          AND visit_confirmation_eligible = true
+          AND visit_confirmation_status IS NULL
     `);
 
     // A locally-earliest row is not proof of a real first visit unless the
@@ -539,6 +562,43 @@ app.use((req, res, next) => {
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
     console.error("[STARTUP] Auto-migration error (non-fatal):", err);
+  }
+
+  const visitConfirmationSchema = await pool.query(`
+    SELECT
+      (
+        SELECT COUNT(*)::int
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'bookings'
+          AND column_name IN (
+            'visit_confirmation_eligible',
+            'visit_confirmation_token',
+            'visit_confirmation_status',
+            'visit_confirmation_sent_at',
+            'visit_confirmation_responded_at',
+            'visit_confirmation_expires_at'
+          )
+      ) AS column_count,
+      (
+        SELECT COUNT(*)::int
+        FROM pg_index i
+        JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE c.relname IN (
+          'bookings_visit_confirmation_token_unique',
+          'bookings_visit_confirmation_candidates_idx'
+        )
+          AND i.indisvalid = true
+      ) AS valid_index_count
+  `);
+  const confirmationSchemaState = visitConfirmationSchema.rows[0];
+  if (
+    Number(confirmationSchemaState?.column_count) !== 6 ||
+    Number(confirmationSchemaState?.valid_index_count) !== 2
+  ) {
+    throw new Error(
+      `[STARTUP] Visit confirmation schema is incomplete: columns=${confirmationSchemaState?.column_count}, validIndexes=${confirmationSchemaState?.valid_index_count}`,
+    );
   }
 
   await registerRoutes(httpServer, app);
@@ -671,12 +731,18 @@ app.use((req, res, next) => {
   }
 
   await transitionScheduledToReady();
+  await runVisitConfirmationScan().catch(err => {
+    console.error("[VISIT_CONFIRMATION_SCAN] startup error:", err);
+  });
   await flagNotCompletedBookings();
   await transitionPaymentPendingToCompleted();
   let altegioSyncCounter = 0;
   const ALTEGIO_SYNC_EVERY_N = 3; // every 3rd cycle = every 15 min (3 * 5min)
   setInterval(async () => {
     await transitionScheduledToReady();
+    await runVisitConfirmationScan().catch(err => {
+      console.error("[VISIT_CONFIRMATION_SCAN] periodic error:", err);
+    });
     await flagNotCompletedBookings();
     await transitionPaymentPendingToCompleted();
     altegioSyncCounter++;
