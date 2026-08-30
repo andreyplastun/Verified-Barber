@@ -511,12 +511,14 @@ export const specialistReminders = pgTable("specialist_reminders", {
   id: serial("id").primaryKey(),
   specialistId: integer("specialist_id").notNull(),
   phone: text("phone").notNull(),
-  reminderType: text("reminder_type", { enum: ["profile_incomplete", "no_first_visit", "inactive"] }).notNull(),
-  status: text("status", { enum: ["sending", "sent", "failed", "skipped"] }).default("sending").notNull(),
+  reminderType: text("reminder_type", { enum: ["claim_ownership", "profile_incomplete", "no_first_visit", "uncompleted_visits", "inactive"] }).notNull(),
+  status: text("status", { enum: ["queued", "sending", "sent", "failed", "skipped"] }).default("queued").notNull(),
   messageText: text("message_text").notNull(),
   // Idempotency key (specialistId:type:periodBucket). Unique → guards against
   // duplicate sends across overlapping scans or multiple app instances.
   dedupeKey: text("dedupe_key").unique(),
+  scheduledAt: timestamp("scheduled_at").defaultNow().notNull(),
+  sendingStartedAt: timestamp("sending_started_at"),
   sentAt: timestamp("sent_at"),
   lastError: text("last_error"),
   skipReason: text("skip_reason"),

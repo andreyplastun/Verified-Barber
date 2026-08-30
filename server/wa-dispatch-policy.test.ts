@@ -4,6 +4,7 @@ import {
   compareDispatchCandidates,
   evaluateDispatchBudget,
   findFirstEligibleCandidate,
+  getChannelRateLimitWaitMs,
   getEffectiveHardLimit,
   getDispatchTier,
   isConfirmedPriorityCandidate,
@@ -90,6 +91,19 @@ test("follow-up fills a free ordinary slot but not a consumed one", () => {
     priorityLimit: 10,
     hardLimit: 40,
   }), { allowed: false, reason: "ordinary_limit" });
+});
+
+test("every channel send delays the next client or specialist message", () => {
+  const minute = 60_000;
+  const lastChannelSend = 1_000_000;
+  assert.equal(
+    getChannelRateLimitWaitMs(lastChannelSend, lastChannelSend + 3 * minute, 12 * minute),
+    9 * minute,
+  );
+  assert.equal(
+    getChannelRateLimitWaitMs(lastChannelSend, lastChannelSend + 12 * minute, 12 * minute),
+    0,
+  );
 });
 
 test("blocked higher rows do not prevent lower eligible work", async () => {

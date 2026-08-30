@@ -30,3 +30,4 @@
 - [AssistBot manual send](assistbot-manual-send.md) — AssistBot API silently drops non-prod-server calls (200, empty body); one-off sends from Rateus number go via a crafted wa_messages reminder row + worker.
 - [Altegio first-visit safety](altegio-first-visit-concurrency.md) — first-client priority requires complete history plus transactional chronology; unknown coverage must fail closed, never bypass limits.
 - [Advisory locks with small pools](advisory-lock-pool-safety.md) — never hold a session lock on one pooled connection while dependent work borrows others; serialize inside one transaction/connection.
+- [WA specialist reminder dispatch](wa-specialist-reminder-dispatch.md) — specialist nudges must use the global channel dispatcher; cold claims keep a stricter cap and lowest priority.

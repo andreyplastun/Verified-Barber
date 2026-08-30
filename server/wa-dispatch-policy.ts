@@ -69,6 +69,15 @@ export function getEffectiveHardLimit(
   return Math.max(0, Math.min(configuredHardLimit, ordinaryLimit + priorityLimit));
 }
 
+export function getChannelRateLimitWaitMs(
+  lastChannelSentAtMs: number,
+  nowMs: number,
+  minIntervalMs: number,
+): number {
+  if (lastChannelSentAtMs <= 0) return 0;
+  return Math.max(0, lastChannelSentAtMs + minIntervalMs - nowMs);
+}
+
 export async function findFirstEligibleCandidate<T>(
   candidates: readonly T[],
   check: (candidate: T) => Promise<boolean>,

@@ -320,9 +320,11 @@ app.use((req, res, next) => {
         specialist_id INTEGER NOT NULL,
         phone TEXT NOT NULL,
         reminder_type TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'sending',
+        status TEXT NOT NULL DEFAULT 'queued',
         message_text TEXT NOT NULL,
         dedupe_key TEXT,
+        scheduled_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        sending_started_at TIMESTAMP,
         sent_at TIMESTAMP,
         last_error TEXT,
         skip_reason TEXT,
@@ -330,6 +332,8 @@ app.use((req, res, next) => {
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
       ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+      ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP NOT NULL DEFAULT NOW();
+      ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS sending_started_at TIMESTAMP;
       CREATE UNIQUE INDEX IF NOT EXISTS specialist_reminders_dedupe_key_uniq ON specialist_reminders (dedupe_key);
 
       CREATE TABLE IF NOT EXISTS altegio_client_history (
@@ -702,15 +706,24 @@ app.use((req, res, next) => {
     const stuckReset = await pool.query(
       `UPDATE wa_messages SET status = 'queued' WHERE status = 'sending' RETURNING id`
     );
-    if (stuckReset.rows.length > 0) {
-      console.log(`[WA_CLEANUP] Reset ${stuckReset.rows.length} stuck 'sending' messages to 'queued'`);
-    }
-  } catch (err) {
-    console.error("[WA_CLEANUP] Error cleaning stale messages:", err);
-  }
 
-  // One-time fix: migrate any bookings stuck with 'pending' status to 'scheduled'
-  try {
+    const legacyReminderCleanup = await pool.query(
+      `UPDATE specialist_reminders
+       SET status = 'skipped',
+           skip_reason = 'legacy_inflight_not_requeued',
+           sending_started_at = NULL
+       WHERE status IN ('queued', 'sending')
+         AND NULLIF(BTRIM(message_text), '') IS NULL
+       RETURNING id`
+    );
+    const stuckReminderReset = await pool.query(
+      `UPDATE specialist_reminders
+       SET status = 'queued', sending_started_at = NULL
+       WHERE status = 'sending'
+         AND NULLIF(BTRIM(message_text), '') IS NOT NULL
+         AND COALESCE(sending_started_at, created_at) < NOW() - INTERVAL '10 minutes'
+       RETURNING id`
+    );
     const pendingFix = await pool.query(
       `UPDATE bookings SET status = 'scheduled' WHERE status = 'pending' RETURNING id`
     );

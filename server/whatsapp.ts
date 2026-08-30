@@ -1,16 +1,22 @@
 import { storage } from "./storage";
 import { db, pool } from "./db";
-import { appConfig, waMessages, magicLinks, bookings } from "@shared/schema";
 import { eq, and, asc, gte, sql, getTableColumns } from "drizzle-orm";
 import { isValidKzPhone, normalizePhone } from "./client-identity";
 import {
   evaluateDispatchBudget,
   findFirstEligibleCandidate,
+  getChannelRateLimitWaitMs,
   getEffectiveHardLimit,
   type FirstVisitStatus,
 } from "./wa-dispatch-policy";
+import {
+  canDispatchSpecialistReminder,
+  isDispatchableSpecialistReminderText,
+  type SpecialistReminderType,
+} from "./specialist-reminder-policy";
 import type { PoolClient } from "pg";
 import { getVisitConfirmationSendAt } from "./visit-confirmation-policy";
+import { appConfig, waMessages, magicLinks, bookings, specialistReminders } from "@shared/schema";
 
 const IS_PRODUCTION = process.env.REPL_SLUG === 'rateus' || process.env.RAILWAY_ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production';
 
@@ -340,12 +346,20 @@ async function getWaDailyUsage(): Promise<{
   const result = await db.execute(sql`
     SELECT
       COUNT(*)::int AS total_sent,
-      COUNT(*) FILTER (
-        WHERE message_type = 'primary' AND priority >= ${NEW_CLIENT_PRIORITY}
-      )::int AS priority_sent
-    FROM wa_messages
-    WHERE status = 'sent'
-      AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+      COUNT(*) FILTER (WHERE is_priority)::int AS priority_sent
+    FROM (
+      SELECT (
+        message_type = 'primary' AND priority >= ${NEW_CLIENT_PRIORITY}
+      ) AS is_priority
+      FROM wa_messages
+      WHERE status = 'sent'
+        AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+      UNION ALL
+      SELECT false AS is_priority
+      FROM specialist_reminders
+      WHERE status = 'sent'
+        AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+    ) sent_messages
   `);
   const totalSent = Number((result.rows[0] as any)?.total_sent || 0);
   const prioritySent = Number((result.rows[0] as any)?.priority_sent || 0);
@@ -388,10 +402,16 @@ function getPriorityNewClientMinIntervalMs(): number {
 
 async function getLastSentAt(): Promise<number> {
   const result = await db.execute(sql`
-    SELECT MAX(sent_at) as last_sent
-    FROM wa_messages
-    WHERE status = 'sent'
-    AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+    SELECT MAX(sent_at) AS last_sent
+    FROM (
+      SELECT sent_at FROM wa_messages
+      WHERE status = 'sent'
+        AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+      UNION ALL
+      SELECT sent_at FROM specialist_reminders
+      WHERE status = 'sent'
+        AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+    ) channel_sends
   `);
   const lastSent = (result.rows[0] as any)?.last_sent;
   if (!lastSent) return 0;
@@ -541,17 +561,6 @@ export async function sendDirectWaMessage(phone: string, text: string, bookingId
     return { success: false, error: err.message };
   }
 }
-
-export async function sendSpecialistReminderWa(phone: string, text: string, specialistId: number): Promise<{ success: boolean; assistbotMessageId?: string | null; error?: string }> {
-  try {
-    const assistbotMessageId = await sendViaAssistBot(phone, text, specialistId, "specialist_reminder");
-    return { success: true, assistbotMessageId };
-  } catch (err: any) {
-    console.error(`[SPEC_REMINDER] Failed to send to phone=${phone} specialist=${specialistId}: ${err.message}`);
-    return { success: false, error: err.message };
-  }
-}
-
 export async function testAssistBotConnection(): Promise<{ success: boolean; status?: number; body?: string; error?: string; tokenLength?: number }> {
   const token = await getAssistBotToken();
   if (!token) {
@@ -1290,6 +1299,7 @@ async function claimWaMessageForDispatch(
   return message || null;
 }
 
+type SpecialistReminderRow = typeof specialistReminders.$inferSelect;
 const SAFEGUARD_PAUSE_MS = 300000;
 
 let workerConsecutiveFailures = 0;
@@ -1371,6 +1381,31 @@ export async function startWaWorkerLoop(): Promise<void> {
         .returning({ id: waMessages.id, bookingId: waMessages.bookingId });
       if (stuckResult.length > 0) {
         console.log(`[WA_PROCESSOR] Recovered ${stuckResult.length} stuck 'sending' messages: ${stuckResult.map(r => `msg=${r.id}/booking=${r.bookingId}`).join(', ')}`);
+      }
+      const blankLegacyReminderResult = await db.update(specialistReminders)
+        .set({
+          status: "skipped",
+          skipReason: "legacy_inflight_not_requeued",
+          sendingStartedAt: null,
+        } as any)
+        .where(and(
+          sql`${specialistReminders.status} IN ('queued', 'sending')`,
+          sql`NULLIF(BTRIM(${specialistReminders.messageText}), '') IS NULL`,
+        ))
+        .returning({ id: specialistReminders.id });
+      if (blankLegacyReminderResult.length > 0) {
+        console.log(`[WA_PROCESSOR] Terminally skipped ${blankLegacyReminderResult.length} blank legacy specialist reminders`);
+      }
+      const stuckReminderResult = await db.update(specialistReminders)
+        .set({ status: "queued", sendingStartedAt: null } as any)
+        .where(and(
+          eq(specialistReminders.status, "sending"),
+          sql`NULLIF(BTRIM(${specialistReminders.messageText}), '') IS NOT NULL`,
+          sql`COALESCE(${specialistReminders.sendingStartedAt}, ${specialistReminders.createdAt}) < NOW() - INTERVAL '10 minutes'`,
+        ))
+        .returning({ id: specialistReminders.id });
+      if (stuckReminderResult.length > 0) {
+        console.log(`[WA_PROCESSOR] Recovered ${stuckReminderResult.length} stuck specialist reminders`);
       }
 
       const expired = await expireOldMessages();
@@ -1577,9 +1612,11 @@ export async function startWaWorkerLoop(): Promise<void> {
         if (msgDeadline) {
           const timeLeft = msgDeadline.getTime() - Date.now();
           const lastSentMs = await getLastSentAt();
-          const earliestSendIn = lastSentMs > 0
-            ? Math.max(0, (lastSentMs + minInterval) - Date.now())
-            : 0;
+          const earliestSendIn = getChannelRateLimitWaitMs(
+            lastSentMs,
+            Date.now(),
+            minInterval,
+          );
           if (timeLeft < earliestSendIn) {
             await storage.markWaMessageSkipped(candidate.id, "cannot_meet_sla");
             console.log(`[WA_SKIP] msg=${candidate.id} booking=${candidate.bookingId} type=${candidate.messageType} reason=cannot_meet_sla`);
@@ -1591,6 +1628,18 @@ export async function startWaWorkerLoop(): Promise<void> {
       });
 
       if (!msg) {
+        const specialistDispatch = await tryDispatchSpecialistReminder({
+          ordinaryLimit: effectiveLimit,
+          priorityLimit: effectivePriorityLimit,
+          hardLimit: effectiveHardLimit,
+        });
+        if (specialistDispatch === "sent") {
+          workerConsecutiveFailures = 0;
+          await sleep(Math.min(getMinIntervalMs(), tickSleep()));
+          continue;
+        }
+        if (specialistDispatch === "preempted") continue;
+
         heartbeatCounter++;
         if (heartbeatCounter >= HEARTBEAT_EVERY_N) {
           heartbeatCounter = 0;
@@ -1645,7 +1694,11 @@ export async function startWaWorkerLoop(): Promise<void> {
         }
 
         const lastSentMs = await getLastSentAt();
-        const earliestSendIn = lastSentMs > 0 ? Math.max(0, (lastSentMs + minInterval) - Date.now()) : 0;
+        const earliestSendIn = getChannelRateLimitWaitMs(
+          lastSentMs,
+          Date.now(),
+          minInterval,
+        );
         if (timeLeft < earliestSendIn) {
           await storage.markWaMessageSkipped(msg.id, "cannot_meet_sla");
           console.log(`[WA_SKIP] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} reason=cannot_meet_sla (timeLeft=${Math.round(timeLeft/1000)}s < earliestSendIn=${Math.round(earliestSendIn/1000)}s)`);
@@ -1659,11 +1712,11 @@ export async function startWaWorkerLoop(): Promise<void> {
         const lastSentMs = await getLastSentAt();
         const now = Date.now();
 
-        if (lastSentMs <= 0 || now >= lastSentMs + minInterval) {
+        const waitTime = getChannelRateLimitWaitMs(lastSentMs, now, minInterval);
+        if (waitTime <= 0) {
           break;
         }
 
-        const waitTime = (lastSentMs + minInterval) - now;
         const timeLeft = msgDeadline ? msgDeadline.getTime() - now : Infinity;
 
         if (waitTime > timeLeft) {
@@ -1769,4 +1822,187 @@ export async function startWaWorkerLoop(): Promise<void> {
 }
 
 export async function processWaQueue(): Promise<void> {
+}
+
+async function tryDispatchSpecialistReminder(params: {
+  ordinaryLimit: number;
+  priorityLimit: number;
+  hardLimit: number;
+}): Promise<"sent" | "none" | "preempted"> {
+  if (!isSpecialistReminderWindowOpen()) return "none";
+
+  let channelUsage = await getWaDailyUsage();
+  const channelBudget = evaluateDispatchBudget(false, {
+    ...channelUsage,
+    ordinaryLimit: params.ordinaryLimit,
+    priorityLimit: params.priorityLimit,
+    hardLimit: params.hardLimit,
+  });
+  if (!channelBudget.allowed) return "none";
+
+  let reminderUsage = await getSpecialistReminderDailyUsage();
+  const candidates = await db.select()
+    .from(specialistReminders)
+    .where(and(
+      eq(specialistReminders.status, "queued"),
+      sql`${specialistReminders.scheduledAt} <= NOW()`,
+    ))
+    // Cold claim outreach is deliberately last behind reminders for specialists
+    // who already own and actively use their profiles.
+    .orderBy(
+      sql`CASE WHEN ${specialistReminders.reminderType} = 'claim_ownership' THEN 1 ELSE 0 END`,
+      asc(specialistReminders.scheduledAt),
+      asc(specialistReminders.id),
+    )
+    .limit(100);
+
+  const reminder = candidates.find((candidate) =>
+    isDispatchableSpecialistReminderText(candidate.messageText)
+    && canDispatchSpecialistReminder(
+        candidate.reminderType as SpecialistReminderType,
+        reminderUsage,
+      ).allowed,
+  );
+  if (!reminder) return "none";
+
+  if (await storage.isWaOptedOut(reminder.phone)) {
+    await finishSpecialistReminder(reminder.id, "skipped", { skipReason: "opt_out" });
+    return "none";
+  }
+
+  const minInterval = getMinIntervalMs();
+  while (true) {
+    const lastSentMs = await getLastSentAt();
+    const now = Date.now();
+    if (lastSentMs <= 0 || now >= lastSentMs + minInterval) break;
+
+    const waitTime = getChannelRateLimitWaitMs(lastSentMs, now, minInterval);
+    const chunkMs = Math.min(waitTime, tickSleep());
+    console.log(`[WA_RATE_LIMIT] specialist_reminder=${reminder.id} specialist=${reminder.specialistId} — sleeping ${Math.round(chunkMs / 1000)}s chunk (remaining=${Math.round(waitTime / 1000)}s, minInterval=${Math.round(minInterval / 60000)}min)`);
+    await sleep(chunkMs);
+
+    if (await hasReadyClientMessage()) {
+      console.log(`[WA_PREEMPT] specialist_reminder=${reminder.id} yielding rate-limit wait to ready client message`);
+      return "preempted";
+    }
+    if (!isSpecialistReminderWindowOpen()) return "none";
+  }
+
+  channelUsage = await getWaDailyUsage();
+  const finalChannelBudget = evaluateDispatchBudget(false, {
+    ...channelUsage,
+    ordinaryLimit: params.ordinaryLimit,
+    priorityLimit: params.priorityLimit,
+    hardLimit: params.hardLimit,
+  });
+  if (!finalChannelBudget.allowed) {
+    console.log(`[WA_BUDGET] specialist_reminder=${reminder.id} blocked=${finalChannelBudget.reason}`);
+    return "none";
+  }
+
+  reminderUsage = await getSpecialistReminderDailyUsage();
+  const finalReminderBudget = canDispatchSpecialistReminder(
+    reminder.reminderType as SpecialistReminderType,
+    reminderUsage,
+  );
+  if (!finalReminderBudget.allowed) {
+    console.log(`[SPEC_REMINDER] reminder=${reminder.id} blocked=${finalReminderBudget.reason}`);
+    return "none";
+  }
+
+  const claimed = await claimSpecialistReminderForDispatch(reminder.id);
+  if (!claimed) return "none";
+
+  try {
+    const assistbotMessageId = await sendViaAssistBot(
+      claimed.phone,
+      claimed.messageText,
+      claimed.specialistId,
+      "specialist_reminder",
+      claimed.createdAt?.getTime() || Date.now(),
+    );
+    await finishSpecialistReminder(claimed.id, "sent", { assistbotMessageId });
+    console.log(`[WA_PROCESSOR] Sent specialist_reminder=${claimed.id} specialist=${claimed.specialistId} type=${claimed.reminderType} channelHard=${channelUsage.totalSent + 1}/${params.hardLimit}`);
+    return "sent";
+  } catch (error: any) {
+    await finishSpecialistReminder(claimed.id, "failed", {
+      lastError: (error?.message || "send_failed").slice(0, 200),
+    });
+    console.error(`[SPEC_REMINDER] Failed reminder=${claimed.id} specialist=${claimed.specialistId}: ${error?.message}`);
+    return "none";
+  }
+}
+
+function isSpecialistReminderWindowOpen(): boolean {
+  const hour = getAlmatyHour();
+  return hour >= WINDOW_START_HOUR && hour < 21;
+}
+
+async function claimSpecialistReminderForDispatch(
+  reminderId: number,
+): Promise<SpecialistReminderRow | null> {
+  const claimed = await db.execute(sql`
+    UPDATE specialist_reminders
+    SET status = 'sending', sending_started_at = NOW()
+    WHERE id = ${reminderId}
+      AND status = 'queued'
+    RETURNING id
+  `);
+  if (claimed.rows.length === 0) return null;
+  const [reminder] = await db.select()
+    .from(specialistReminders)
+    .where(eq(specialistReminders.id, reminderId))
+    .limit(1);
+  return reminder || null;
+}
+
+async function hasReadyClientMessage(): Promise<boolean> {
+  const [clientMessage] = await db.select({ id: waMessages.id })
+    .from(waMessages)
+    .where(and(
+      eq(waMessages.status, "queued"),
+      sql`${waMessages.scheduledAt} <= NOW()`,
+    ))
+    .limit(1);
+  return !!clientMessage;
+}
+
+async function finishSpecialistReminder(
+  reminderId: number,
+  status: "sent" | "failed" | "skipped",
+  fields: {
+    skipReason?: string | null;
+    lastError?: string | null;
+    assistbotMessageId?: string | null;
+  } = {},
+): Promise<void> {
+  await db.update(specialistReminders)
+    .set({
+      status,
+      sentAt: status === "sent" ? new Date() : null,
+      sendingStartedAt: null,
+      skipReason: fields.skipReason ?? null,
+      lastError: fields.lastError ?? null,
+      assistbotMessageId: fields.assistbotMessageId ?? null,
+    })
+    .where(eq(specialistReminders.id, reminderId));
+}
+
+async function getSpecialistReminderDailyUsage(): Promise<{
+  specialistSent: number;
+  claimSent: number;
+}> {
+  const result = await db.execute(sql`
+    SELECT
+      COUNT(*)::int AS specialist_sent,
+      COUNT(*) FILTER (WHERE reminder_type = 'claim_ownership')::int AS claim_sent
+    FROM specialist_reminders
+    WHERE status = 'sent'
+      AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+  `);
+  const row = result.rows[0] as any;
+  return {
+    specialistSent: Number(row?.specialist_sent || 0),
+    claimSent: Number(row?.claim_sent || 0),
+  };
 }
