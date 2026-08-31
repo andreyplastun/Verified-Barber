@@ -505,6 +505,17 @@ export const waOptOuts = pgTable("wa_opt_outs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const specialistVisitConfirmationDecisions = pgTable("specialist_visit_confirmation_decisions", {
+  id: serial("id").primaryKey(),
+  specialistId: integer("specialist_id"),
+  bookingId: integer("booking_id"),
+  decision: text("decision", { enum: ["confirmed", "ignored"] }).notNull(),
+  reason: text("reason").notNull(),
+  classifierVersion: text("classifier_version").notNull(),
+  candidateCount: integer("candidate_count").default(0).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Re-engagement nudges sent to specialists (profile completion / first visit /
 // reactivation). Separate from wa_messages (which is review-request, booking-bound).
 export const specialistReminders = pgTable("specialist_reminders", {
@@ -612,6 +623,7 @@ export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
 export type AppConfig = typeof appConfig.$inferSelect;
 export type WaMessage = typeof waMessages.$inferSelect;
 export type WaOptOut = typeof waOptOuts.$inferSelect;
+export type SpecialistVisitConfirmationDecision = typeof specialistVisitConfirmationDecisions.$inferSelect;
 export type SpecialistReminder = typeof specialistReminders.$inferSelect;
 
 export type CreateBookingRequest = z.infer<typeof insertBookingSchema>;

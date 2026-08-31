@@ -16,6 +16,7 @@ import {
 } from "./specialist-reminder-policy";
 import type { PoolClient } from "pg";
 import { getVisitConfirmationSendAt } from "./visit-confirmation-policy";
+import { confirmVisitFromSpecialistChat } from "./visit-confirmations";
 import { appConfig, waMessages, magicLinks, bookings, specialistReminders } from "@shared/schema";
 
 const IS_PRODUCTION = process.env.REPL_SLUG === 'rateus' || process.env.RAILWAY_ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production';
@@ -620,14 +621,30 @@ export function isOptOutMessage(text: string): boolean {
   return OPT_OUT_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-export async function handleIncomingMessage(phone: string, text: string): Promise<{ optedOut: boolean }> {
+export async function handleIncomingMessage(
+  phone: string,
+  text: string,
+  options: { allowSpecialistVisitConfirmation?: boolean } = {},
+): Promise<{
+  optedOut: boolean;
+  specialistVisitDecision: "confirmed" | "ignored";
+}> {
+  if (options.allowSpecialistVisitConfirmation) {
+    const specialistVisit = await confirmVisitFromSpecialistChat(phone, text);
+    if (specialistVisit.decision === "confirmed") {
+      console.log(
+        `[SPECIALIST_CHAT_CONFIRMATION] decision=confirmed booking=${specialistVisit.bookingId} reason=${specialistVisit.reason}`,
+      );
+      return { optedOut: false, specialistVisitDecision: "confirmed" };
+    }
+  }
   if (isOptOutMessage(text)) {
     const cleanPhone = phone.replace(/\D/g, "");
     await storage.addWaOptOut(cleanPhone);
-    console.log(`[WA_OPT_OUT] Phone ${cleanPhone} opted out via message: "${text.substring(0, 50)}"`);
-    return { optedOut: true };
+    console.log(`[WA_OPT_OUT] Incoming phone opted out`);
+    return { optedOut: true, specialistVisitDecision: "ignored" };
   }
-  return { optedOut: false };
+  return { optedOut: false, specialistVisitDecision: "ignored" };
 }
 
 async function getClientStrategy(phone: string, specialistId: number, currentBookingId: number): Promise<"primary_only" | "primary_plus_followup"> {

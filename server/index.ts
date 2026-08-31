@@ -367,6 +367,19 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS price integer;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS customer_email text;
 
+      CREATE TABLE IF NOT EXISTS specialist_visit_confirmation_decisions (
+        id SERIAL PRIMARY KEY,
+        specialist_id INTEGER,
+        booking_id INTEGER,
+        decision TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        classifier_version TEXT NOT NULL,
+        candidate_count INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS specialist_visit_confirmation_decisions_created_idx
+        ON specialist_visit_confirmation_decisions (created_at DESC);
+
       CREATE TABLE IF NOT EXISTS locations (
         id SERIAL PRIMARY KEY,
         name TEXT NOT NULL,

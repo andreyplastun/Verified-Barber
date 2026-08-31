@@ -10,6 +10,15 @@ const REVIEW_BASE_URL = "https://www.rateus.kz";
 const FALLBACK_DELAY_HOURS = 3;
 const SCAN_LOCK_ID = 0x5643464d;
 const SCAN_BATCH_SIZE = 20;
+const SPECIALIST_CHAT_CLASSIFIER_VERSION = "strict-v1";
+const SPECIALIST_CHAT_LOOKBACK_HOURS = 24;
+
+// Deliberately closed pilot: both id and exact test-profile name must match.
+// Never broaden this list based on ordinary specialist data.
+const SPECIALIST_CHAT_PILOT = new Map<number, string>([
+  [69, "Тест Спец wKFsid"],
+  [78, "Тест Мастер do15ku"],
+]);
 
 export type VisitConfirmationStatus =
   | "pending"
@@ -25,6 +34,167 @@ export type VisitConfirmationPublic = {
   appointmentTime: string;
   reviewUrl?: string | null;
 };
+
+export type SpecialistChatConfirmationResult = {
+  decision: "confirmed" | "ignored";
+  reason: string;
+  bookingId?: number;
+};
+
+export function classifySpecialistVisitConfirmation(
+  text: string,
+): "confirmed" | "ignored" {
+  const normalized = text
+    .toLocaleLowerCase("ru")
+    .replace(/ё/g, "е")
+    .replace(/[.,!;:]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (
+    !normalized ||
+    normalized.includes("?") ||
+    /\b(не|нет|вроде|кажется|наверное|возможно|может быть|не уверен|не уверена)\b/u.test(normalized)
+  ) {
+    return "ignored";
+  }
+
+  return /^(?:да\s+)?(?:визит состоялся|клиент был|клиент приходил|услуга оказана)$/u.test(normalized)
+    ? "confirmed"
+    : "ignored";
+}
+
+export async function confirmVisitFromSpecialistChat(
+  phone: string,
+  text: string,
+): Promise<SpecialistChatConfirmationResult> {
+  const cleanPhone = phone.replace(/\D/g, "");
+  const classification = classifySpecialistVisitConfirmation(text);
+  const client = await pool.connect();
+
+  try {
+    await client.query("BEGIN");
+    const specialistResult = await client.query(
+      `SELECT id, name
+       FROM specialists
+       WHERE regexp_replace(COALESCE(NULLIF(whatsapp, ''), phone, ''), '\\D', '', 'g') = $1
+       FOR UPDATE`,
+      [cleanPhone],
+    );
+    const pilotSpecialists = specialistResult.rows.filter(
+      (row) => SPECIALIST_CHAT_PILOT.get(Number(row.id)) === row.name,
+    );
+    if (pilotSpecialists.length !== 1) {
+      await client.query("ROLLBACK");
+      return { decision: "ignored", reason: "outside_pilot" };
+    }
+
+    const specialistId = Number(pilotSpecialists[0].id);
+    const candidates = await client.query(
+      `SELECT id, client_id, customer_phone
+       FROM bookings
+       WHERE specialist_id = $1
+         AND booking_source = 'specialist_manual'
+         AND visit_confirmation_eligible = true
+         AND status = 'ready_to_complete'
+         AND appointment_time <= NOW()
+         AND appointment_time > NOW() - INTERVAL '${SPECIALIST_CHAT_LOOKBACK_HOURS} hours'
+       ORDER BY appointment_time DESC, id DESC
+       FOR UPDATE`,
+      [specialistId],
+    );
+
+    let reason = classification === "confirmed" ? "unambiguous_confirmation" : "not_unambiguous";
+    if (candidates.rows.length !== 1) {
+      reason = candidates.rows.length === 0 ? "no_candidate" : "ambiguous_candidates";
+    }
+
+    if (classification !== "confirmed" || candidates.rows.length !== 1) {
+      await client.query(
+        `INSERT INTO specialist_visit_confirmation_decisions
+           (specialist_id, decision, reason, classifier_version, candidate_count)
+         VALUES ($1, 'ignored', $2, $3, $4)`,
+        [specialistId, reason, SPECIALIST_CHAT_CLASSIFIER_VERSION, candidates.rows.length],
+      );
+      await client.query("COMMIT");
+      return { decision: "ignored", reason };
+    }
+
+    const booking = candidates.rows[0];
+    const changed = await client.query(
+      `UPDATE bookings
+       SET status = 'completed',
+           completion_type = 'with_review',
+           visit_trust_weight = 0.6,
+           visit_confirmation_status = CASE
+             WHEN visit_confirmation_status = 'pending' THEN 'confirmed'
+             ELSE visit_confirmation_status
+           END,
+           visit_confirmation_responded_at = CASE
+             WHEN visit_confirmation_status = 'pending' THEN NOW()
+             ELSE visit_confirmation_responded_at
+           END
+       WHERE id = $1 AND status = 'ready_to_complete'
+       RETURNING id`,
+      [booking.id],
+    );
+    if (changed.rows.length === 0) {
+      await client.query(
+        `INSERT INTO specialist_visit_confirmation_decisions
+           (specialist_id, booking_id, decision, reason, classifier_version, candidate_count)
+         VALUES ($1, $2, 'ignored', 'lost_atomic_race', $3, 1)`,
+        [specialistId, booking.id, SPECIALIST_CHAT_CLASSIFIER_VERSION],
+      );
+      await client.query("COMMIT");
+      return { decision: "ignored", reason: "lost_atomic_race" };
+    }
+
+    await client.query(
+      `UPDATE wa_messages
+       SET status = 'skipped', skip_reason = 'specialist_chat_confirmed'
+       WHERE booking_id = $1
+         AND message_type = 'visit_confirmation'
+         AND status = 'queued'`,
+      [booking.id],
+    );
+    await client.query("SELECT pg_advisory_xact_lock($1, $2)", [837211, booking.id]);
+    await client.query(
+      `INSERT INTO magic_links (
+         token, short_code, user_id, booking_id, specialist_id,
+         customer_phone, expires_at, is_followup
+       )
+       SELECT $1, nextval('magic_link_short_code_seq')::int, $2, $3, $4, $5,
+              NOW() + INTERVAL '7 days', false
+       WHERE NOT EXISTS (SELECT 1 FROM magic_links WHERE booking_id = $3)`,
+      [
+        crypto.randomBytes(12).toString("base64url"),
+        booking.client_id,
+        booking.id,
+        specialistId,
+        booking.customer_phone,
+      ],
+    );
+    await client.query(
+      `UPDATE specialists
+       SET verified_visit_score = COALESCE(verified_visit_score, 0) + 1
+       WHERE id = $1`,
+      [specialistId],
+    );
+    await client.query(
+      `INSERT INTO specialist_visit_confirmation_decisions
+         (specialist_id, booking_id, decision, reason, classifier_version, candidate_count)
+       VALUES ($1, $2, 'confirmed', $3, $4, 1)`,
+      [specialistId, booking.id, reason, SPECIALIST_CHAT_CLASSIFIER_VERSION],
+    );
+    await client.query("COMMIT");
+    return { decision: "confirmed", reason, bookingId: Number(booking.id) };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 function confirmationUrl(token: string): string {
   return `${REVIEW_BASE_URL}/visit-confirm/${token}`;

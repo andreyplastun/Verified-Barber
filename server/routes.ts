@@ -23,9 +23,18 @@ import {
   supersedeVisitConfirmation,
   type VisitConfirmationPublic,
 } from "./visit-confirmations";
-import { randomBytes } from "crypto";
+import { randomBytes, timingSafeEqual } from "crypto";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
+
+function hasValidAssistBotIncomingSecret(headerValue: unknown): boolean {
+  const expected = process.env.ASSISTBOT_INCOMING_SECRET;
+  if (!expected || typeof headerValue !== "string") return false;
+  const actualBuffer = Buffer.from(headerValue);
+  const expectedBuffer = Buffer.from(expected);
+  return actualBuffer.length === expectedBuffer.length
+    && timingSafeEqual(actualBuffer, expectedBuffer);
+}
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -4775,19 +4784,48 @@ ${magicLink}`;
     try {
       const { phone, text } = req.body || {};
       if (!phone || !text) {
-        console.log(`[ASSISTBOT_INCOMING] Missing phone or text: ${JSON.stringify(req.body).substring(0, 300)}`);
+        console.log(
+          `[ASSISTBOT_INCOMING] Invalid payload hasPhone=${Boolean(phone)} hasText=${Boolean(text)}`,
+        );
         res.json({ ok: true });
         return;
       }
-      console.log(`[ASSISTBOT_INCOMING] phone=${phone} text="${text.substring(0, 100)}"`);
-      const result = await handleIncomingMessage(phone, text);
+      const allowSpecialistVisitConfirmation = hasValidAssistBotIncomingSecret(
+        req.headers["x-assistbot-webhook-secret"],
+      );
+      const result = await handleIncomingMessage(phone, text, {
+        allowSpecialistVisitConfirmation,
+      });
       if (result.optedOut) {
-        console.log(`[ASSISTBOT_INCOMING] Phone ${phone} opted out`);
+        console.log(`[ASSISTBOT_INCOMING] Incoming phone opted out`);
       }
-      res.json({ ok: true, optedOut: result.optedOut });
+      res.json({
+        ok: true,
+        optedOut: result.optedOut,
+        specialistVisitDecision: result.specialistVisitDecision,
+      });
     } catch (err: any) {
       console.error(`[ASSISTBOT_INCOMING] Error: ${err.message}`);
       res.json({ ok: true });
+    }
+  });
+
+  app.get("/api/admin/specialist-chat-confirmation-decisions", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+      const result = await pool.query(
+        `SELECT id, specialist_id, booking_id, decision, reason,
+                classifier_version, candidate_count, created_at
+         FROM specialist_visit_confirmation_decisions
+         ORDER BY created_at DESC, id DESC
+         LIMIT $1`,
+        [limit],
+      );
+      res.json(result.rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
     }
   });
 
