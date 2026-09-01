@@ -13,11 +13,11 @@ const SCAN_BATCH_SIZE = 20;
 const SPECIALIST_CHAT_CLASSIFIER_VERSION = "strict-v1";
 const SPECIALIST_CHAT_LOOKBACK_HOURS = 24;
 
-// Deliberately closed pilot: both id and exact test-profile name must match.
-// Never broaden this list based on ordinary specialist data.
-const SPECIALIST_CHAT_PILOT = new Map<number, string>([
-  [69, "Тест Спец wKFsid"],
-  [78, "Тест Мастер do15ku"],
+// Deliberately closed pilot: both the incoming WhatsApp number and exact
+// specialist name must match. Never broaden this list from ordinary data.
+const SPECIALIST_CHAT_PILOT = new Map<string, string>([
+  ["77773000467", "Jeremy"],
+  ["77771907731", "James"],
 ]);
 
 export type VisitConfirmationStatus =
@@ -82,7 +82,7 @@ export async function confirmVisitFromSpecialistChat(
       [cleanPhone],
     );
     const pilotSpecialists = specialistResult.rows.filter(
-      (row) => SPECIALIST_CHAT_PILOT.get(Number(row.id)) === row.name,
+      (row) => SPECIALIST_CHAT_PILOT.get(cleanPhone) === row.name,
     );
     if (pilotSpecialists.length !== 1) {
       await client.query("ROLLBACK");
