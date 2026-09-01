@@ -31,3 +31,4 @@
 - [Altegio first-visit safety](altegio-first-visit-concurrency.md) — first-client priority requires complete history plus transactional chronology; unknown coverage must fail closed, never bypass limits.
 - [Advisory locks with small pools](advisory-lock-pool-safety.md) — never hold a session lock on one pooled connection while dependent work borrows others; serialize inside one transaction/connection.
 - [WA specialist reminder dispatch](wa-specialist-reminder-dispatch.md) — specialist nudges must use the global channel dispatcher; cold claims keep a stricter cap and lowest priority.
+- [WA visible daily limit](wa-visible-daily-limit.md) — admin “Лимит / день” is the absolute total; priority changes order only and must never add hidden sends.

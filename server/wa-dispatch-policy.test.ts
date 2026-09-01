@@ -42,22 +42,24 @@ test("unknown legacy priority is treated as ordinary and cannot bypass", () => {
   }), { allowed: false, reason: "ordinary_limit" });
 });
 
-test("priority allowance never bypasses the combined hard cap", () => {
+test("priority allowance never increases the visible daily limit", () => {
+  const hardLimit = getEffectiveHardLimit(40, 2, 10);
+  assert.equal(hardLimit, 2);
   assert.deepEqual(evaluateDispatchBudget(true, {
-    ordinarySent: 30,
-    prioritySent: 9,
-    totalSent: 39,
-    ordinaryLimit: 30,
+    ordinarySent: 0,
+    prioritySent: 1,
+    totalSent: 1,
+    ordinaryLimit: 2,
     priorityLimit: 10,
-    hardLimit: 40,
+    hardLimit,
   }), { allowed: true });
   assert.deepEqual(evaluateDispatchBudget(true, {
-    ordinarySent: 30,
-    prioritySent: 10,
-    totalSent: 40,
-    ordinaryLimit: 30,
+    ordinarySent: 0,
+    prioritySent: 2,
+    totalSent: 2,
+    ordinaryLimit: 2,
     priorityLimit: 10,
-    hardLimit: 40,
+    hardLimit,
   }), { allowed: false, reason: "hard_limit" });
 });
 

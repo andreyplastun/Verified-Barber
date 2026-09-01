@@ -64,9 +64,11 @@ export function evaluateDispatchBudget(isPriority: boolean, budget: DispatchBudg
 export function getEffectiveHardLimit(
   configuredHardLimit: number,
   ordinaryLimit: number,
-  priorityLimit: number,
+  _priorityLimit: number,
 ): number {
-  return Math.max(0, Math.min(configuredHardLimit, ordinaryLimit + priorityLimit));
+  // The admin-facing daily limit is the total number of links that may leave
+  // the dispatcher. Priority changes ordering only; it must never add sends.
+  return Math.max(0, Math.min(configuredHardLimit, ordinaryLimit));
 }
 
 export function getChannelRateLimitWaitMs(

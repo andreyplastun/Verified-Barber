@@ -5046,6 +5046,7 @@ ${magicLink}`;
       }
       if (typeof dailyLimit === "number" && dailyLimit > 0) {
         await setWaSetting("WA_DAILY_LIMIT", String(dailyLimit));
+        await setWaSetting("WA_HARD_DAILY_LIMIT", String(dailyLimit));
       }
       if (typeof priorityDailyLimit === "number" && priorityDailyLimit >= 0) {
         await setWaSetting("WA_PRIORITY_DAILY_LIMIT", String(priorityDailyLimit));
