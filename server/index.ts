@@ -440,18 +440,35 @@ app.use((req, res, next) => {
         ON bookings (altegio_appointment_id)
         WHERE altegio_appointment_id IS NOT NULL;
     `);
-    await pool.query(`
-      CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS bookings_visit_confirmation_token_unique
-        ON bookings (visit_confirmation_token)
-        WHERE visit_confirmation_token IS NOT NULL
-    `);
-    await pool.query(`
-      CREATE INDEX CONCURRENTLY IF NOT EXISTS bookings_visit_confirmation_candidates_idx
-        ON bookings (appointment_time, id)
-        WHERE booking_source = 'specialist_manual'
-          AND visit_confirmation_eligible = true
-          AND visit_confirmation_status IS NULL
-    `);
+    // Never let an old production session block the new deployment from
+    // opening its port. These indexes are retried on every startup.
+    const indexClient = await pool.connect();
+    try {
+      await indexClient.query(`SET statement_timeout = '20s'`);
+      const indexStatements = [
+        `CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS bookings_visit_confirmation_token_unique
+           ON bookings (visit_confirmation_token)
+           WHERE visit_confirmation_token IS NOT NULL`,
+        `CREATE INDEX CONCURRENTLY IF NOT EXISTS bookings_visit_confirmation_candidates_idx
+           ON bookings (appointment_time, id)
+           WHERE booking_source = 'specialist_manual'
+             AND visit_confirmation_eligible = true
+             AND visit_confirmation_status IS NULL`,
+      ];
+      for (const statement of indexStatements) {
+        try {
+          await indexClient.query(statement);
+        } catch (indexError) {
+          console.warn("[STARTUP] Deferred visit-confirmation index creation:", indexError);
+        }
+      }
+    } finally {
+      try {
+        await indexClient.query(`RESET statement_timeout`);
+      } finally {
+        indexClient.release();
+      }
+    }
 
     // A locally-earliest row is not proof of a real first visit unless the
     // specialist's complete Altegio history has been backfilled. Existing
@@ -609,12 +626,14 @@ app.use((req, res, next) => {
       ) AS valid_index_count
   `);
   const confirmationSchemaState = visitConfirmationSchema.rows[0];
-  if (
-    Number(confirmationSchemaState?.column_count) !== 6 ||
-    Number(confirmationSchemaState?.valid_index_count) !== 2
-  ) {
+  if (Number(confirmationSchemaState?.column_count) !== 6) {
     throw new Error(
       `[STARTUP] Visit confirmation schema is incomplete: columns=${confirmationSchemaState?.column_count}, validIndexes=${confirmationSchemaState?.valid_index_count}`,
+    );
+  }
+  if (Number(confirmationSchemaState?.valid_index_count) !== 2) {
+    console.warn(
+      `[STARTUP] Visit confirmation indexes are still pending: validIndexes=${confirmationSchemaState?.valid_index_count}/2`,
     );
   }
 
