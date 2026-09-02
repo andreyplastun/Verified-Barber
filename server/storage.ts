@@ -1868,9 +1868,14 @@ export class DatabaseStorage implements IStorage {
     await db.update(specialists)
       .set({ ownerUserId: userId })
       .where(eq(specialists.id, specialistId));
-    await db.update(users)
-      .set({ role: "specialist" as const, specialistId })
-      .where(eq(users.id, userId));
+    // Production stores users.id as uuid while this installation's Drizzle
+    // schema historically typed it as text. Compare through text so the claim
+    // flow works with both schema variants.
+    await db.execute(sql`
+      UPDATE users
+      SET role = 'specialist', specialist_id = ${specialistId}
+      WHERE id::text = ${userId}
+    `);
     console.log(`[CLAIM] Bound specialist ${specialistId} to user ${userId}`);
   }
 
