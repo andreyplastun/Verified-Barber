@@ -3713,7 +3713,7 @@ ${magicLink}`;
         bind_user AS (
           UPDATE users 
           SET role = 'specialist', specialist_id = (SELECT specialist_id FROM token_check)
-          WHERE id = $2 AND (SELECT specialist_id FROM token_check) IS NOT NULL
+          WHERE id::text = $2::text AND (SELECT specialist_id FROM token_check) IS NOT NULL
           RETURNING id
         )
         SELECT (SELECT specialist_id FROM token_check) as specialist_id
