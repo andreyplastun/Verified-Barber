@@ -13,6 +13,8 @@ type Mode = "login" | "choose-role" | "client-signup";
 export default function LoginPage() {
   const [, setLocation] = useLocation();
   const [mode, setMode] = useState<Mode>("login");
+  const isClaimFlow = typeof window !== "undefined"
+    && Boolean(sessionStorage.getItem("claimReturnUrl"));
 
   const handleSuccess = async () => {
     const claimReturn = sessionStorage.getItem("claimReturnUrl");
@@ -42,20 +44,27 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold" data-testid="text-login-title">
               {mode === "login" && "Добро пожаловать"}
               {mode === "choose-role" && "Кто вы?"}
-              {mode === "client-signup" && "Создание аккаунта"}
+              {mode === "client-signup" && (isClaimFlow ? "Создание входа" : "Создание аккаунта")}
             </h1>
             <p className="text-muted-foreground">
               {mode === "login" && "Войдите, чтобы продолжить"}
               {mode === "choose-role" && "Выберите, как хотите зарегистрироваться"}
-              {mode === "client-signup" && "Регистрация клиента"}
+              {mode === "client-signup" && (
+                isClaimFlow
+                  ? "Имя и телефон уже сохранены в профиле"
+                  : "Регистрация клиента"
+              )}
             </p>
           </div>
 
           {mode === "login" && (
             <>
-              <LoginForm onSuccess={handleSuccess} onSwitchToSignUp={() => setMode("choose-role")} />
+              <LoginForm
+                onSuccess={handleSuccess}
+                onSwitchToSignUp={() => setMode(isClaimFlow ? "client-signup" : "choose-role")}
+              />
 
-              <div className="pt-6 border-t space-y-3">
+              {!isClaimFlow && <div className="pt-6 border-t space-y-3">
                 <p className="text-center text-xs text-muted-foreground uppercase tracking-wide">
                   Вы специалист?
                 </p>
@@ -67,7 +76,7 @@ export default function LoginPage() {
                   <UserPlus className="h-4 w-4" />
                   Зарегистрироваться как специалист
                 </Link>
-              </div>
+              </div>}
             </>
           )}
 
@@ -118,16 +127,16 @@ export default function LoginPage() {
 
           {mode === "client-signup" && (
             <>
-              <ClientBenefits />
+              {!isClaimFlow && <ClientBenefits />}
               <SignUpForm onSuccess={handleSuccess} onSwitchToLogin={() => setMode("login")} />
               <button
                 type="button"
-                onClick={() => setMode("choose-role")}
+                onClick={() => setMode(isClaimFlow ? "login" : "choose-role")}
                 className="flex items-center justify-center gap-1 w-full text-sm text-muted-foreground"
                 data-testid="link-back-to-role-choice"
               >
                 <ArrowLeft className="h-4 w-4" />
-                Я не клиент, я специалист
+                {isClaimFlow ? "Назад ко входу" : "Я не клиент, я специалист"}
               </button>
             </>
           )}

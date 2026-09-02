@@ -123,8 +123,8 @@ export default function ClaimProfilePage() {
           {!user ? (
             <div className="space-y-3 w-full">
               <p className="text-sm text-muted-foreground">
-                Для привязки необходимо войти или зарегистрироваться.
-                После входа вернитесь по этой ссылке.
+                Войдите или создайте данные для входа. Имя и телефон повторно
+                вводить не потребуется — они уже сохранены в этом профиле.
               </p>
               <Button
                 className="w-full"
