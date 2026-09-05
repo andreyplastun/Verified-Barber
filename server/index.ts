@@ -593,75 +593,85 @@ app.use((req, res, next) => {
       console.log(`[STARTUP] Generated slugs for ${specsWithoutSlug.rows.length} specialists`);
     }
 
-    // One-time recovery for the test James claim that was accidentally opened
-    // inside an existing admin session. The guard makes this repair idempotent
-    // and ensures a later legitimate claim is never touched.
-    await pool.query(`
+    console.log("[STARTUP] Auto-migrations complete");
+  } catch (err) {
+    console.error("[STARTUP] Auto-migration error (non-fatal):", err);
+  }
+
+  // Keep incident recovery isolated from the legacy migration block above:
+  // an unrelated old migration failure must not prevent this repair.
+  const repairClient = await pool.connect();
+  try {
+    await repairClient.query("BEGIN");
+    await repairClient.query(`
       CREATE TABLE IF NOT EXISTS app_one_time_repairs (
         repair_key text PRIMARY KEY,
         applied_at timestamp NOT NULL DEFAULT NOW()
       )
     `);
-    const jamesClaimRepair = await pool.query(`
-      WITH repair_guard AS (
-        INSERT INTO app_one_time_repairs (repair_key)
-        VALUES ('accidental_admin_claim_james_20260905_v2')
-        ON CONFLICT (repair_key) DO NOTHING
-        RETURNING repair_key
-      ),
-      target AS (
-        SELECT
-          s.id AS specialist_id,
-          s.owner_user_id,
-          (
-            SELECT cr.id
-            FROM claim_requests cr
-            WHERE cr.specialist_id = s.id
-              AND cr.token_used_at IS NOT NULL
-            ORDER BY cr.id DESC
-            LIMIT 1
-          ) AS claim_id
-        FROM specialists s
-        WHERE EXISTS (SELECT 1 FROM repair_guard)
-          AND s.id = 92
-          AND s.name = 'James'
-          AND s.owner_user_id IS NOT NULL
-        LIMIT 1
-      ),
-      restore_admin AS (
-        UPDATE users u
-        SET role = 'admin', specialist_id = NULL
-        FROM target t
-        WHERE u.id::text = t.owner_user_id::text
-        RETURNING u.id
-      ),
-      release_profile AS (
-        UPDATE specialists s
-        SET owner_user_id = NULL
-        FROM target t
-        WHERE s.id = t.specialist_id
-        RETURNING s.id
-      ),
-      reopen_claim AS (
-        UPDATE claim_requests cr
-        SET token_used_at = NULL
-        FROM target t
-        WHERE cr.id = t.claim_id
-        RETURNING cr.id
-      )
-      SELECT
-        (SELECT COUNT(*)::int FROM restore_admin) AS restored_admins,
-        (SELECT COUNT(*)::int FROM release_profile) AS released_profiles,
-        (SELECT COUNT(*)::int FROM reopen_claim) AS reopened_claims
+    const alreadyRepaired = await repairClient.query(`
+      SELECT 1
+      FROM app_one_time_repairs
+      WHERE repair_key = 'accidental_admin_claim_james_20260905_v3'
     `);
-    const repairedClaim = jamesClaimRepair.rows[0];
-    if (Number(repairedClaim?.released_profiles) > 0) {
-      console.log("[STARTUP] Recovered accidental James claim from admin session");
+    if (alreadyRepaired.rowCount === 0) {
+      const target = await repairClient.query(`
+        SELECT id, owner_user_id
+        FROM specialists
+        WHERE id = 92
+          AND name = 'James'
+          AND owner_user_id IS NOT NULL
+        FOR UPDATE
+      `);
+      if (target.rowCount === 1) {
+        const ownerUserId = target.rows[0].owner_user_id;
+        const restoredAdmin = await repairClient.query(`
+          UPDATE users
+          SET role = 'admin', specialist_id = NULL
+          WHERE id::text = $1::text
+          RETURNING id
+        `, [ownerUserId]);
+        const releasedProfile = await repairClient.query(`
+          UPDATE specialists
+          SET owner_user_id = NULL
+          WHERE id = 92
+          RETURNING id
+        `);
+        const reopenedClaim = await repairClient.query(`
+          UPDATE claim_requests
+          SET token_used_at = NULL
+          WHERE id = (
+            SELECT id
+            FROM claim_requests
+            WHERE specialist_id = 92
+              AND token_used_at IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+          )
+          RETURNING id
+        `);
+        if (
+          restoredAdmin.rowCount !== 1
+          || releasedProfile.rowCount !== 1
+          || reopenedClaim.rowCount !== 1
+        ) {
+          throw new Error(
+            `[STARTUP] James claim recovery incomplete: admins=${restoredAdmin.rowCount}, profiles=${releasedProfile.rowCount}, claims=${reopenedClaim.rowCount}`,
+          );
+        }
+        console.log("[STARTUP] Recovered accidental James claim from admin session");
+      }
+      await repairClient.query(`
+        INSERT INTO app_one_time_repairs (repair_key)
+        VALUES ('accidental_admin_claim_james_20260905_v3')
+      `);
     }
-
-    console.log("[STARTUP] Auto-migrations complete");
-  } catch (err) {
-    console.error("[STARTUP] Auto-migration error (non-fatal):", err);
+    await repairClient.query("COMMIT");
+  } catch (repairError) {
+    await repairClient.query("ROLLBACK");
+    console.error("[STARTUP] James claim recovery failed:", repairError);
+  } finally {
+    repairClient.release();
   }
 
   const visitConfirmationSchema = await pool.query(`
