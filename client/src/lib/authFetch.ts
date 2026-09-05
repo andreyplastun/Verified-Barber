@@ -47,6 +47,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
   if (isPublicClaimRead(input, init)) {
     return originalFetch(input, init);
   }
+  const providedHeaders = new Headers(
+    init?.headers ?? (input instanceof Request ? input.headers : undefined)
+  );
+  if (providedHeaders.has("Authorization")) {
+    return originalFetch(input, init);
+  }
 
   let token: string | null = null;
   try {

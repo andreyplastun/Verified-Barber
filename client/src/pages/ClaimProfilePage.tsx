@@ -10,7 +10,7 @@ import { CheckCircle2, AlertCircle, Loader2, UserCheck } from "lucide-react";
 export default function ClaimProfilePage() {
   const [, params] = useRoute("/claim/:token");
   const token = params?.token || "";
-  const { currentUser, user, loading: authLoading } = useAuth();
+  const { currentUser, user, loading: authLoading, refetchUser } = useAuth();
   const [, navigate] = useLocation();
   const [bindSuccess, setBindSuccess] = useState(false);
   const [preparingLogin, setPreparingLogin] = useState(false);
@@ -63,10 +63,14 @@ export default function ClaimProfilePage() {
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       sessionStorage.removeItem("claimAuthenticatedToken");
       setBindSuccess(true);
-      window.location.replace("/specialist-dashboard");
+      await Promise.race([
+        refetchUser(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+      ]);
+      navigate("/specialist-dashboard");
     },
   });
 

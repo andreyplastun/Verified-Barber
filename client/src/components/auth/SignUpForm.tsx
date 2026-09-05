@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 
 interface SignUpFormProps {
-  onSuccess: () => void;
+  onSuccess: (accessToken?: string) => void | Promise<void>;
   onSwitchToLogin: () => void;
   onClose?: () => void;
 }
@@ -42,7 +42,7 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
     setLoading(true);
 
     try {
-      await signUp(email, password);
+      const data = await signUp(email, password);
       try {
         await fetch('/api/legal-consent', {
           method: 'POST',
@@ -50,7 +50,7 @@ export function SignUpForm({ onSuccess, onSwitchToLogin }: SignUpFormProps) {
           body: JSON.stringify({ userId: null, documents: ['terms', 'privacy'] }),
         });
       } catch {}
-      onSuccess();
+      await onSuccess(data.session?.access_token);
     } catch (err: any) {
       setError(err.message || 'Ошибка регистрации');
     } finally {
