@@ -92,7 +92,10 @@ export async function updatePassword(newPassword: string) {
 }
 
 export async function signOut() {
-  await supabase.auth.signOut()
+  await Promise.race([
+    supabase.auth.signOut(),
+    new Promise<void>((resolve) => setTimeout(resolve, 2500)),
+  ])
   const keysToRemove: string[] = [];
   for (let i = 0; i < localStorage.length; i++) {
     const key = localStorage.key(i);

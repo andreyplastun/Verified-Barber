@@ -20,9 +20,7 @@ export default function ClaimProfilePage() {
   const continueToClaimLogin = async () => {
     setPreparingLogin(true);
     try {
-      if (user) {
-        await signOut();
-      }
+      await signOut();
       sessionStorage.setItem("claimReturnUrl", `/claim/${token}`);
       sessionStorage.removeItem("claimAuthenticatedToken");
       window.location.assign(`/login?claim=${encodeURIComponent(token)}`);
@@ -72,7 +70,7 @@ export default function ClaimProfilePage() {
     },
   });
 
-  if (authLoading || isLoading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
