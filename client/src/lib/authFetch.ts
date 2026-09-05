@@ -22,8 +22,29 @@ function isApiRequest(input: RequestInfo | URL): boolean {
   }
 }
 
+function isPublicClaimRead(input: RequestInfo | URL, init?: RequestInit): boolean {
+  const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+  if (method !== "GET") return false;
+  try {
+    const rawUrl = typeof input === "string"
+      ? input
+      : input instanceof URL
+        ? input.href
+        : input.url;
+    const path = new URL(rawUrl, window.location.origin).pathname;
+    return /^\/api\/claim\/[^/]+$/.test(path);
+  } catch {
+    return false;
+  }
+}
+
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
   if (!isApiRequest(input)) {
+    return originalFetch(input, init);
+  }
+  // Claim validation is public. Do not let a stale Supabase session prevent
+  // the claim page itself from loading.
+  if (isPublicClaimRead(input, init)) {
     return originalFetch(input, init);
   }
 
