@@ -25,7 +25,7 @@ export default function ClaimProfilePage() {
       }
       sessionStorage.setItem("claimReturnUrl", `/claim/${token}`);
       sessionStorage.removeItem("claimAuthenticatedToken");
-      window.location.assign("/login");
+      window.location.assign(`/login?claim=${encodeURIComponent(token)}`);
     } finally {
       setPreparingLogin(false);
     }
