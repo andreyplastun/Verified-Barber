@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Briefcase } from 'lucide-react';
 
 interface LoginFormProps {
-  onSuccess: () => void;
+  onSuccess: (accessToken?: string) => void | Promise<void>;
   onSwitchToSignUp: () => void;
   onClose?: () => void;
 }
@@ -41,8 +41,8 @@ export function LoginForm({ onSuccess, onSwitchToSignUp, onClose }: LoginFormPro
     setLoading(true);
 
     try {
-      await signIn(email, password);
-      onSuccess();
+      const data = await signIn(email, password);
+      await onSuccess(data.session?.access_token);
     } catch (err: any) {
       setError(err.message || 'Ошибка входа');
     } finally {

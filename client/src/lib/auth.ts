@@ -12,6 +12,7 @@ export async function signUp(email: string, password: string) {
   if (error) throw error
 
   if (data.user) {
+    let authenticatedSession = data.session;
     // Create user record via backend API
     try {
       const res = await fetch('/api/users', {
@@ -34,14 +35,17 @@ export async function signUp(email: string, password: string) {
 
     // Auto sign-in after signup (bypass email confirmation)
     if (!data.session) {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
       if (signInError) {
         console.warn('Auto sign-in after signup failed:', signInError.message)
+      } else {
+        authenticatedSession = signInData.session;
       }
     }
+    return { ...data, session: authenticatedSession }
   }
 
   return data

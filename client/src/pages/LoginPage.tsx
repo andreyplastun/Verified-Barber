@@ -19,17 +19,29 @@ export default function LoginPage() {
   const isClaimFlow = typeof window !== "undefined"
     && Boolean(claimTokenFromUrl || sessionStorage.getItem("claimReturnUrl"));
 
-  const handleSuccess = async () => {
+  const handleSuccess = async (accessToken?: string) => {
     const claimReturn = claimTokenFromUrl
       ? `/claim/${claimTokenFromUrl}`
       : sessionStorage.getItem("claimReturnUrl");
     if (claimReturn) {
       const claimToken = claimReturn.match(/^\/claim\/([^/]+)$/)?.[1];
-      if (claimToken) {
-        sessionStorage.setItem("claimAuthenticatedToken", claimToken);
+      if (!claimToken || !accessToken) {
+        throw new Error("Не удалось подтвердить вход. Попробуйте войти ещё раз.");
       }
+      const bindResponse = await fetch(`/api/claim/${claimToken}/bind`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${accessToken}`,
+        },
+      });
+      if (!bindResponse.ok) {
+        const error = await bindResponse.json().catch(() => ({}));
+        throw new Error(error.message || "Не удалось привязать профиль");
+      }
+      sessionStorage.removeItem("claimAuthenticatedToken");
       sessionStorage.removeItem("claimReturnUrl");
-      window.location.replace(claimReturn);
+      window.location.replace("/specialist-dashboard");
       return;
     }
     const user = await getCurrentUserWithRole();
