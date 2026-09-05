@@ -33,3 +33,4 @@
 - [WA specialist reminder dispatch](wa-specialist-reminder-dispatch.md) — specialist nudges must use the global channel dispatcher; cold claims keep a stricter cap and lowest priority.
 - [WA visible daily limit](wa-visible-daily-limit.md) — admin “Лимит / день” is the absolute total; priority changes order only and must never add hidden sends.
 - [Railway startup index timeout](railway-startup-index-timeout.md) — awaited concurrent indexes can miss Railway health timeout; bound index waits and gate only required columns.
+- [Claim links require fresh auth](claim-fresh-auth.md) — never bind to an ambient session; require claim-scoped login, reject admins server-side, then reload the dashboard after binding.

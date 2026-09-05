@@ -598,6 +598,82 @@ app.use((req, res, next) => {
     console.error("[STARTUP] Auto-migration error (non-fatal):", err);
   }
 
+  // Keep incident recovery isolated from the legacy migration block above:
+  // an unrelated old migration failure must not prevent this repair.
+  const repairClient = await pool.connect();
+  try {
+    await repairClient.query("BEGIN");
+    await repairClient.query(`
+      CREATE TABLE IF NOT EXISTS app_one_time_repairs (
+        repair_key text PRIMARY KEY,
+        applied_at timestamp NOT NULL DEFAULT NOW()
+      )
+    `);
+    const alreadyRepaired = await repairClient.query(`
+      SELECT 1
+      FROM app_one_time_repairs
+      WHERE repair_key = 'accidental_admin_claim_james_20260905_v3'
+    `);
+    if (alreadyRepaired.rowCount === 0) {
+      const target = await repairClient.query(`
+        SELECT id, owner_user_id
+        FROM specialists
+        WHERE id = 92
+          AND name = 'James'
+          AND owner_user_id IS NOT NULL
+        FOR UPDATE
+      `);
+      if (target.rowCount === 1) {
+        const ownerUserId = target.rows[0].owner_user_id;
+        const restoredAdmin = await repairClient.query(`
+          UPDATE users
+          SET role = 'admin', specialist_id = NULL
+          WHERE id::text = $1::text
+          RETURNING id
+        `, [ownerUserId]);
+        const releasedProfile = await repairClient.query(`
+          UPDATE specialists
+          SET owner_user_id = NULL
+          WHERE id = 92
+          RETURNING id
+        `);
+        const reopenedClaim = await repairClient.query(`
+          UPDATE claim_requests
+          SET token_used_at = NULL
+          WHERE id = (
+            SELECT id
+            FROM claim_requests
+            WHERE specialist_id = 92
+              AND token_used_at IS NOT NULL
+            ORDER BY id DESC
+            LIMIT 1
+          )
+          RETURNING id
+        `);
+        if (
+          restoredAdmin.rowCount !== 1
+          || releasedProfile.rowCount !== 1
+          || reopenedClaim.rowCount !== 1
+        ) {
+          throw new Error(
+            `[STARTUP] James claim recovery incomplete: admins=${restoredAdmin.rowCount}, profiles=${releasedProfile.rowCount}, claims=${reopenedClaim.rowCount}`,
+          );
+        }
+        console.log("[STARTUP] Recovered accidental James claim from admin session");
+      }
+      await repairClient.query(`
+        INSERT INTO app_one_time_repairs (repair_key)
+        VALUES ('accidental_admin_claim_james_20260905_v3')
+      `);
+    }
+    await repairClient.query("COMMIT");
+  } catch (repairError) {
+    await repairClient.query("ROLLBACK");
+    console.error("[STARTUP] James claim recovery failed:", repairError);
+  } finally {
+    repairClient.release();
+  }
+
   const visitConfirmationSchema = await pool.query(`
     SELECT
       (
