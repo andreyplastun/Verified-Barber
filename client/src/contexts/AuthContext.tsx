@@ -49,6 +49,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<any>(null);
   const [user, setUser] = useState<AppUser | null>(null);
   const [isLoadingState, setIsLoading] = useState(true);
+  const AUTH_LOAD_TIMEOUT_MS = 5000;
+
+  const withAuthTimeout = async <T,>(promise: Promise<T>): Promise<T | null> => {
+    return Promise.race([
+      promise,
+      new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), AUTH_LOAD_TIMEOUT_MS),
+      ),
+    ]);
+  };
 
   const fetchUserWithRole = async () => {
     const userWithRole = await getCurrentUserWithRole();
@@ -94,17 +104,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    getCurrentUser().then((u) => {
-      setAuthUser(u);
-      fetchUserWithRole().then(() => setIsLoading(false));
-    });
+    void (async () => {
+      try {
+        const u = await withAuthTimeout(getCurrentUser());
+        setAuthUser(u);
+        if (u) {
+          await withAuthTimeout(fetchUserWithRole());
+        } else {
+          setUser(null);
+        }
+      } catch (error) {
+        console.error("[AUTH] Initial auth load failed:", error);
+        setAuthUser(null);
+        setUser(null);
+      } finally {
+        setIsLoading(false);
+      }
+    })();
 
     const {
       data: { subscription },
     } = onAuthStateChange((u) => {
       setAuthUser(u);
       if (u) {
-        fetchUserWithRole().then(() => setIsLoading(false));
+        setIsLoading(true);
+        void withAuthTimeout(fetchUserWithRole())
+          .catch((error) => {
+            console.error("[AUTH] Auth state refresh failed:", error);
+          })
+          .finally(() => setIsLoading(false));
       } else {
         setUser(null);
         setIsLoading(false);
