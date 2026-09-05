@@ -19,6 +19,10 @@ export default function LoginPage() {
   const handleSuccess = async () => {
     const claimReturn = sessionStorage.getItem("claimReturnUrl");
     if (claimReturn) {
+      const claimToken = claimReturn.match(/^\/claim\/([^/]+)$/)?.[1];
+      if (claimToken) {
+        sessionStorage.setItem("claimAuthenticatedToken", claimToken);
+      }
       sessionStorage.removeItem("claimReturnUrl");
       setLocation(claimReturn);
       return;

@@ -593,6 +593,79 @@ app.use((req, res, next) => {
       console.log(`[STARTUP] Generated slugs for ${specsWithoutSlug.rows.length} specialists`);
     }
 
+    // One-time recovery for the test James claim that was accidentally opened
+    // inside an existing admin session. The guard makes this repair idempotent
+    // and ensures a later legitimate claim is never touched.
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS app_one_time_repairs (
+        repair_key text PRIMARY KEY,
+        applied_at timestamp NOT NULL DEFAULT NOW()
+      )
+    `);
+    const jamesClaimRepair = await pool.query(`
+      WITH repair_guard AS (
+        INSERT INTO app_one_time_repairs (repair_key)
+        VALUES ('accidental_admin_claim_james_20260905')
+        ON CONFLICT (repair_key) DO NOTHING
+        RETURNING repair_key
+      ),
+      target AS (
+        SELECT
+          s.id AS specialist_id,
+          s.owner_user_id,
+          latest_claim.id AS claim_id
+        FROM specialists s
+        JOIN LATERAL (
+          SELECT cr.id
+          FROM claim_requests cr
+          WHERE cr.specialist_id = s.id
+            AND cr.status = 'approved'
+            AND cr.token_used_at IS NOT NULL
+          ORDER BY cr.id DESC
+          LIMIT 1
+        ) latest_claim ON true
+        WHERE EXISTS (SELECT 1 FROM repair_guard)
+          AND s.name = 'James'
+          AND regexp_replace(
+            COALESCE(NULLIF(s.whatsapp, ''), s.phone, ''),
+            '\\D',
+            '',
+            'g'
+          ) = '77771907731'
+          AND s.owner_user_id IS NOT NULL
+        LIMIT 1
+      ),
+      restore_admin AS (
+        UPDATE users u
+        SET role = 'admin', specialist_id = NULL
+        FROM target t
+        WHERE u.id::text = t.owner_user_id::text
+        RETURNING u.id
+      ),
+      release_profile AS (
+        UPDATE specialists s
+        SET owner_user_id = NULL
+        FROM target t
+        WHERE s.id = t.specialist_id
+        RETURNING s.id
+      ),
+      reopen_claim AS (
+        UPDATE claim_requests cr
+        SET token_used_at = NULL
+        FROM target t
+        WHERE cr.id = t.claim_id
+        RETURNING cr.id
+      )
+      SELECT
+        (SELECT COUNT(*)::int FROM restore_admin) AS restored_admins,
+        (SELECT COUNT(*)::int FROM release_profile) AS released_profiles,
+        (SELECT COUNT(*)::int FROM reopen_claim) AS reopened_claims
+    `);
+    const repairedClaim = jamesClaimRepair.rows[0];
+    if (Number(repairedClaim?.released_profiles) > 0) {
+      console.log("[STARTUP] Recovered accidental James claim from admin session");
+    }
+
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
     console.error("[STARTUP] Auto-migration error (non-fatal):", err);

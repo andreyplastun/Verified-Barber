@@ -3697,11 +3697,38 @@ ${magicLink}`;
       if (!specialist) {
         return res.status(404).json({ message: "Специалист не найден" });
       }
+      const claimant = await storage.getUser(authUserId);
+      if (!claimant) {
+        return res.status(401).json({ message: "Необходимо войти в аккаунт" });
+      }
+      if (claimant.role === "admin") {
+        return res.status(403).json({
+          message: "Нельзя привязать профиль специалиста к аккаунту администратора. Войдите в отдельный аккаунт владельца профиля.",
+        });
+      }
+      if (
+        claimant.specialistId != null
+        && Number(claimant.specialistId) !== claim.specialistId
+      ) {
+        return res.status(409).json({
+          message: "К этому аккаунту уже привязан другой профиль специалиста.",
+        });
+      }
       const bindResult = await pool.query(`
-        WITH token_check AS (
+        WITH eligible_user AS (
+          SELECT id
+          FROM users
+          WHERE id::text = $2::text
+            AND role <> 'admin'
+            AND (specialist_id IS NULL OR specialist_id = $3)
+        ),
+        token_check AS (
           UPDATE claim_requests 
           SET token_used_at = NOW() 
-          WHERE id = $1 AND token_used_at IS NULL AND status = 'approved'
+          WHERE id = $1
+            AND token_used_at IS NULL
+            AND status = 'approved'
+            AND EXISTS (SELECT 1 FROM eligible_user)
           RETURNING specialist_id
         ),
         bind_specialist AS (
@@ -3713,11 +3740,12 @@ ${magicLink}`;
         bind_user AS (
           UPDATE users 
           SET role = 'specialist', specialist_id = (SELECT specialist_id FROM token_check)
-          WHERE id::text = $2::text AND (SELECT specialist_id FROM token_check) IS NOT NULL
+          WHERE id IN (SELECT id FROM eligible_user)
+            AND (SELECT specialist_id FROM token_check) IS NOT NULL
           RETURNING id
         )
         SELECT (SELECT specialist_id FROM token_check) as specialist_id
-      `, [claim.id, authUserId]);
+      `, [claim.id, authUserId, claim.specialistId]);
 
       if (!bindResult.rows[0]?.specialist_id) {
         return res.status(400).json({ message: "Ссылка уже использована или профиль привязан" });

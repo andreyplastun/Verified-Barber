@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
+import { signOut } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CheckCircle2, AlertCircle, Loader2, UserCheck } from "lucide-react";
@@ -12,6 +13,23 @@ export default function ClaimProfilePage() {
   const { currentUser, user, loading: authLoading } = useAuth();
   const [, navigate] = useLocation();
   const [bindSuccess, setBindSuccess] = useState(false);
+  const [preparingLogin, setPreparingLogin] = useState(false);
+  const hasFreshClaimAuth = typeof window !== "undefined"
+    && sessionStorage.getItem("claimAuthenticatedToken") === token;
+
+  const continueToClaimLogin = async () => {
+    setPreparingLogin(true);
+    try {
+      if (user) {
+        await signOut();
+      }
+      sessionStorage.setItem("claimReturnUrl", `/claim/${token}`);
+      sessionStorage.removeItem("claimAuthenticatedToken");
+      window.location.assign("/login");
+    } finally {
+      setPreparingLogin(false);
+    }
+  };
 
   const { data: claimData, isLoading, error } = useQuery<{
     claimId: number;
@@ -48,7 +66,9 @@ export default function ClaimProfilePage() {
       return res.json();
     },
     onSuccess: () => {
+      sessionStorage.removeItem("claimAuthenticatedToken");
       setBindSuccess(true);
+      window.location.replace("/specialist-dashboard");
     },
   });
 
@@ -120,21 +140,26 @@ export default function ClaimProfilePage() {
             Вы хотите привязать профиль «{claimData.specialistName}» к своему аккаунту?
           </p>
 
-          {!user ? (
+          {!user || !hasFreshClaimAuth ? (
             <div className="space-y-3 w-full">
               <p className="text-sm text-muted-foreground">
-                Войдите или создайте данные для входа. Имя и телефон повторно
-                вводить не потребуется — они уже сохранены в этом профиле.
+                {user
+                  ? `Сейчас открыт аккаунт ${user.email}. Чтобы профиль не привязался к чужому аккаунту, войдите заново как его владелец или создайте для него отдельные данные входа.`
+                  : "Войдите или создайте данные для входа. Имя и телефон повторно вводить не потребуется — они уже сохранены в этом профиле."}
               </p>
               <Button
                 className="w-full"
-                onClick={() => {
-                  sessionStorage.setItem("claimReturnUrl", `/claim/${token}`);
-                  navigate("/login");
-                }}
+                onClick={continueToClaimLogin}
+                disabled={preparingLogin}
                 data-testid="button-claim-login"
               >
-                Войти / Зарегистрироваться
+                {preparingLogin ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Подготовка...</>
+                ) : user ? (
+                  "Войти как владелец профиля"
+                ) : (
+                  "Войти / Зарегистрироваться"
+                )}
               </Button>
             </div>
           ) : (
