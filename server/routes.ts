@@ -3583,14 +3583,30 @@ ${magicLink}`;
       if (!existing) {
         return res.status(404).json({ message: "Запрос не найден" });
       }
-      if (existing.status !== "pending") {
-        return res.status(400).json({ message: "Запрос уже обработан" });
-      }
-
       const specialist = await storage.getSpecialist(existing.specialistId);
       if (!specialist) {
         return res.status(404).json({ message: "Специалист не найден" });
       }
+      if (existing.status !== "pending") {
+        if (
+          existing.status === "approved"
+          && existing.claimToken
+          && !existing.tokenUsedAt
+          && (!existing.tokenExpiresAt || new Date(existing.tokenExpiresAt) > new Date())
+        ) {
+          const baseUrl = process.env.NODE_ENV === "production"
+            ? "https://rateus.kz"
+            : `${req.protocol}://${req.get("host")}`;
+          const claimLink = `${baseUrl}/claim/${existing.claimToken}`;
+          return res.json({
+            claim: existing,
+            claimLink,
+            whatsappText: `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на WHO одобрен. Перейдите по ссылке для привязки: ${claimLink}`,
+          });
+        }
+        return res.status(400).json({ message: "Запрос уже обработан" });
+      }
+
       const approveAllClaims = await storage.getClaimRequests();
       const hasCompletedClaimForApprove = approveAllClaims.some(
         c => c.specialistId === existing.specialistId && c.status === "approved" && c.tokenUsedAt
