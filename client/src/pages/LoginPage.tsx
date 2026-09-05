@@ -13,18 +13,23 @@ type Mode = "login" | "choose-role" | "client-signup";
 export default function LoginPage() {
   const [, setLocation] = useLocation();
   const [mode, setMode] = useState<Mode>("login");
+  const claimTokenFromUrl = typeof window !== "undefined"
+    ? new URLSearchParams(window.location.search).get("claim")
+    : null;
   const isClaimFlow = typeof window !== "undefined"
-    && Boolean(sessionStorage.getItem("claimReturnUrl"));
+    && Boolean(claimTokenFromUrl || sessionStorage.getItem("claimReturnUrl"));
 
   const handleSuccess = async () => {
-    const claimReturn = sessionStorage.getItem("claimReturnUrl");
+    const claimReturn = claimTokenFromUrl
+      ? `/claim/${claimTokenFromUrl}`
+      : sessionStorage.getItem("claimReturnUrl");
     if (claimReturn) {
       const claimToken = claimReturn.match(/^\/claim\/([^/]+)$/)?.[1];
       if (claimToken) {
         sessionStorage.setItem("claimAuthenticatedToken", claimToken);
       }
       sessionStorage.removeItem("claimReturnUrl");
-      setLocation(claimReturn);
+      window.location.replace(claimReturn);
       return;
     }
     const user = await getCurrentUserWithRole();
