@@ -605,7 +605,7 @@ app.use((req, res, next) => {
     const jamesClaimRepair = await pool.query(`
       WITH repair_guard AS (
         INSERT INTO app_one_time_repairs (repair_key)
-        VALUES ('accidental_admin_claim_james_20260905')
+        VALUES ('accidental_admin_claim_james_20260905_v2')
         ON CONFLICT (repair_key) DO NOTHING
         RETURNING repair_key
       ),
@@ -613,25 +613,18 @@ app.use((req, res, next) => {
         SELECT
           s.id AS specialist_id,
           s.owner_user_id,
-          latest_claim.id AS claim_id
+          (
+            SELECT cr.id
+            FROM claim_requests cr
+            WHERE cr.specialist_id = s.id
+              AND cr.token_used_at IS NOT NULL
+            ORDER BY cr.id DESC
+            LIMIT 1
+          ) AS claim_id
         FROM specialists s
-        JOIN LATERAL (
-          SELECT cr.id
-          FROM claim_requests cr
-          WHERE cr.specialist_id = s.id
-            AND cr.status = 'approved'
-            AND cr.token_used_at IS NOT NULL
-          ORDER BY cr.id DESC
-          LIMIT 1
-        ) latest_claim ON true
         WHERE EXISTS (SELECT 1 FROM repair_guard)
+          AND s.id = 92
           AND s.name = 'James'
-          AND regexp_replace(
-            COALESCE(NULLIF(s.whatsapp, ''), s.phone, ''),
-            '\\D',
-            '',
-            'g'
-          ) = '77771907731'
           AND s.owner_user_id IS NOT NULL
         LIMIT 1
       ),
