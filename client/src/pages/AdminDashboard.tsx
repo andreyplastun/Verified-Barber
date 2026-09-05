@@ -239,6 +239,7 @@ export default function AdminDashboard() {
       });
     },
     onError: (err: Error) => {
+      refetchClaims();
       toast({ title: "Ошибка", description: err.message, variant: "destructive" });
     },
   });
