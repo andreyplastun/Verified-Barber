@@ -4,6 +4,8 @@ export interface AssistBotMessage {
   chatId: string | null;
   text: string;
   phone: string | null;
+  recipientPhone: string | null;
+  instanceId: string | null;
   direction: Direction;
 }
 const object = (v: unknown): Record<string, unknown> | null =>
@@ -39,11 +41,17 @@ export function parseAssistBotPayload(input: unknown) {
     const explicit: Direction = row.direction === "incoming" || row.direction === "outgoing" ? row.direction : "unknown";
     const direction = fromMeDirection !== "unknown" && explicit !== "unknown" && fromMeDirection !== explicit
       ? "unknown" : fromMeDirection !== "unknown" ? fromMeDirection : explicit;
+    const recipientPhone = personalPhone(
+      row.recipientPhone || row.instancePhone || row.accountPhone || row.to ||
+      root?.recipientPhone || root?.instancePhone || root?.accountPhone,
+    );
     messages.push({
       id: nonEmpty(row.id),
       chatId,
       text,
       phone: personalPhone(legacy ? row.phone : chatId),
+      recipientPhone,
+      instanceId: nonEmpty(row.instanceId || row.accountId || root?.instanceId || root?.accountId),
       direction: legacy ? "incoming" : direction,
     });
   }

@@ -4,11 +4,17 @@ import { parseAssistBotPayload, summarizeAssistBotPayload } from "./assistbot-pa
 
 const message = { id: "test-id", chatId: "77000000000@c.us", type: "chat", body: "Test", fromMe: false };
 test("parses actual batch envelope and both directions", () => {
-  const result = parseAssistBotPayload({ messages: [message, { ...message, fromMe: true }] });
+  const result = parseAssistBotPayload({
+    accountPhone: "77771112233",
+    instanceId: "connected-instance",
+    messages: [message, { ...message, fromMe: true }],
+  });
   assert.equal(result.messages[0].phone, "77000000000");
   assert.equal(result.messages[0].text, "Test");
   assert.equal(result.messages[0].direction, "incoming");
   assert.equal(result.messages[1].direction, "outgoing");
+  assert.equal(result.messages[0].recipientPhone, "77771112233");
+  assert.equal(result.messages[0].instanceId, "connected-instance");
 });
 test("does not guess direction or accept groups and media", () => {
   assert.equal(parseAssistBotPayload({ messages: [{ ...message, fromMe: undefined }] }).messages[0].direction, "unknown");

@@ -5,6 +5,7 @@ import {
   getVisitConfirmationExpiry,
   getVisitConfirmationSendAt,
 } from "./visit-confirmation-policy";
+import { hashPhoneToLockId } from "./wa-phone-lock";
 
 const REVIEW_BASE_URL = "https://www.rateus.kz";
 const FALLBACK_DELAY_HOURS = 3;
@@ -12,6 +13,8 @@ const SCAN_LOCK_ID = 0x5643464d;
 const SCAN_BATCH_SIZE = 20;
 const SPECIALIST_CHAT_CLASSIFIER_VERSION = "strict-v1";
 const SPECIALIST_CHAT_LOOKBACK_HOURS = 24;
+const ENQUIRY_CODE_RE = /\bRU-[A-Z2-9]{12}\b/;
+const ENQUIRY_TIMER_MS = 24 * 60 * 60 * 1000;
 
 // Deliberately closed pilot: both the incoming WhatsApp number and exact
 // specialist name must match. Never broaden this list from ordinary data.
@@ -40,6 +43,251 @@ export type SpecialistChatConfirmationResult = {
   reason: string;
   bookingId?: number;
 };
+
+export type WhatsappEnquiryResult = {
+  decision: "started" | "duplicate" | "ignored" | "unavailable";
+  reason: string;
+  bookingId?: number;
+};
+
+function enquiryCodeHash(code: string): string {
+  return crypto.createHash("sha256").update(code).digest("hex");
+}
+
+function canonicalPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.length === 11 && digits.startsWith("8") ? `7${digits.slice(1)}` : digits;
+}
+
+export function isAssistBotRecipientMatch(
+  configuredPhone: string,
+  specialistPhone: string,
+  observedCallbackPhone: string | null,
+): boolean {
+  const configured = canonicalPhone(configuredPhone);
+  if (!/^\d{10,15}$/.test(configured) || canonicalPhone(specialistPhone) !== configured) {
+    return false;
+  }
+  return !observedCallbackPhone || canonicalPhone(observedCallbackPhone) === configured;
+}
+
+export function isSamePostponedDate(value: unknown, appointmentTime: Date): boolean {
+  if (!value) return false;
+  const persisted = new Date(value as string | number | Date);
+  return !Number.isNaN(persisted.getTime()) &&
+    persisted.getTime() === appointmentTime.getTime();
+}
+
+export function extractWhatsappEnquiryCode(text: string): string | null {
+  return text.toUpperCase().match(ENQUIRY_CODE_RE)?.[0] || null;
+}
+
+export function isMissingWhatsappEnquirySchema(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code;
+  return code === "42P01" || code === "42703";
+}
+
+export async function issueWhatsappEnquiryCode(
+  specialistId: number,
+  requesterHash: string,
+): Promise<string> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // Both dimensions are locked in deterministic order, so concurrent issue
+    // requests cannot race past either persisted hourly limit.
+    await client.query(
+      `SELECT pg_advisory_xact_lock(k)
+       FROM (
+         VALUES
+           (hashtextextended('requester:' || $1, 0)),
+           (hashtextextended('specialist:' || $2::text, 0))
+       ) locks(k)
+       ORDER BY k`,
+      [requesterHash, specialistId],
+    );
+    const recent = await client.query(
+      `SELECT
+         COUNT(*) FILTER (WHERE requester_hash = $1)::int AS requester_count,
+         COUNT(*) FILTER (WHERE specialist_id = $2)::int AS specialist_count
+       FROM whatsapp_enquiries
+       WHERE issued_at > NOW() - INTERVAL '1 hour'`,
+      [requesterHash, specialistId],
+    );
+    if (Number(recent.rows[0]?.requester_count || 0) >= 10 ||
+        Number(recent.rows[0]?.specialist_count || 0) >= 30) {
+      throw Object.assign(new Error("rate_limited"), { statusCode: 429 });
+    }
+
+    const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    const bytes = crypto.randomBytes(12);
+    let suffix = "";
+    for (let i = 0; i < 12; i++) suffix += alphabet[bytes[i] % alphabet.length];
+    const code = `RU-${suffix}`;
+    await client.query(
+      `INSERT INTO whatsapp_enquiries
+         (specialist_id, code_hash, requester_hash, code_expires_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '2 hours')`,
+      [specialistId, enquiryCodeHash(code), requesterHash],
+    );
+    await client.query("COMMIT");
+    return code;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * A click only issues a code. This authenticated incoming-message handler is
+ * the sole place that starts the persisted timer and creates its dispatcher job.
+ */
+export async function bindWhatsappEnquiryFromIncoming(
+  phone: string,
+  text: string,
+  incomingMessageId: string | null,
+  configuredRecipientPhone: string,
+  observedRecipientPhone: string | null,
+  configuredInstanceId: string,
+  observedInstanceId: string | null,
+): Promise<WhatsappEnquiryResult> {
+  const code = extractWhatsappEnquiryCode(text);
+  if (!code) return { decision: "ignored", reason: "no_enquiry_code" };
+  const cleanPhone = canonicalPhone(phone);
+  const configuredRecipient = canonicalPhone(configuredRecipientPhone);
+  const observedRecipient = observedRecipientPhone ? canonicalPhone(observedRecipientPhone) : null;
+  if (!/^\d{10,15}$/.test(cleanPhone)) return { decision: "ignored", reason: "invalid_sender" };
+  if (!/^\d{10,15}$/.test(configuredRecipient)) {
+    return { decision: "unavailable", reason: "recipient_not_configured" };
+  }
+  if (observedRecipient && observedRecipient !== configuredRecipient) {
+    return { decision: "ignored", reason: "callback_recipient_mismatch" };
+  }
+  if (configuredInstanceId && observedInstanceId &&
+      configuredInstanceId !== observedInstanceId) {
+    return { decision: "ignored", reason: "callback_instance_mismatch" };
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const found = await client.query(
+      `SELECT e.*, s.name AS specialist_name,
+              regexp_replace(COALESCE(NULLIF(s.whatsapp, ''), s.phone, ''), '\\D', '', 'g')
+                AS specialist_recipient
+       FROM whatsapp_enquiries e
+       JOIN specialists s ON s.id = e.specialist_id
+       WHERE e.code_hash = $1
+       FOR UPDATE OF e`,
+      [enquiryCodeHash(code)],
+    );
+    const enquiry = found.rows[0];
+    if (!enquiry) {
+      await client.query("ROLLBACK");
+      return { decision: "ignored", reason: "unknown_code" };
+    }
+    if (!isAssistBotRecipientMatch(
+      configuredRecipient,
+      enquiry.specialist_recipient,
+      observedRecipient,
+    )) {
+      await client.query("ROLLBACK");
+      return { decision: "ignored", reason: "specialist_recipient_mismatch" };
+    }
+    if (enquiry.status === "bound") {
+      await client.query("COMMIT");
+      return {
+        decision: enquiry.sender_phone === cleanPhone ? "duplicate" : "ignored",
+        reason: enquiry.sender_phone === cleanPhone ? "already_started" : "sender_mismatch",
+        bookingId: enquiry.sender_phone === cleanPhone ? Number(enquiry.booking_id) : undefined,
+      };
+    }
+    if (enquiry.status !== "issued" || new Date(enquiry.code_expires_at).getTime() <= Date.now()) {
+      if (enquiry.status === "issued") {
+        await client.query("UPDATE whatsapp_enquiries SET status = 'expired' WHERE id = $1", [enquiry.id]);
+      }
+      await client.query("COMMIT");
+      return { decision: "ignored", reason: "code_expired" };
+    }
+    await client.query(
+      "SELECT pg_advisory_xact_lock(hashtextextended('enquiry-sender:' || $1, 0))",
+      [cleanPhone],
+    );
+    const senderRate = await client.query(
+      `SELECT COUNT(*)::int AS count
+       FROM whatsapp_enquiries
+       WHERE sender_phone = $1 AND timer_started_at > NOW() - INTERVAL '24 hours'`,
+      [cleanPhone],
+    );
+    if (Number(senderRate.rows[0]?.count || 0) >= 5) {
+      await client.query("ROLLBACK");
+      return { decision: "ignored", reason: "sender_rate_limited" };
+    }
+
+    const now = new Date();
+    const dueAt = getVisitConfirmationSendAt(new Date(now.getTime() + ENQUIRY_TIMER_MS));
+    const expiresAt = getVisitConfirmationExpiry(dueAt);
+    const confirmationToken = crypto.randomBytes(24).toString("base64url");
+    const bookingResult = await client.query(
+      `INSERT INTO bookings (
+         specialist_id, customer_name, customer_phone, normalized_phone,
+         appointment_time, status, booking_source, invalid_phone,
+         visit_confirmation_eligible, visit_confirmation_token,
+         visit_confirmation_status, visit_confirmation_expires_at
+       ) VALUES ($1, '', $2, $2, $3, 'ready_to_complete', 'client_app', false,
+                 true, $4, 'pending', $5)
+       RETURNING id`,
+      [enquiry.specialist_id, cleanPhone, now, confirmationToken, expiresAt],
+    );
+    const bookingId = Number(bookingResult.rows[0].id);
+    const link = confirmationUrl(confirmationToken);
+    const messageText = buildVisitConfirmationMessage(
+      enquiry.specialist_name,
+      now,
+      dueAt,
+      link,
+    );
+    await client.query(
+      `INSERT INTO wa_messages (
+         booking_id, specialist_id, customer_phone, customer_name,
+         specialist_name, review_link, message_type, status, template_index,
+         message_text, attempts, max_attempts, scheduled_at, deadline,
+         dedupe_key, priority
+       ) VALUES ($1, $2, $3, '', $4, $5, 'visit_confirmation', 'queued', 0,
+                 $6, 0, 3, $7, $8, $9, 0)`,
+      [
+        bookingId,
+        enquiry.specialist_id,
+        cleanPhone,
+        enquiry.specialist_name,
+        link,
+        messageText,
+        dueAt,
+        expiresAt,
+        `whatsapp_enquiry_confirmation_${enquiry.id}`,
+      ],
+    );
+    await client.query(
+      `UPDATE whatsapp_enquiries
+       SET status = 'bound', sender_phone = $2, incoming_message_id = $3,
+           booking_id = $4, timer_started_at = $5, confirmation_due_at = $6
+       WHERE id = $1 AND status = 'issued'`,
+      [enquiry.id, cleanPhone, incomingMessageId, bookingId, now, dueAt],
+    );
+    await client.query("COMMIT");
+    return { decision: "started", reason: "authenticated_message_bound", bookingId };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    if (isMissingWhatsappEnquirySchema(error)) {
+      return { decision: "unavailable", reason: "schema_missing" };
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 export function classifySpecialistVisitConfirmation(
   text: string,
@@ -464,6 +712,19 @@ export async function answerVisitConfirmation(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const identity = await client.query(
+      `SELECT COALESCE(NULLIF(normalized_phone, ''), customer_phone, '') AS phone
+       FROM bookings WHERE visit_confirmation_token = $1`,
+      [token],
+    );
+    if (!identity.rows[0]) {
+      await client.query("ROLLBACK");
+      throw Object.assign(new Error("Ссылка подтверждения не найдена"), { statusCode: 404 });
+    }
+    const lockPhone = String(identity.rows[0].phone || "").replace(/\D/g, "");
+    if (lockPhone) {
+      await client.query("SELECT pg_advisory_xact_lock($1)", [hashPhoneToLockId(lockPhone)]);
+    }
     const result = await client.query(
       `SELECT id, specialist_id, status, visit_confirmation_status, visit_confirmation_expires_at
        FROM bookings
@@ -516,6 +777,15 @@ export async function answerVisitConfirmation(
     }
 
     if (answer === "no") {
+      const inFlight = await client.query(
+        `SELECT 1 FROM wa_messages
+         WHERE booking_id = $1 AND message_type = 'visit_confirmation'
+           AND status = 'sending' LIMIT 1`,
+        [booking.id],
+      );
+      if (inFlight.rows.length > 0) {
+        throw Object.assign(new Error("confirmation_send_in_progress"), { statusCode: 409 });
+      }
       await client.query(
         `UPDATE bookings
          SET status = 'cancelled',
@@ -525,6 +795,14 @@ export async function answerVisitConfirmation(
              review_eligibility = false,
              review_eligibility_reason = 'client_declined_visit'
          WHERE id = $1`,
+        [booking.id],
+      );
+      await client.query(
+        `UPDATE wa_messages
+         SET status = 'skipped', skip_reason = 'client_declined_visit'
+         WHERE booking_id = $1
+           AND message_type = 'visit_confirmation'
+           AND status = 'queued'`,
         [booking.id],
       );
       await client.query("COMMIT");
@@ -553,6 +831,112 @@ export async function answerVisitConfirmation(
     try {
       await client.query("ROLLBACK");
     } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function postponeVisitConfirmation(
+  token: string,
+  appointmentTime: Date,
+): Promise<{ bookingId: number; changed: boolean; alreadyPostponed?: boolean }> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const identity = await client.query(
+      `SELECT COALESCE(NULLIF(normalized_phone, ''), customer_phone, '') AS phone
+       FROM bookings WHERE visit_confirmation_token = $1`,
+      [token],
+    );
+    if (!identity.rows[0]) {
+      await client.query("ROLLBACK");
+      throw Object.assign(new Error("Ссылка подтверждения не найдена"), { statusCode: 404 });
+    }
+    const lockPhone = String(identity.rows[0].phone || "").replace(/\D/g, "");
+    if (lockPhone) {
+      await client.query("SELECT pg_advisory_xact_lock($1)", [hashPhoneToLockId(lockPhone)]);
+    }
+    const result = await client.query(
+      `SELECT b.id, b.specialist_id, b.customer_name, b.customer_phone,
+              b.normalized_phone, b.visit_confirmation_status,
+               b.visit_confirmation_postponed_for,
+              s.name AS specialist_name
+       FROM bookings b
+       JOIN specialists s ON s.id = b.specialist_id
+       WHERE b.visit_confirmation_token = $1
+       FOR UPDATE OF b`,
+      [token],
+    );
+    const booking = result.rows[0];
+    if (!booking) {
+      await client.query("ROLLBACK");
+      throw Object.assign(new Error("Ссылка подтверждения не найдена"), { statusCode: 404 });
+    }
+    if (booking.visit_confirmation_status !== "pending") {
+      await client.query("COMMIT");
+      return { bookingId: Number(booking.id), changed: false };
+    }
+    if (isSamePostponedDate(booking.visit_confirmation_postponed_for, appointmentTime)) {
+      await client.query("COMMIT");
+      return { bookingId: Number(booking.id), changed: false, alreadyPostponed: true };
+    }
+    const inFlight = await client.query(
+      `SELECT 1 FROM wa_messages
+       WHERE booking_id = $1 AND message_type = 'visit_confirmation'
+         AND status = 'sending' LIMIT 1`,
+      [booking.id],
+    );
+    if (inFlight.rows.length > 0) {
+      throw Object.assign(new Error("confirmation_send_in_progress"), { statusCode: 409 });
+    }
+
+    const sendAt = getVisitConfirmationSendAt(
+      new Date(appointmentTime.getTime() + ENQUIRY_TIMER_MS),
+    );
+    const expiresAt = getVisitConfirmationExpiry(sendAt);
+    const phone = String(booking.normalized_phone || booking.customer_phone || "").replace(/\D/g, "");
+    const link = confirmationUrl(token);
+    await client.query(
+      `UPDATE wa_messages
+       SET status = 'skipped', skip_reason = 'visit_postponed'
+       WHERE booking_id = $1 AND message_type = 'visit_confirmation' AND status = 'queued'`,
+      [booking.id],
+    );
+    await client.query(
+      `UPDATE bookings
+       SET appointment_time = $2, visit_confirmation_expires_at = $3,
+            visit_confirmation_sent_at = NULL,
+            visit_confirmation_postponed_at = NOW(),
+            visit_confirmation_postponed_for = $2
+       WHERE id = $1`,
+      [booking.id, appointmentTime, expiresAt],
+    );
+    await client.query(
+      `INSERT INTO wa_messages (
+         booking_id, specialist_id, customer_phone, customer_name,
+         specialist_name, review_link, message_type, status, template_index,
+         message_text, attempts, max_attempts, scheduled_at, deadline,
+         dedupe_key, priority
+       ) VALUES ($1, $2, $3, $4, $5, $6, 'visit_confirmation', 'queued', 0,
+                 $7, 0, 3, $8, $9, $10, 0)`,
+      [
+        booking.id,
+        booking.specialist_id,
+        phone,
+        booking.customer_name || "",
+        booking.specialist_name,
+        link,
+        buildVisitConfirmationMessage(booking.specialist_name, appointmentTime, sendAt, link),
+        sendAt,
+        expiresAt,
+        `visit_confirmation_postponed_${booking.id}_${appointmentTime.getTime()}`,
+      ],
+    );
+    await client.query("COMMIT");
+    return { bookingId: Number(booking.id), changed: true };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
     client.release();

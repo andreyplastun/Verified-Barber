@@ -18,9 +18,9 @@ interface BookingButtonProps {
 
 const WA_TEXT = "Здравствуйте! Нашёл(а) ваш профиль на Rateus. Хочу записаться.";
 
-function buildWaLink(phone: string): string {
+function buildWaLink(phone: string, text = WA_TEXT): string {
   const clean = phone.replace(/\D/g, "");
-  return `https://wa.me/${clean}?text=${encodeURIComponent(WA_TEXT)}`;
+  return `https://wa.me/${clean}?text=${encodeURIComponent(text)}`;
 }
 
 function buildInstagramLink(raw: string): string {
@@ -79,9 +79,34 @@ export function BookingButton({ specialist, variant = "default", className = "" 
   const { href, label, channel, Icon } = resolved;
   const testId = `button-book-${channel}-${specialist.id}`;
 
-  const handleClick = (e: React.MouseEvent) => {
+  const handleClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
     trackBookingClick(specialist.id, channel);
+    if (variant === "profile" && channel === "whatsapp") {
+      e.preventDefault();
+      const popup = window.open("about:blank", "_blank");
+      try {
+        const response = await fetch(`/api/specialists/${specialist.id}/whatsapp-enquiry`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok || typeof body.text !== "string") {
+          throw new Error(body.message || "Не удалось подготовить сообщение");
+        }
+        // Keep the specialist's configured destination. The opaque code changes
+        // only the prefilled message; Rateus never substitutes its own number.
+        const destination = (specialist.whatsapp || "").trim() || (specialist.phone || "").trim();
+        const whatsappUrl = buildWaLink(destination, body.text);
+        if (popup) popup.location.href = whatsappUrl;
+        else window.location.href = whatsappUrl;
+      } catch (error) {
+        // The secure flow is feature-gated to the WhatsApp account actually
+        // connected to AssistBot. Other specialists keep the ordinary CTA.
+        if (popup) popup.location.href = href;
+        else window.location.href = href;
+      }
+    }
   };
   const stopPointer = (e: React.PointerEvent) => e.stopPropagation();
 
@@ -149,7 +174,7 @@ export function BookingButton({ specialist, variant = "default", className = "" 
     return (
       <div className={`mb-4 flex justify-center ${className}`}>
         <a
-          href={href}
+          href={channel === "whatsapp" ? "#" : href}
           target={channel === "phone" ? undefined : "_blank"}
           rel="noopener noreferrer"
           onClick={handleClick}

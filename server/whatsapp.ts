@@ -17,6 +17,7 @@ import {
 import type { PoolClient } from "pg";
 import { getVisitConfirmationSendAt } from "./visit-confirmation-policy";
 import { confirmVisitFromSpecialistChat } from "./visit-confirmations";
+import { hashPhoneToLockId } from "./wa-phone-lock";
 import { appConfig, waMessages, magicLinks, bookings, specialistReminders } from "@shared/schema";
 
 const IS_PRODUCTION = process.env.REPL_SLUG === 'rateus' || process.env.RAILWAY_ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production';
@@ -46,14 +47,6 @@ async function releasePhoneLock(phone: string, client: PoolClient): Promise<void
   } finally {
     client.release();
   }
-}
-
-function hashPhoneToLockId(phone: string): number {
-  let hash = 0x57410000;
-  for (let i = 0; i < phone.length; i++) {
-    hash = ((hash << 5) - hash + phone.charCodeAt(i)) | 0;
-  }
-  return hash;
 }
 
 async function phoneCooldownCheck(phone: string, excludeMsgId?: number): Promise<{ inCooldown: boolean; lastSentAt?: Date; reason?: string }> {
@@ -1248,6 +1241,7 @@ async function deduplicateQueueByPhone(): Promise<number> {
       FROM wa_messages wm
       JOIN bookings b ON b.id = wm.booking_id
       WHERE wm.status = 'queued'
+        AND wm.message_type <> 'visit_confirmation'
     )
     SELECT id, booking_id, customer_phone, message_type FROM ranked WHERE rn > 1
   `);

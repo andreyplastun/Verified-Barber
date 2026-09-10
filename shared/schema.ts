@@ -178,6 +178,8 @@ export const bookings = pgTable("bookings", {
   visitConfirmationSentAt: timestamp("visit_confirmation_sent_at"),
   visitConfirmationRespondedAt: timestamp("visit_confirmation_responded_at"),
   visitConfirmationExpiresAt: timestamp("visit_confirmation_expires_at"),
+  visitConfirmationPostponedAt: timestamp("visit_confirmation_postponed_at"),
+  visitConfirmationPostponedFor: timestamp("visit_confirmation_postponed_for"),
   price: integer("price"),
   createdAt: timestamp("created_at").defaultNow(),
 });
@@ -503,6 +505,24 @@ export const waOptOuts = pgTable("wa_opt_outs", {
   id: serial("id").primaryKey(),
   phone: text("phone").notNull().unique(),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Codes embedded in client-initiated WhatsApp enquiries. The clear-text code is
+// never stored; an authenticated incoming message atomically binds its sender.
+export const whatsappEnquiries = pgTable("whatsapp_enquiries", {
+  id: serial("id").primaryKey(),
+  specialistId: integer("specialist_id").notNull(),
+  codeHash: text("code_hash").notNull().unique(),
+  requesterHash: text("requester_hash").notNull(),
+  status: text("status", { enum: ["issued", "bound", "expired", "cancelled"] }).default("issued").notNull(),
+  senderPhone: text("sender_phone"),
+  incomingMessageId: text("incoming_message_id"),
+  bookingId: integer("booking_id"),
+  timerStartedAt: timestamp("timer_started_at"),
+  confirmationDueAt: timestamp("confirmation_due_at"),
+  issuedAt: timestamp("issued_at").defaultNow().notNull(),
+  codeExpiresAt: timestamp("code_expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const specialistVisitConfirmationDecisions = pgTable("specialist_visit_confirmation_decisions", {

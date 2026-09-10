@@ -10,20 +10,12 @@ const DB_USER = process.env.DB_USER;
 const DB_PASSWORD = process.env.DB_PASSWORD;
 const DB_NAME = process.env.DB_NAME;
 
-console.log(`[DB] Variables check: HOST=${!!DB_HOST}, PORT=${!!DB_PORT}, USER=${!!DB_USER}, PASS=${!!DB_PASSWORD}, NAME=${!!DB_NAME}`);
-
-const SUPABASE_HOST = "aws-1-ap-southeast-1.pooler.supabase.com";
-const SUPABASE_PORT = 5432;
-const SUPABASE_USER = "postgres.btltvgmurloofyfzmeue";
-const SUPABASE_DB = "postgres";
-const SUPABASE_PASSWORD = "MyNewPass2026abd";
+console.log(`[DB] Configuration source: ${DB_HOST ? "DB_*" : process.env.DATABASE_URL ? "DATABASE_URL" : "missing"}`);
 
 let poolConfig: pg.PoolConfig;
 
 if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
   console.log(`[DB] Using individual DB_* variables`);
-  console.log(`[DB] Host: ${DB_HOST}, Port: ${DB_PORT || 5432}, User: ${DB_USER}, DB: ${DB_NAME}`);
-  console.log(`[DB] Password length: ${DB_PASSWORD.length}, first 4 chars: ${DB_PASSWORD.substring(0, 4)}`);
   
   poolConfig = {
     host: DB_HOST,
@@ -41,7 +33,6 @@ if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
 } else if (process.env.DATABASE_URL) {
   const rawUrl = process.env.DATABASE_URL;
   console.log(`[DB] Using DATABASE_URL`);
-  console.log(`[DB] Raw URL length: ${rawUrl.length}, first 60 chars: ${rawUrl.substring(0, 60)}...`);
   
   try {
     const url = new URL(rawUrl);
@@ -50,9 +41,6 @@ if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
     const database = url.pathname.slice(1);
     const user = decodeURIComponent(url.username);
     const password = decodeURIComponent(url.password);
-    
-    console.log(`[DB] Parsed - Host: ${host}, Port: ${port}, User: ${user}, DB: ${database}`);
-    console.log(`[DB] Password length: ${password.length}, first 4 chars: ${password.substring(0, 4)}`);
     
     poolConfig = {
       host,
@@ -78,22 +66,7 @@ if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
     };
   }
 } else {
-  console.log(`[DB] No DATABASE_URL or DB_* vars found, using hardcoded Supabase connection (Railway fallback)`);
-  console.log(`[DB] Host: ${SUPABASE_HOST}, Port: ${SUPABASE_PORT}, User: ${SUPABASE_USER}, DB: ${SUPABASE_DB}`);
-  
-  poolConfig = {
-    host: SUPABASE_HOST,
-    port: SUPABASE_PORT,
-    database: SUPABASE_DB,
-    user: SUPABASE_USER,
-    password: SUPABASE_PASSWORD,
-    max: 3,
-    min: 0,
-    idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 10000,
-    allowExitOnIdle: true,
-    ssl: { rejectUnauthorized: false },
-  };
+  throw new Error("Database configuration is required; no hardcoded production fallback is allowed");
 }
 
 export const pool = new Pool(poolConfig);

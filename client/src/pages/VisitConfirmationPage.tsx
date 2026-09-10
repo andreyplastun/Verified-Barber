@@ -14,7 +14,10 @@ import {
   X,
 } from "lucide-react";
 
-type ConfirmationStatus = "pending" | "confirmed" | "declined" | "expired" | "superseded";
+type ConfirmationStatus = "pending" | "confirmed" | "declined" | "expired" | "superseded" | "postponed";
+type ConfirmationAnswer =
+  | { answer: "yes" | "no" }
+  | { answer: "postponed"; appointmentDate: string };
 
 type Confirmation = {
   status: ConfirmationStatus;
@@ -37,11 +40,11 @@ async function getConfirmation(token: string): Promise<Confirmation> {
   return body;
 }
 
-async function respondToConfirmation(token: string, answer: "yes" | "no"): Promise<Confirmation> {
+async function respondToConfirmation(token: string, answer: ConfirmationAnswer): Promise<Confirmation> {
   const response = await fetch(`/api/visit-confirmations/${encodeURIComponent(token)}/respond`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ answer }),
+    body: JSON.stringify(answer),
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -139,6 +142,8 @@ export default function VisitConfirmationPage() {
   const [, setLocation] = useLocation();
   const token = params?.token || "";
   const [submitted, setSubmitted] = useState<Confirmation | null>(null);
+  const [showPostpone, setShowPostpone] = useState(false);
+  const [appointmentDate, setAppointmentDate] = useState("");
 
   const confirmationQuery = useQuery<Confirmation, ApiError>({
     queryKey: ["/api/visit-confirmations", token],
@@ -147,10 +152,10 @@ export default function VisitConfirmationPage() {
     retry: false,
   });
 
-  const respondMutation = useMutation<Confirmation, ApiError, "yes" | "no">({
+  const respondMutation = useMutation<Confirmation, ApiError, ConfirmationAnswer>({
     mutationFn: (answer) => respondToConfirmation(token, answer),
     onSuccess: (result, answer) => {
-      if (answer === "yes" && result.reviewUrl) {
+      if (answer.answer === "yes" && result.reviewUrl) {
         window.location.assign(result.reviewUrl);
         return;
       }
@@ -257,7 +262,19 @@ export default function VisitConfirmationPage() {
     );
   }
 
+  if (confirmation.status === "postponed") {
+    return (
+      <TerminalScreen
+        tone="success"
+        icon={<CalendarDays className="h-7 w-7" />}
+        title="Новая дата сохранена"
+        text="После новой даты визита мы отправим ещё одно подтверждение в WhatsApp."
+      />
+    );
+  }
+
   const isResponding = respondMutation.isPending;
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return (
     <ScreenShell>
       <div>
@@ -310,24 +327,60 @@ export default function VisitConfirmationPage() {
         <div className="mt-6 grid gap-3">
           <button
             type="button"
-            onClick={() => respondMutation.mutate("yes")}
+            onClick={() => respondMutation.mutate({ answer: "yes" })}
             disabled={isResponding}
             className="group flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-primary-foreground shadow-[0_8px_20px_hsl(var(--primary)/0.16)] transition-transform hover:opacity-90 active:scale-[0.985] disabled:cursor-wait disabled:opacity-65"
             data-testid="button-confirm-yes"
           >
-            {isResponding && respondMutation.variables === "yes" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
+            {isResponding && respondMutation.variables?.answer === "yes" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
             Да, я был(а)
           </button>
           <button
             type="button"
-            onClick={() => respondMutation.mutate("no")}
+            onClick={() => respondMutation.mutate({ answer: "no" })}
             disabled={isResponding}
             className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card text-[15px] font-semibold text-foreground transition-colors hover:bg-muted active:scale-[0.985] disabled:cursor-wait disabled:opacity-65"
             data-testid="button-confirm-no"
           >
-            {isResponding && respondMutation.variables === "no" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
-            Нет, не был(а)
+            {isResponding && respondMutation.variables?.answer === "no" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+            Нет / отменено
           </button>
+          {!showPostpone ? (
+            <button
+              type="button"
+              onClick={() => setShowPostpone(true)}
+              disabled={isResponding}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl text-[14px] font-semibold text-muted-foreground hover:bg-muted"
+              data-testid="button-confirm-postponed"
+            >
+              <CalendarDays className="h-4 w-4" /> Визит перенесён
+            </button>
+          ) : (
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <label htmlFor="postponed-date" className="block text-sm font-semibold">
+                Новая дата визита
+              </label>
+              <input
+                id="postponed-date"
+                type="date"
+                min={tomorrow}
+                value={appointmentDate}
+                onChange={(event) => setAppointmentDate(event.target.value)}
+                className="mt-3 h-12 w-full rounded-xl border border-border bg-background px-3"
+                data-testid="input-postponed-date"
+              />
+              <button
+                type="button"
+                onClick={() => respondMutation.mutate({ answer: "postponed", appointmentDate })}
+                disabled={isResponding || !appointmentDate}
+                className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                data-testid="button-save-postponed-date"
+              >
+                {isResponding && respondMutation.variables?.answer === "postponed" && <Loader2 className="h-4 w-4 animate-spin" />}
+                Сохранить новую дату
+              </button>
+            </div>
+          )}
         </div>
         <div className="mt-7 flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <ShieldCheck className="h-4 w-4 text-accent-foreground" />

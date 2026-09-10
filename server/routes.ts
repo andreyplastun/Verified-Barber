@@ -18,17 +18,25 @@ import { getSpecialistAchievements } from "./achievements";
 import { authenticateRequest } from "./auth";
 import {
   answerVisitConfirmation,
+  bindWhatsappEnquiryFromIncoming,
   getVisitConfirmationByToken,
+  isMissingWhatsappEnquirySchema,
+  issueWhatsappEnquiryCode,
+  postponeVisitConfirmation,
   requestPaymentForBooking,
   supersedeVisitConfirmation,
   type VisitConfirmationPublic,
 } from "./visit-confirmations";
-import { randomBytes } from "crypto";
+import { createHmac, randomBytes } from "crypto";
 import { authenticateAssistBot, webhookUrlKey } from "./assistbot-webhook-auth";
 import { getAssistBotDiagnostics, recordAssistBotDiagnostic } from "./assistbot-diagnostics";
 import { parseAssistBotPayload } from "./assistbot-payload";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
+const ENQUIRY_REQUEST_HASH_SECRET = process.env.ENQUIRY_REQUEST_HASH_SECRET || process.env.SESSION_SECRET || "";
+const ASSISTBOT_CONNECTED_PHONE =
+  normalizePhone(process.env.ASSISTBOT_CONNECTED_PHONE)?.replace(/\D/g, "") || "";
+const ASSISTBOT_INSTANCE_ID = String(process.env.ASSISTBOT_INSTANCE_ID || "").trim();
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -551,6 +559,51 @@ export async function registerRoutes(
     };
   }
 
+  app.post("/api/specialists/:id/whatsapp-enquiry", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const specialistId = Number(req.params.id);
+      if (!Number.isInteger(specialistId) || specialistId <= 0) {
+        return res.status(400).json({ message: "Некорректный специалист" });
+      }
+      if (!ENQUIRY_REQUEST_HASH_SECRET) {
+        return res.status(503).json({ message: "Запись через WhatsApp временно недоступна" });
+      }
+      const specialist = await storage.getSpecialist(specialistId);
+      const destination = String((specialist as any)?.whatsapp || specialist?.phone || "").trim();
+      if (!specialist || !destination) {
+        return res.status(404).json({ message: "WhatsApp специалиста не найден" });
+      }
+      const normalizedDestination = normalizePhone(destination)?.replace(/\D/g, "") || "";
+      if (!ASSISTBOT_CONNECTED_PHONE || normalizedDestination !== ASSISTBOT_CONNECTED_PHONE) {
+        return res.status(409).json({
+          message: "Защищённое подтверждение для этого WhatsApp пока не подключено",
+          directLinkAvailable: true,
+        });
+      }
+      const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+      const address = forwarded || req.socket.remoteAddress || "unknown";
+      const requesterHash = createHmac("sha256", ENQUIRY_REQUEST_HASH_SECRET)
+        .update(address)
+        .digest("hex");
+      const code = await issueWhatsappEnquiryCode(specialistId, requesterHash);
+      res.json({
+        code,
+        text: `Здравствуйте! Нашёл(а) ваш профиль на Rateus. Хочу записаться.\n\nКод запроса: ${code}`,
+      });
+    } catch (error: any) {
+      if (isMissingWhatsappEnquirySchema(error)) {
+        return res.status(503).json({ message: "Запись через WhatsApp временно недоступна" });
+      }
+      const status = Number(error?.statusCode) || 500;
+      res.status(status).json({
+        message: status === 429
+          ? "Слишком много запросов. Попробуйте позже."
+          : "Не удалось подготовить сообщение WhatsApp",
+      });
+    }
+  });
+
   app.get("/api/visit-confirmations/:token", async (req, res) => {
     try {
       const response = await buildVisitConfirmationResponse(req.params.token);
@@ -566,9 +619,16 @@ export async function registerRoutes(
 
   app.post("/api/visit-confirmations/:token/respond", async (req, res) => {
     try {
-      const parsed = z.object({ answer: z.enum(["yes", "no"]) }).safeParse(req.body);
+      const parsed = z.discriminatedUnion("answer", [
+        z.object({ answer: z.literal("yes") }),
+        z.object({ answer: z.literal("no") }),
+        z.object({
+          answer: z.literal("postponed"),
+          appointmentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      ]).safeParse(req.body);
       if (!parsed.success) {
-        return res.status(400).json({ message: "Выберите «Да» или «Нет»" });
+        return res.status(400).json({ message: "Выберите ответ и укажите дату переноса" });
       }
 
       const before = await getVisitConfirmationByToken(req.params.token);
@@ -578,6 +638,24 @@ export async function registerRoutes(
       const booking = await storage.getBooking(before.bookingId);
       if (!booking) {
         return res.status(404).json({ message: "Визит не найден" });
+      }
+
+      if (parsed.data.answer === "postponed") {
+        // Noon in Almaty keeps a date-only choice stable across server time zones.
+        const appointmentTime = new Date(`${parsed.data.appointmentDate}T07:00:00.000Z`);
+        const tomorrow = new Date();
+        tomorrow.setUTCHours(0, 0, 0, 0);
+        tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+        const latest = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
+        if (Number.isNaN(appointmentTime.getTime()) || appointmentTime < tomorrow || appointmentTime > latest) {
+          return res.status(400).json({ message: "Выберите дату от завтра до 180 дней вперёд" });
+        }
+        const postponed = await postponeVisitConfirmation(req.params.token, appointmentTime);
+        const response = await buildVisitConfirmationResponse(req.params.token);
+        if (!response) return res.status(404).json({ message: "Ссылка подтверждения не найдена" });
+        return res.json(postponed.changed || postponed.alreadyPostponed
+          ? { ...response, status: "postponed", changed: true }
+          : response);
       }
 
       const specialist = await storage.getSpecialist(booking.specialistId);
@@ -612,6 +690,8 @@ export async function registerRoutes(
       res.status(statusCode).json({
         message: statusCode === 404
           ? "Ссылка подтверждения не найдена"
+          : statusCode === 409
+            ? "Сообщение уже отправляется. Подождите и попробуйте ещё раз."
           : "Не удалось сохранить ответ",
       });
     }
@@ -4835,8 +4915,23 @@ ${magicLink}`;
       let processed = 0;
       let optedOut = false;
       let confirmed = false;
+      let enquiriesStarted = 0;
       for (const message of parsed.messages) {
         if (message.direction !== "incoming" || !message.phone) continue;
+        const enquiry = await bindWhatsappEnquiryFromIncoming(
+          message.phone,
+          message.text,
+          message.id,
+          ASSISTBOT_CONNECTED_PHONE,
+          message.recipientPhone,
+          ASSISTBOT_INSTANCE_ID,
+          message.instanceId,
+        );
+        if (enquiry.decision === "started") enquiriesStarted++;
+        if (enquiry.decision === "started" || enquiry.decision === "duplicate") {
+          processed++;
+          continue;
+        }
         const result = await handleIncomingMessage(message.phone, message.text, {
           allowSpecialistVisitConfirmation: true,
         });
@@ -4848,6 +4943,7 @@ ${magicLink}`;
         ok: true,
         processed,
         optedOut,
+        enquiriesStarted,
         specialistVisitDecision: confirmed ? "confirmed" : "ignored",
       });
     } catch (err: any) {
