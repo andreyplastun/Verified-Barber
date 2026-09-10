@@ -24,6 +24,7 @@ import {
   type VisitConfirmationPublic,
 } from "./visit-confirmations";
 import { randomBytes, timingSafeEqual } from "crypto";
+import { getAssistBotDiagnostics, recordAssistBotDiagnostic } from "./assistbot-diagnostics";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 
@@ -4826,17 +4827,18 @@ ${magicLink}`;
 
   app.post("/api/webhooks/assistbot-incoming", async (req, res) => {
     try {
+      const allowSpecialistVisitConfirmation = hasValidAssistBotIncomingSecret(
+        req.headers["x-assistbot-webhook-secret"],
+      );
+      recordAssistBotDiagnostic(req.body, allowSpecialistVisitConfirmation);
       const { phone, text } = req.body || {};
-      if (!phone || !text) {
+      if (typeof phone !== "string" || typeof text !== "string" || !phone.trim() || !text.trim()) {
         console.log(
           `[ASSISTBOT_INCOMING] Invalid payload hasPhone=${Boolean(phone)} hasText=${Boolean(text)}`,
         );
         res.json({ ok: true });
         return;
       }
-      const allowSpecialistVisitConfirmation = hasValidAssistBotIncomingSecret(
-        req.headers["x-assistbot-webhook-secret"],
-      );
       const result = await handleIncomingMessage(phone, text, {
         allowSpecialistVisitConfirmation,
       });
@@ -4849,9 +4851,20 @@ ${magicLink}`;
         specialistVisitDecision: result.specialistVisitDecision,
       });
     } catch (err: any) {
-      console.error(`[ASSISTBOT_INCOMING] Error: ${err.message}`);
+      console.error("[ASSISTBOT_INCOMING] Processing failed");
       res.json({ ok: true });
     }
+  });
+
+  app.get("/api/admin/assistbot-incoming-diagnostics", async (req, res) => {
+    const userId = req.headers["x-user-id"] as string;
+    if (!userId) {
+      res.status(401).json({ message: "Необходим вход" });
+      return;
+    }
+    if (!(await checkAdminRole(req, res, userId))) return;
+    res.setHeader("Cache-Control", "no-store");
+    res.json(getAssistBotDiagnostics());
   });
 
   app.get("/api/admin/specialist-chat-confirmation-decisions", async (req, res) => {
