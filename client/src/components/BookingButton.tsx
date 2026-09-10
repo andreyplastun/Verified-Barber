@@ -58,7 +58,7 @@ function resolveChannel(s: BookingButtonProps["specialist"]): {
   if (bookingUrl) {
     return { href: bookingUrl, label: "Записаться онлайн", channel: "booking_url", Icon: Calendar };
   }
-  const wa = (s.whatsapp || "").trim();
+  const wa = (s.whatsapp || "").trim() || (s.phone || "").trim();
   if (wa) {
     return { href: buildWaLink(wa), label: "Записаться через WhatsApp", channel: "whatsapp", Icon: MessageCircle };
   }
