@@ -16,6 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import type { Specialist, User } from "@shared/schema";
 import { categoryLabels } from "@shared/schema";
 import { RatingThemeSettings } from "@/components/admin/RatingThemeSettings";
+import { AssistBotConnection } from "@/components/admin/AssistBotConnection";
 
 type BookingWithDetails = {
   id: number;
@@ -1371,6 +1372,7 @@ export default function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                <AssistBotConnection />
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="font-medium">Автоотправка</Label>

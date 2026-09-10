@@ -23,20 +23,12 @@ import {
   supersedeVisitConfirmation,
   type VisitConfirmationPublic,
 } from "./visit-confirmations";
-import { randomBytes, timingSafeEqual } from "crypto";
+import { randomBytes } from "crypto";
+import { authenticateAssistBot, webhookUrlKey } from "./assistbot-webhook-auth";
 import { getAssistBotDiagnostics, recordAssistBotDiagnostic } from "./assistbot-diagnostics";
 import { parseAssistBotPayload } from "./assistbot-payload";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
-
-function hasValidAssistBotIncomingSecret(headerValue: unknown): boolean {
-  const expected = process.env.ASSISTBOT_INCOMING_SECRET;
-  if (!expected || typeof headerValue !== "string") return false;
-  const actualBuffer = Buffer.from(headerValue);
-  const expectedBuffer = Buffer.from(expected);
-  return actualBuffer.length === expectedBuffer.length
-    && timingSafeEqual(actualBuffer, expectedBuffer);
-}
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -4828,8 +4820,10 @@ ${magicLink}`;
 
   app.post("/api/webhooks/assistbot-incoming", async (req, res) => {
     try {
-      const allowSpecialistVisitConfirmation = hasValidAssistBotIncomingSecret(
+      const allowSpecialistVisitConfirmation = authenticateAssistBot(
+        process.env.ASSISTBOT_INCOMING_SECRET,
         req.headers["x-assistbot-webhook-secret"],
+        req.query.key,
       );
       recordAssistBotDiagnostic(req.body, allowSpecialistVisitConfirmation);
       const parsed = parseAssistBotPayload(req.body);
@@ -4871,6 +4865,22 @@ ${magicLink}`;
     if (!(await checkAdminRole(req, res, userId))) return;
     res.setHeader("Cache-Control", "no-store");
     res.json(getAssistBotDiagnostics());
+  });
+
+  app.get("/api/admin/assistbot-webhook-url", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const userId = req.headers["x-user-id"] as string;
+    if (!userId) {
+      res.status(401).json({ message: "Необходим вход" });
+      return;
+    }
+    if (!(await checkAdminRole(req, res, userId))) return;
+    const secret = process.env.ASSISTBOT_INCOMING_SECRET;
+    if (!secret) {
+      res.status(503).json({ message: "На сервере не настроен ASSISTBOT_INCOMING_SECRET" });
+      return;
+    }
+    res.json({ url: `${REVIEW_BASE_URL}/api/webhooks/assistbot-incoming?key=${webhookUrlKey(secret)}` });
   });
 
   app.get("/api/admin/specialist-chat-confirmation-decisions", async (req, res) => {
