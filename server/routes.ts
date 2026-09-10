@@ -25,6 +25,7 @@ import {
 } from "./visit-confirmations";
 import { randomBytes, timingSafeEqual } from "crypto";
 import { getAssistBotDiagnostics, recordAssistBotDiagnostic } from "./assistbot-diagnostics";
+import { parseAssistBotPayload } from "./assistbot-payload";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 
@@ -4831,24 +4832,29 @@ ${magicLink}`;
         req.headers["x-assistbot-webhook-secret"],
       );
       recordAssistBotDiagnostic(req.body, allowSpecialistVisitConfirmation);
-      const { phone, text } = req.body || {};
-      if (typeof phone !== "string" || typeof text !== "string" || !phone.trim() || !text.trim()) {
-        console.log(
-          `[ASSISTBOT_INCOMING] Invalid payload hasPhone=${Boolean(phone)} hasText=${Boolean(text)}`,
-        );
-        res.json({ ok: true });
+      const parsed = parseAssistBotPayload(req.body);
+      if (!allowSpecialistVisitConfirmation) {
+        // Acknowledged for diagnostics only; untrusted callers cannot mutate data.
+        res.json({ ok: true, processed: 0, reason: "authentication_required" });
         return;
       }
-      const result = await handleIncomingMessage(phone, text, {
-        allowSpecialistVisitConfirmation,
-      });
-      if (result.optedOut) {
-        console.log(`[ASSISTBOT_INCOMING] Incoming phone opted out`);
+      let processed = 0;
+      let optedOut = false;
+      let confirmed = false;
+      for (const message of parsed.messages) {
+        if (message.direction !== "incoming" || !message.phone) continue;
+        const result = await handleIncomingMessage(message.phone, message.text, {
+          allowSpecialistVisitConfirmation: true,
+        });
+        processed++;
+        optedOut ||= result.optedOut;
+        confirmed ||= result.specialistVisitDecision === "confirmed";
       }
       res.json({
         ok: true,
-        optedOut: result.optedOut,
-        specialistVisitDecision: result.specialistVisitDecision,
+        processed,
+        optedOut,
+        specialistVisitDecision: confirmed ? "confirmed" : "ignored",
       });
     } catch (err: any) {
       console.error("[ASSISTBOT_INCOMING] Processing failed");

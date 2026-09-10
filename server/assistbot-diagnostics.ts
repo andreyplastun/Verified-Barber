@@ -1,3 +1,4 @@
+import { summarizeAssistBotPayload } from "./assistbot-payload";
 // Only allowlisted field names and types: even unknown JSON keys can contain PII.
 const allowedKeys = new Set([
   "phone", "text", "from", "to", "sender", "recipient", "receiver",
@@ -7,6 +8,8 @@ const allowedKeys = new Set([
   "data", "payload", "message", "messages", "body", "contact", "contacts",
   "account_id", "accountId", "channel_id", "channelId", "instance_id",
   "metadata", "entry", "changes", "value", "destination_params",
+  "fromMe", "author", "senderName", "chatName", "time", "isGroup",
+  "instanceId", "wid", "ack", "isForwarded", "quotedMsgId",
 ]);
 const sensitiveKey = /secret|token|password|authorization|cookie|api.?key/i;
 
@@ -46,6 +49,7 @@ export function recordAssistBotDiagnostic(body: unknown, authenticated: boolean)
     receivedAt: new Date().toISOString(),
     authenticated,
     ...describeAssistBotPayload(body),
+    parsing: summarizeAssistBotPayload(body),
   };
   recent.push(event);
   if (recent.length > 50) recent.shift();
