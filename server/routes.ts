@@ -31,12 +31,39 @@ import { createHmac, randomBytes } from "crypto";
 import { authenticateAssistBot, webhookUrlKey } from "./assistbot-webhook-auth";
 import { getAssistBotDiagnostics, recordAssistBotDiagnostic } from "./assistbot-diagnostics";
 import { parseAssistBotPayload } from "./assistbot-payload";
+import { requireAuthenticatedAdminUserId } from "./admin-enquiry-security";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
-const ENQUIRY_REQUEST_HASH_SECRET = process.env.ENQUIRY_REQUEST_HASH_SECRET || process.env.SESSION_SECRET || "";
-const ASSISTBOT_CONNECTED_PHONE =
-  normalizePhone(process.env.ASSISTBOT_CONNECTED_PHONE)?.replace(/\D/g, "") || "";
-const ASSISTBOT_INSTANCE_ID = String(process.env.ASSISTBOT_INSTANCE_ID || "").trim();
+const ENQUIRY_REQUEST_HASH_SECRET =
+  process.env.ENQUIRY_REQUEST_HASH_SECRET ||
+  process.env.ASSISTBOT_INCOMING_SECRET ||
+  process.env.SESSION_SECRET ||
+  "";
+
+function enquiryRequesterHash(identity: string): string {
+  return createHmac("sha256", ENQUIRY_REQUEST_HASH_SECRET)
+    .update(`rateus:whatsapp-enquiry-requester:v1\0${identity}`)
+    .digest("hex");
+}
+
+async function getAssistBotIncomingConfig(): Promise<{
+  connectedPhone: string;
+  instanceId: string;
+}> {
+  const result = await pool.query(
+    `SELECT key, value FROM app_config
+     WHERE key IN ('ASSISTBOT_CONNECTED_PHONE', 'ASSISTBOT_INSTANCE_ID')`,
+  );
+  const values = Object.fromEntries(result.rows.map((row) => [row.key, row.value]));
+  return {
+    connectedPhone: normalizePhone(
+      values.ASSISTBOT_CONNECTED_PHONE || process.env.ASSISTBOT_CONNECTED_PHONE || "",
+    )?.replace(/\D/g, "") || "",
+    instanceId: String(
+      values.ASSISTBOT_INSTANCE_ID || process.env.ASSISTBOT_INSTANCE_ID || "",
+    ).trim(),
+  };
+}
 
 function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371000;
@@ -575,7 +602,8 @@ export async function registerRoutes(
         return res.status(404).json({ message: "WhatsApp специалиста не найден" });
       }
       const normalizedDestination = normalizePhone(destination)?.replace(/\D/g, "") || "";
-      if (!ASSISTBOT_CONNECTED_PHONE || normalizedDestination !== ASSISTBOT_CONNECTED_PHONE) {
+      const assistBotConfig = await getAssistBotIncomingConfig();
+      if (!assistBotConfig.connectedPhone || normalizedDestination !== assistBotConfig.connectedPhone) {
         return res.status(409).json({
           message: "Защищённое подтверждение для этого WhatsApp пока не подключено",
           directLinkAvailable: true,
@@ -583,9 +611,7 @@ export async function registerRoutes(
       }
       const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
       const address = forwarded || req.socket.remoteAddress || "unknown";
-      const requesterHash = createHmac("sha256", ENQUIRY_REQUEST_HASH_SECRET)
-        .update(address)
-        .digest("hex");
+      const requesterHash = enquiryRequesterHash(address);
       const code = await issueWhatsappEnquiryCode(specialistId, requesterHash);
       res.json({
         code,
@@ -4916,15 +4942,16 @@ ${magicLink}`;
       let optedOut = false;
       let confirmed = false;
       let enquiriesStarted = 0;
+      const assistBotConfig = await getAssistBotIncomingConfig();
       for (const message of parsed.messages) {
         if (message.direction !== "incoming" || !message.phone) continue;
         const enquiry = await bindWhatsappEnquiryFromIncoming(
           message.phone,
           message.text,
           message.id,
-          ASSISTBOT_CONNECTED_PHONE,
+          assistBotConfig.connectedPhone,
           message.recipientPhone,
-          ASSISTBOT_INSTANCE_ID,
+          assistBotConfig.instanceId,
           message.instanceId,
         );
         if (enquiry.decision === "started") enquiriesStarted++;
@@ -4977,6 +5004,121 @@ ${magicLink}`;
       return;
     }
     res.json({ url: `${REVIEW_BASE_URL}/api/webhooks/assistbot-incoming?key=${webhookUrlKey(secret)}` });
+  });
+
+  app.get("/api/admin/whatsapp/enquiry-tests", async (req, res) => {
+    try {
+      const userId = requireAuthenticatedAdminUserId(req, res);
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      res.setHeader("Cache-Control", "no-store");
+      const config = await getAssistBotIncomingConfig();
+      const result = await pool.query(
+        `SELECT e.id, e.status, e.issued_at, e.timer_started_at,
+                e.confirmation_due_at, e.incoming_message_id,
+                e.connected_recipient_phone, e.test_delay_seconds,
+                s.id AS specialist_id, s.name AS specialist_name,
+                wm.status AS queue_status, wm.scheduled_at, wm.sent_at,
+                wm.last_error, wm.skip_reason, wm.review_link,
+                wm.delivery_status
+         FROM whatsapp_enquiries e
+         JOIN specialists s ON s.id = e.specialist_id
+         LEFT JOIN wa_messages wm
+           ON wm.booking_id = e.booking_id
+          AND wm.message_type = 'visit_confirmation'
+         WHERE e.is_admin_test = true
+         ORDER BY e.issued_at DESC, e.id DESC
+         LIMIT 25`,
+      );
+      res.json({
+        connectedPhone: config.connectedPhone,
+        instanceId: config.instanceId,
+        tests: result.rows.map((row) => ({
+          id: Number(row.id),
+          status: row.status,
+          issuedAt: row.issued_at,
+          incomingReceivedAt: row.timer_started_at,
+          dueAt: row.confirmation_due_at,
+          incomingBound: Boolean(row.incoming_message_id),
+          recipientPhone: row.connected_recipient_phone,
+          delaySeconds: row.test_delay_seconds,
+          specialistId: Number(row.specialist_id),
+          specialistName: row.specialist_name,
+          queueStatus: row.queue_status,
+          scheduledAt: row.scheduled_at,
+          sentAt: row.sent_at,
+          lastError: row.last_error,
+          skipReason: row.skip_reason,
+          deliveryStatus: row.delivery_status,
+          confirmationUrl: row.review_link,
+        })),
+      });
+    } catch (err: any) {
+      if (isMissingWhatsappEnquirySchema(err)) {
+        return res.status(503).json({ message: "Схема тестов ещё не установлена" });
+      }
+      res.status(500).json({ message: "Не удалось загрузить тесты WhatsApp" });
+    }
+  });
+
+  app.post("/api/admin/whatsapp/enquiry-tests", async (req, res) => {
+    try {
+      const userId = requireAuthenticatedAdminUserId(req, res);
+      if (!userId || !(await checkAdminRole(req, res, userId))) return;
+      if (!ENQUIRY_REQUEST_HASH_SECRET) {
+        return res.status(503).json({ message: "Не настроен секрет входящих AssistBot" });
+      }
+      const parsed = z.object({
+        specialistId: z.number().int().positive(),
+        connectedRecipientPhone: z.string().min(10).max(30),
+        instanceId: z.string().max(100).optional().default(""),
+        connectedConfirmed: z.literal(true),
+      }).safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          message: "Выберите специалиста и подтвердите известный подключённый номер",
+        });
+      }
+      const recipient = normalizePhone(parsed.data.connectedRecipientPhone)?.replace(/\D/g, "") || "";
+      if (!/^\d{10,15}$/.test(recipient)) {
+        return res.status(400).json({ message: "Некорректный номер подключённого WhatsApp" });
+      }
+      const specialist = await storage.getSpecialist(parsed.data.specialistId);
+      if (!specialist || specialist.status !== "active") {
+        return res.status(400).json({ message: "Выберите активного специалиста" });
+      }
+
+      // The admin's explicit attestation is persisted as the single callback
+      // recipient gate. It is not inferred from an arbitrary specialist phone.
+      await pool.query(
+        `INSERT INTO app_config (key, value)
+         VALUES ('ASSISTBOT_CONNECTED_PHONE', $1), ('ASSISTBOT_INSTANCE_ID', $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [recipient, parsed.data.instanceId.trim()],
+      );
+
+      const code = await issueWhatsappEnquiryCode(
+        parsed.data.specialistId,
+        enquiryRequesterHash(`admin:${userId}`),
+        { adminUserId: userId, connectedRecipientPhone: recipient },
+      );
+      const text = `Здравствуйте! Тест запроса Rateus для специалиста ${specialist.name}.\n\nКод запроса: ${code}`;
+      res.status(201).json({
+        code,
+        text,
+        whatsappUrl: `https://wa.me/${recipient}?text=${encodeURIComponent(text)}`,
+        delaySeconds: 120,
+      });
+    } catch (err: any) {
+      if (isMissingWhatsappEnquirySchema(err)) {
+        return res.status(503).json({ message: "Схема тестов ещё не установлена" });
+      }
+      const status = Number(err?.statusCode) || 500;
+      res.status(status).json({
+        message: status === 429
+          ? "Слишком много тестовых кодов. Попробуйте позже."
+          : "Не удалось выпустить тестовый код",
+      });
+    }
   });
 
   app.get("/api/admin/specialist-chat-confirmation-decisions", async (req, res) => {

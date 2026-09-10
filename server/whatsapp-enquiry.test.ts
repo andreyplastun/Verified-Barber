@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   extractWhatsappEnquiryCode,
+  getWhatsappEnquiryDueAt,
   isAssistBotRecipientMatch,
   isMissingWhatsappEnquirySchema,
   isSamePostponedDate,
@@ -36,4 +37,16 @@ test("missing enquiry schema is recognized for fail-closed deployment", () => {
   assert.equal(isMissingWhatsappEnquirySchema({ code: "42P01" }), true);
   assert.equal(isMissingWhatsappEnquirySchema({ code: "42703" }), true);
   assert.equal(isMissingWhatsappEnquirySchema(new Error("network")), false);
+});
+
+test("only an explicit admin test gets the two-minute due time", () => {
+  const started = new Date("2026-06-10T10:00:00.000Z");
+  assert.equal(
+    getWhatsappEnquiryDueAt(started, true, 120).getTime() - started.getTime(),
+    2 * 60 * 1000,
+  );
+  assert.equal(
+    getWhatsappEnquiryDueAt(started, false, 120).getTime() - started.getTime(),
+    24 * 60 * 60 * 1000,
+  );
 });

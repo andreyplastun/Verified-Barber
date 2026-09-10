@@ -15,6 +15,7 @@ const SPECIALIST_CHAT_CLASSIFIER_VERSION = "strict-v1";
 const SPECIALIST_CHAT_LOOKBACK_HOURS = 24;
 const ENQUIRY_CODE_RE = /\bRU-[A-Z2-9]{12}\b/;
 const ENQUIRY_TIMER_MS = 24 * 60 * 60 * 1000;
+const ADMIN_TEST_TIMER_MS = 2 * 60 * 1000;
 
 // Deliberately closed pilot: both the incoming WhatsApp number and exact
 // specialist name must match. Never broaden this list from ordinary data.
@@ -78,6 +79,20 @@ export function isSamePostponedDate(value: unknown, appointmentTime: Date): bool
     persisted.getTime() === appointmentTime.getTime();
 }
 
+export function getWhatsappEnquiryDueAt(
+  timerStartedAt: Date,
+  isAdminTest: boolean,
+  testDelaySeconds?: number | null,
+): Date {
+  if (isAdminTest) {
+    const seconds = Math.max(1, Number(testDelaySeconds) || 120);
+    return new Date(timerStartedAt.getTime() + seconds * 1000);
+  }
+  return getVisitConfirmationSendAt(
+    new Date(timerStartedAt.getTime() + ENQUIRY_TIMER_MS),
+  );
+}
+
 export function extractWhatsappEnquiryCode(text: string): string | null {
   return text.toUpperCase().match(ENQUIRY_CODE_RE)?.[0] || null;
 }
@@ -90,6 +105,10 @@ export function isMissingWhatsappEnquirySchema(error: unknown): boolean {
 export async function issueWhatsappEnquiryCode(
   specialistId: number,
   requesterHash: string,
+  options?: {
+    adminUserId: string;
+    connectedRecipientPhone: string;
+  },
 ): Promise<string> {
   const client = await pool.connect();
   try {
@@ -126,9 +145,18 @@ export async function issueWhatsappEnquiryCode(
     const code = `RU-${suffix}`;
     await client.query(
       `INSERT INTO whatsapp_enquiries
-         (specialist_id, code_hash, requester_hash, code_expires_at)
-       VALUES ($1, $2, $3, NOW() + INTERVAL '2 hours')`,
-      [specialistId, enquiryCodeHash(code), requesterHash],
+         (specialist_id, code_hash, requester_hash, code_expires_at,
+          is_admin_test, admin_user_id, test_delay_seconds, connected_recipient_phone)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '2 hours', $4, $5, $6, $7)`,
+      [
+        specialistId,
+        enquiryCodeHash(code),
+        requesterHash,
+        Boolean(options),
+        options?.adminUserId || null,
+        options ? Math.floor(ADMIN_TEST_TIMER_MS / 1000) : null,
+        options?.connectedRecipientPhone || null,
+      ],
     );
     await client.query("COMMIT");
     return code;
@@ -188,13 +216,20 @@ export async function bindWhatsappEnquiryFromIncoming(
       await client.query("ROLLBACK");
       return { decision: "ignored", reason: "unknown_code" };
     }
+    const expectedRecipient = enquiry.is_admin_test
+      ? canonicalPhone(enquiry.connected_recipient_phone || "")
+      : canonicalPhone(enquiry.specialist_recipient || "");
     if (!isAssistBotRecipientMatch(
       configuredRecipient,
-      enquiry.specialist_recipient,
+      expectedRecipient,
       observedRecipient,
     )) {
       await client.query("ROLLBACK");
       return { decision: "ignored", reason: "specialist_recipient_mismatch" };
+    }
+    if (enquiry.is_admin_test && !incomingMessageId) {
+      await client.query("ROLLBACK");
+      return { decision: "ignored", reason: "test_requires_incoming_message_id" };
     }
     if (enquiry.status === "bound") {
       await client.query("COMMIT");
@@ -227,7 +262,14 @@ export async function bindWhatsappEnquiryFromIncoming(
     }
 
     const now = new Date();
-    const dueAt = getVisitConfirmationSendAt(new Date(now.getTime() + ENQUIRY_TIMER_MS));
+    // Admin tests expose the true two-minute due time. The dispatcher still
+    // enforces its global send window, spacing and caps; ordinary enquiries
+    // retain the production send-window adjustment after their 24-hour delay.
+    const dueAt = getWhatsappEnquiryDueAt(
+      now,
+      Boolean(enquiry.is_admin_test),
+      enquiry.test_delay_seconds,
+    );
     const expiresAt = getVisitConfirmationExpiry(dueAt);
     const confirmationToken = crypto.randomBytes(24).toString("base64url");
     const bookingResult = await client.query(

@@ -1,9 +1,5 @@
--- Apply explicitly to the target Supabase database before enabling the flow.
--- The application fails closed with HTTP 503 while this table is absent.
--- Runtime gate: set ASSISTBOT_CONNECTED_PHONE to the one WhatsApp recipient
--- actually attached to this AssistBot callback, and set
--- ENQUIRY_REQUEST_HASH_SECRET (SESSION_SECRET is accepted as a fallback).
--- If AssistBot includes an instance/account id, set ASSISTBOT_INSTANCE_ID too.
+-- Kept as an optional standalone migration for operators. The same additive,
+-- idempotent statements are also part of the application's startup migration.
 -- Specialists with any other destination retain the ordinary direct WA link.
 BEGIN;
 
@@ -25,8 +21,18 @@ CREATE TABLE IF NOT EXISTS whatsapp_enquiries (
   confirmation_due_at timestamp,
   issued_at timestamp NOT NULL DEFAULT now(),
   code_expires_at timestamp NOT NULL,
+  is_admin_test boolean NOT NULL DEFAULT false,
+  admin_user_id text,
+  test_delay_seconds integer,
+  connected_recipient_phone text,
   created_at timestamp NOT NULL DEFAULT now()
 );
+
+ALTER TABLE whatsapp_enquiries
+  ADD COLUMN IF NOT EXISTS is_admin_test boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS admin_user_id text,
+  ADD COLUMN IF NOT EXISTS test_delay_seconds integer,
+  ADD COLUMN IF NOT EXISTS connected_recipient_phone text;
 
 CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_enquiries_incoming_message_unique
   ON whatsapp_enquiries (incoming_message_id)

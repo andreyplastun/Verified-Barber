@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
+import { isSensitiveApiResponsePath } from "./admin-enquiry-security";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
@@ -105,6 +106,8 @@ app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
   const isVisitConfirmationPath = /^\/api\/visit-confirmations\/[^/]+/.test(path);
+  const suppressResponseBodyLog =
+    isVisitConfirmationPath || isSensitiveApiResponsePath(path);
   const loggedPath = isVisitConfirmationPath
     ? path.replace(/^\/api\/visit-confirmations\/[^/]+/, "/api/visit-confirmations/[redacted]")
     : path;
@@ -112,7 +115,7 @@ app.use((req, res, next) => {
 
   const originalResJson = res.json;
   res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
+    if (!suppressResponseBodyLog) capturedJsonResponse = bodyJson;
     return originalResJson.apply(res, [bodyJson, ...args]);
   };
 
@@ -120,7 +123,7 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${loggedPath} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse && !isVisitConfirmationPath && path !== "/api/admin/assistbot-webhook-url") {
+      if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
 
@@ -596,6 +599,58 @@ app.use((req, res, next) => {
     console.log("[STARTUP] Auto-migrations complete");
   } catch (err) {
     console.error("[STARTUP] Auto-migration error (non-fatal):", err);
+  }
+
+  // Keep the enquiry migration outside the legacy multi-statement migration.
+  // Every lock and statement wait is bounded; on contention we continue startup
+  // and the enquiry routes fail closed until a later startup can finish it.
+  const enquiryMigrationClient = await pool.connect();
+  try {
+    await enquiryMigrationClient.query("BEGIN");
+    await enquiryMigrationClient.query("SET LOCAL lock_timeout = '1500ms'");
+    await enquiryMigrationClient.query("SET LOCAL statement_timeout = '5000ms'");
+    await enquiryMigrationClient.query(`
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_postponed_at timestamp;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_postponed_for timestamp;
+      CREATE TABLE IF NOT EXISTS whatsapp_enquiries (
+        id SERIAL PRIMARY KEY,
+        specialist_id INTEGER NOT NULL REFERENCES specialists(id),
+        code_hash TEXT NOT NULL UNIQUE,
+        requester_hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'issued',
+        sender_phone TEXT,
+        incoming_message_id TEXT,
+        booking_id INTEGER REFERENCES bookings(id),
+        timer_started_at TIMESTAMP,
+        confirmation_due_at TIMESTAMP,
+        issued_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        code_expires_at TIMESTAMP NOT NULL,
+        is_admin_test BOOLEAN NOT NULL DEFAULT false,
+        admin_user_id TEXT,
+        test_delay_seconds INTEGER,
+        connected_recipient_phone TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE whatsapp_enquiries ADD COLUMN IF NOT EXISTS is_admin_test BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE whatsapp_enquiries ADD COLUMN IF NOT EXISTS admin_user_id TEXT;
+      ALTER TABLE whatsapp_enquiries ADD COLUMN IF NOT EXISTS test_delay_seconds INTEGER;
+      ALTER TABLE whatsapp_enquiries ADD COLUMN IF NOT EXISTS connected_recipient_phone TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_enquiries_incoming_message_unique
+        ON whatsapp_enquiries (incoming_message_id) WHERE incoming_message_id IS NOT NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS whatsapp_enquiries_booking_unique
+        ON whatsapp_enquiries (booking_id) WHERE booking_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS whatsapp_enquiries_issue_rate_idx
+        ON whatsapp_enquiries (issued_at, specialist_id, requester_hash);
+      CREATE INDEX IF NOT EXISTS whatsapp_enquiries_sender_rate_idx
+        ON whatsapp_enquiries (sender_phone, timer_started_at) WHERE sender_phone IS NOT NULL;
+    `);
+    await enquiryMigrationClient.query("COMMIT");
+    console.log("[STARTUP] WhatsApp enquiry schema ready");
+  } catch (enquiryMigrationError) {
+    await enquiryMigrationClient.query("ROLLBACK").catch(() => undefined);
+    console.error("[STARTUP] WhatsApp enquiry migration deferred (bounded):", enquiryMigrationError);
+  } finally {
+    enquiryMigrationClient.release();
   }
 
   // Keep incident recovery isolated from the legacy migration block above:

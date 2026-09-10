@@ -1372,7 +1372,7 @@ export default function AdminDashboard() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <AssistBotConnection />
+                <AssistBotConnection specialists={specialists} />
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="font-medium">Автоотправка</Label>

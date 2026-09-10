@@ -522,6 +522,10 @@ export const whatsappEnquiries = pgTable("whatsapp_enquiries", {
   confirmationDueAt: timestamp("confirmation_due_at"),
   issuedAt: timestamp("issued_at").defaultNow().notNull(),
   codeExpiresAt: timestamp("code_expires_at").notNull(),
+  isAdminTest: boolean("is_admin_test").default(false).notNull(),
+  adminUserId: text("admin_user_id"),
+  testDelaySeconds: integer("test_delay_seconds"),
+  connectedRecipientPhone: text("connected_recipient_phone"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
