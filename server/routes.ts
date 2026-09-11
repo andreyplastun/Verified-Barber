@@ -32,6 +32,11 @@ import { authenticateAssistBot, webhookUrlKey } from "./assistbot-webhook-auth";
 import { getAssistBotDiagnostics, recordAssistBotDiagnostic } from "./assistbot-diagnostics";
 import { parseAssistBotPayload } from "./assistbot-payload";
 import { requireAuthenticatedAdminUserId } from "./admin-enquiry-security";
+import {
+  addAlmatyCalendarDays,
+  almatyDateOnly,
+  almatyDateOnlyToNoon,
+} from "./visit-confirmation-policy";
 
 const REVIEW_BASE_URL = 'https://www.rateus.kz';
 const ENQUIRY_REQUEST_HASH_SECRET =
@@ -493,6 +498,16 @@ function buildShortReviewLink(slug: string, shortCode: number): string {
   return `${REVIEW_BASE_URL}/review/${slug}/${shortCode}`;
 }
 
+export async function buildVisitConfirmationReviewUrl(
+  link: Pick<MagicLink, "token" | "shortCode" | "specialistId">,
+  getSpecialist: (specialistId: number) => Promise<{ slug?: string | null } | null | undefined>,
+): Promise<string> {
+  const specialist = await getSpecialist(link.specialistId);
+  return specialist?.slug && link.shortCode
+    ? `/review/${specialist.slug}/${link.shortCode}`
+    : `/r/${link.token}`;
+}
+
 const AUTO_ACTIVATE_REVIEW_THRESHOLD = 1;
 
 async function checkAndAutoActivateSpecialist(specialistId: number): Promise<void> {
@@ -570,10 +585,10 @@ export async function registerRoutes(
         }
       }
       if (link) {
-        const specialist = await storage.getSpecialist((link as any).specialistId);
-        reviewUrl = specialist?.slug && link.shortCode
-          ? `/review/${specialist.slug}/${link.shortCode}`
-          : `/r/${link.token}`;
+        reviewUrl = await buildVisitConfirmationReviewUrl(
+          link as MagicLink,
+          (specialistId) => storage.getSpecialist(specialistId),
+        );
       }
     }
 
@@ -581,7 +596,9 @@ export async function registerRoutes(
       status: confirmation.confirmationStatus,
       specialistName: confirmation.specialistName,
       specialistImageUrl: confirmation.specialistImageUrl,
-      appointmentTime: confirmation.appointmentTime.toISOString(),
+      appointmentTime: confirmation.appointmentTime?.toISOString() || null,
+      appointmentTimeKnown: confirmation.appointmentTimeKnown,
+      appointmentTimeIsDateOnly: confirmation.appointmentTimeIsDateOnly,
       reviewUrl,
     };
   }
@@ -667,20 +684,27 @@ export async function registerRoutes(
       }
 
       if (parsed.data.answer === "postponed") {
-        // Noon in Almaty keeps a date-only choice stable across server time zones.
-        const appointmentTime = new Date(`${parsed.data.appointmentDate}T07:00:00.000Z`);
-        const tomorrow = new Date();
-        tomorrow.setUTCHours(0, 0, 0, 0);
-        tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
-        const latest = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000);
-        if (Number.isNaN(appointmentTime.getTime()) || appointmentTime < tomorrow || appointmentTime > latest) {
+        // Validate the date in Almaty calendar terms, then store noon Almaty
+        // so the selected date survives DB/browser/server timezone changes.
+        const selectedDate = parsed.data.appointmentDate;
+        const appointmentTime = almatyDateOnlyToNoon(selectedDate);
+        const todayAlmaty = almatyDateOnly(new Date());
+        const tomorrowAlmaty = addAlmatyCalendarDays(todayAlmaty, 1);
+        const latestAlmaty = addAlmatyCalendarDays(todayAlmaty, 180);
+        if (
+          !appointmentTime ||
+          !tomorrowAlmaty ||
+          !latestAlmaty ||
+          selectedDate < tomorrowAlmaty ||
+          selectedDate > latestAlmaty
+        ) {
           return res.status(400).json({ message: "Выберите дату от завтра до 180 дней вперёд" });
         }
         const postponed = await postponeVisitConfirmation(req.params.token, appointmentTime);
         const response = await buildVisitConfirmationResponse(req.params.token);
         if (!response) return res.status(404).json({ message: "Ссылка подтверждения не найдена" });
         return res.json(postponed.changed || postponed.alreadyPostponed
-          ? { ...response, status: "postponed", changed: true }
+          ? { ...response, changed: postponed.changed }
           : response);
       }
 

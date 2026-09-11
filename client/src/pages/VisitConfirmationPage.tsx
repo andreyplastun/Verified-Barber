@@ -23,7 +23,9 @@ type Confirmation = {
   status: ConfirmationStatus;
   specialistName: string;
   specialistImageUrl?: string | null;
-  appointmentTime: string;
+  appointmentTime: string | null;
+  appointmentTimeKnown: boolean;
+  appointmentTimeIsDateOnly: boolean;
   reviewUrl?: string | null;
 };
 
@@ -55,16 +57,45 @@ async function respondToConfirmation(token: string, answer: ConfirmationAnswer):
   return body;
 }
 
-function formatAppointmentTime(value: string) {
+function formatAppointmentTime(value: string | null, dateOnly = false) {
+  if (!value) return "Дата визита пока не указана";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
+  if (dateOnly) {
+    return new Intl.DateTimeFormat("ru-KZ", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      timeZone: "Asia/Almaty",
+    }).format(date);
+  }
   return new Intl.DateTimeFormat("ru-KZ", {
     weekday: "long",
     day: "numeric",
     month: "long",
+    year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    timeZone: "Asia/Almaty",
   }).format(date);
+}
+
+function formatAlmatyDateOnly(value: Date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Almaty",
+  }).formatToParts(value);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function addAlmatyCalendarDays(value: string, days: number) {
+  const [year, month, day] = value.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day + days));
+  return shifted.toISOString().slice(0, 10);
 }
 
 function initials(name: string) {
@@ -165,7 +196,11 @@ export default function VisitConfirmationPage() {
 
   const confirmation = submitted || confirmationQuery.data;
   const displayTime = useMemo(
-    () => (confirmation ? formatAppointmentTime(confirmation.appointmentTime) : ""),
+    () => (
+      confirmation
+        ? formatAppointmentTime(confirmation.appointmentTime, confirmation.appointmentTimeIsDateOnly)
+        : ""
+    ),
     [confirmation],
   );
 
@@ -268,13 +303,13 @@ export default function VisitConfirmationPage() {
         tone="success"
         icon={<CalendarDays className="h-7 w-7" />}
         title="Новая дата сохранена"
-        text="После новой даты визита мы отправим ещё одно подтверждение в WhatsApp."
+        text={`Новая дата визита: ${displayTime}. После этой даты мы отправим ещё одно подтверждение в WhatsApp.`}
       />
     );
   }
 
   const isResponding = respondMutation.isPending;
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const tomorrow = addAlmatyCalendarDays(formatAlmatyDateOnly(new Date()), 1);
   return (
     <ScreenShell>
       <div>
@@ -311,7 +346,9 @@ export default function VisitConfirmationPage() {
           <div className="flex items-start gap-3 p-5">
             <CalendarDays className="mt-0.5 h-5 w-5 shrink-0 text-accent-foreground" />
             <div>
-              <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Дата и время</p>
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                {confirmation.appointmentTimeIsDateOnly ? "Дата визита" : "Дата и время"}
+              </p>
               <p className="mt-1 text-[15px] font-semibold capitalize leading-6" data-testid="text-appointment-time">{displayTime}</p>
             </div>
           </div>

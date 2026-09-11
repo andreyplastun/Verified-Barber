@@ -4,8 +4,11 @@ import {
   buildVisitConfirmationMessage,
   getVisitConfirmationExpiry,
   getVisitConfirmationSendAt,
+  isFuturePostponedDate,
 } from "./visit-confirmation-policy";
 import { hashPhoneToLockId } from "./wa-phone-lock";
+
+export type VisitConfirmationDatabase = Pick<typeof pool, "query" | "connect">;
 
 const REVIEW_BASE_URL = "https://www.rateus.kz";
 const FALLBACK_DELAY_HOURS = 3;
@@ -29,13 +32,16 @@ export type VisitConfirmationStatus =
   | "confirmed"
   | "declined"
   | "expired"
-  | "superseded";
+  | "superseded"
+  | "postponed";
 
 export type VisitConfirmationPublic = {
   status: VisitConfirmationStatus;
   specialistName: string;
   specialistImageUrl: string | null;
-  appointmentTime: string;
+  appointmentTime: string | null;
+  appointmentTimeKnown: boolean;
+  appointmentTimeIsDateOnly: boolean;
   reviewUrl?: string | null;
 };
 
@@ -287,7 +293,7 @@ export async function bindWhatsappEnquiryFromIncoming(
     const link = confirmationUrl(confirmationToken);
     const messageText = buildVisitConfirmationMessage(
       enquiry.specialist_name,
-      now,
+      null,
       dueAt,
       link,
     );
@@ -689,8 +695,11 @@ export async function requestPaymentForBooking(
   return true;
 }
 
-export async function expireVisitConfirmation(token: string): Promise<void> {
-  await pool.query(
+export async function expireVisitConfirmation(
+  token: string,
+  database: VisitConfirmationDatabase = pool,
+): Promise<void> {
+  await database.query(
     `WITH expired AS (
        UPDATE bookings
        SET status = CASE WHEN status = 'ready_to_complete' THEN 'cancelled' ELSE status END,
@@ -711,18 +720,29 @@ export async function expireVisitConfirmation(token: string): Promise<void> {
   );
 }
 
-export async function getVisitConfirmationByToken(token: string): Promise<{
+export async function getVisitConfirmationByToken(
+  token: string,
+  database: VisitConfirmationDatabase = pool,
+): Promise<{
   bookingId: number;
   bookingStatus: string;
   confirmationStatus: VisitConfirmationStatus;
   specialistName: string;
   specialistImageUrl: string | null;
-  appointmentTime: Date;
+  appointmentTime: Date | null;
+  appointmentTimeKnown: boolean;
+  appointmentTimeIsDateOnly: boolean;
 } | null> {
-  await expireVisitConfirmation(token);
-  const result = await pool.query(
+  await expireVisitConfirmation(token, database);
+  const result = await database.query(
     `SELECT b.id AS booking_id, b.status AS booking_status,
             b.visit_confirmation_status, b.appointment_time,
+            b.visit_confirmation_postponed_for,
+            EXISTS (
+              SELECT 1
+              FROM whatsapp_enquiries e
+              WHERE e.booking_id = b.id
+            ) AS is_whatsapp_enquiry,
             s.name AS specialist_name, s.image_url AS specialist_image_url
      FROM bookings b
      JOIN specialists s ON s.id = b.specialist_id
@@ -732,13 +752,28 @@ export async function getVisitConfirmationByToken(token: string): Promise<{
   );
   const row = result.rows[0];
   if (!row?.visit_confirmation_status) return null;
+  const postponedFor = row.visit_confirmation_postponed_for
+    ? new Date(row.visit_confirmation_postponed_for)
+    : null;
+  const effectivePostponedFor = postponedFor && !Number.isNaN(postponedFor.getTime())
+    ? postponedFor
+    : null;
+  const isPostponed = row.visit_confirmation_status === "pending" &&
+    isFuturePostponedDate(row.visit_confirmation_postponed_for);
+  const appointmentTime = effectivePostponedFor
+    ? effectivePostponedFor
+    : row.is_whatsapp_enquiry
+      ? null
+      : new Date(row.appointment_time);
   return {
     bookingId: Number(row.booking_id),
     bookingStatus: row.booking_status,
-    confirmationStatus: row.visit_confirmation_status,
+    confirmationStatus: isPostponed ? "postponed" : row.visit_confirmation_status,
     specialistName: row.specialist_name,
     specialistImageUrl: row.specialist_image_url || null,
-    appointmentTime: new Date(row.appointment_time),
+    appointmentTime,
+    appointmentTimeKnown: appointmentTime !== null,
+    appointmentTimeIsDateOnly: effectivePostponedFor !== null,
   };
 }
 
@@ -746,12 +781,13 @@ export async function answerVisitConfirmation(
   token: string,
   answer: "yes" | "no",
   trustWeight: number,
+  database: VisitConfirmationDatabase = pool,
 ): Promise<{
   outcome: VisitConfirmationStatus;
   bookingId: number;
   changed: boolean;
 }> {
-  const client = await pool.connect();
+  const client = await database.connect();
   try {
     await client.query("BEGIN");
     const identity = await client.query(
@@ -882,8 +918,9 @@ export async function answerVisitConfirmation(
 export async function postponeVisitConfirmation(
   token: string,
   appointmentTime: Date,
+  database: VisitConfirmationDatabase = pool,
 ): Promise<{ bookingId: number; changed: boolean; alreadyPostponed?: boolean }> {
-  const client = await pool.connect();
+  const client = await database.connect();
   try {
     await client.query("BEGIN");
     const identity = await client.query(
@@ -933,6 +970,8 @@ export async function postponeVisitConfirmation(
       throw Object.assign(new Error("confirmation_send_in_progress"), { statusCode: 409 });
     }
 
+    // The selected date is a calendar date in Almaty. The follow-up request
+    // is due one day after that date, adjusted to the allowed send window.
     const sendAt = getVisitConfirmationSendAt(
       new Date(appointmentTime.getTime() + ENQUIRY_TIMER_MS),
     );
