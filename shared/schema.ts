@@ -410,6 +410,9 @@ export const specialistSignupSchema = z.object({
   serviceLocation: z.string().min(1, "Укажите место приёма"),
   phone: z.string().trim().regex(/^\+?[\d\s\-()]{10,18}$/, "Введите корректный номер WhatsApp"),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
+  // Optional, explicit opt-in for passing profile/contact data to AssistBot
+  // after the specialist account and profile are created.
+  assistbotConnectionConsent: z.boolean().default(false),
   referredBySpecialistId: z.number().optional(),
 });
 
@@ -470,6 +473,41 @@ export type Booking = typeof bookings.$inferSelect;
 export const appConfig = pgTable("app_config", {
   key: text("key").primaryKey(),
   value: text("value").notNull(),
+});
+
+// A specialist's request to have their booking WhatsApp number connected by
+// AssistBot.  An order being accepted by AssistBot is deliberately not the
+// same thing as a connected account; provider_order_id only proves that the
+// request was accepted.
+export const assistbotConnectionRequests = pgTable("assistbot_connection_requests", {
+  id: serial("id").primaryKey(),
+  specialistId: integer("specialist_id").notNull().references(() => specialists.id),
+  // Production users.id is UUID; keep this aligned with the startup DDL and
+  // avoid the historical text-vs-UUID mismatch used by older claim helpers.
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id),
+  normalizedPhone: text("normalized_phone").notNull(),
+  providerLogin: text("provider_login").notNull(),
+  status: text("status", {
+    enum: [
+      "pending_partner_configuration",
+      "pending_submission",
+      "submitting",
+      "pending_provider",
+      "provider_error",
+      "submission_unknown",
+      "superseded",
+    ],
+  }).default("pending_partner_configuration").notNull(),
+  providerOrderId: integer("provider_order_id"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  consentScope: text("consent_scope").notNull(),
+  consentVersion: text("consent_version").notNull(),
+  consentedAt: timestamp("consented_at").notNull(),
+  submittedAt: timestamp("submitted_at"),
+  supersededAt: timestamp("superseded_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const waMessages = pgTable("wa_messages", {
@@ -645,6 +683,7 @@ export type ClaimRequest = typeof claimRequests.$inferSelect;
 export type TipsEvent = typeof tipsEvents.$inferSelect;
 export type AnalyticsEvent = typeof analyticsEvents.$inferSelect;
 export type AppConfig = typeof appConfig.$inferSelect;
+export type AssistbotConnectionRequest = typeof assistbotConnectionRequests.$inferSelect;
 export type WaMessage = typeof waMessages.$inferSelect;
 export type WaOptOut = typeof waOptOuts.$inferSelect;
 export type SpecialistVisitConfirmationDecision = typeof specialistVisitConfirmationDecisions.$inferSelect;

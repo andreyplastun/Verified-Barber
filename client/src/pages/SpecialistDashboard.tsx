@@ -8,6 +8,7 @@ import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Tra
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { useRef, useState, useEffect } from 'react';
@@ -27,6 +28,7 @@ import OnboardingPathModal from '@/components/OnboardingPathModal';
 import AddressPicker from '@/components/AddressPicker';
 import { BarberCelebrationOverlay, type CelebrationEvent } from '@/components/celebrations/BarberCelebration';
 import { useMemo } from 'react';
+import AssistBotConnectionCard from '@/components/AssistBotConnectionCard';
 
 type AchievementBadge = { id: string; emoji: string; title: string; desc: string };
 type SpecialistAchievements = {
@@ -67,6 +69,7 @@ export default function SpecialistDashboard() {
   const [whatsapp, setWhatsapp] = useState('');
   const [instagram, setInstagram] = useState('');
   const [contactPhone, setContactPhone] = useState('');
+  const [assistbotConnectionConsent, setAssistbotConnectionConsent] = useState(false);
   const [showAltBookingPhone, setShowAltBookingPhone] = useState(false);
   const [altegioModalOpen, setAltegioModalOpen] = useState(false);
   const [altegioConnecting, setAltegioConnecting] = useState(false);
@@ -790,13 +793,42 @@ export default function SpecialistDashboard() {
           'Content-Type': 'application/json',
           'x-user-id': currentUser.id,
         },
-        body: JSON.stringify({ bio, city, country, subcategory, workAddress: addr, workLat: lat, workLng: lng, bookingUrl, whatsapp, instagram, phone: contactPhone }),
+        body: JSON.stringify({
+          bio,
+          city,
+          country,
+          subcategory,
+          workAddress: addr,
+          workLat: lat,
+          workLng: lng,
+          bookingUrl,
+          whatsapp,
+          instagram,
+          phone: contactPhone,
+          assistbotConnectionConsent,
+        }),
       });
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || 'Failed to save');
       }
+      const result = await res.json();
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'assistbot-connection'] });
+      setAssistbotConnectionConsent(false);
+      if (result.assistbotError) {
+        toast({
+          title: 'Профиль сохранён, но заявка AssistBot не отправлена',
+          description: result.assistbotError,
+          variant: 'destructive',
+        });
+      } else if (result.assistbotConnection?.request) {
+        toast({
+          title: 'Профиль сохранён',
+          description: result.assistbotConnection.request.errorMessage ||
+            'Заявка AssistBot сохранена. Подключение ещё не подтверждено провайдером.',
+        });
+      }
       if (geocodeMissed) {
         toast({
           title: 'Адрес сохранён, но не найден на карте',
@@ -804,7 +836,9 @@ export default function SpecialistDashboard() {
           variant: 'destructive',
         });
       } else {
-        toast({ title: 'Профиль сохранён' });
+        if (!result.assistbotConnection?.request && !result.assistbotError) {
+          toast({ title: 'Профиль сохранён' });
+        }
       }
     } catch (err: any) {
       toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
@@ -1197,6 +1231,18 @@ export default function SpecialistDashboard() {
             <p className="text-xs text-muted-foreground">
               Сюда пишут клиенты для записи и приходят уведомления сервиса.
             </p>
+            <label className="flex items-start gap-3 rounded-md border border-dashed p-3 text-sm leading-relaxed">
+              <Checkbox
+                checked={assistbotConnectionConsent}
+                onCheckedChange={(checked) => setAssistbotConnectionConsent(checked === true)}
+                data-testid="checkbox-profile-assistbot-consent"
+              />
+              <span>
+                Разрешаю передать AssistBot имя, email, телефон управляющего и сохранённый
+                номер WhatsApp для заявки на подключение. Это добровольное согласие;
+                подключение не считается подтверждённым автоматически.
+              </span>
+            </label>
             {isAltegioConnected ? (
               <div
                 className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 space-y-3"
@@ -1287,6 +1333,12 @@ export default function SpecialistDashboard() {
               </button>
             )}
           </div>
+          <AssistBotConnectionCard
+            specialistId={specialistId || 0}
+            userId={currentUser?.id || ''}
+            whatsapp={whatsapp || contactPhone}
+            savedWhatsapp={(specialist as any)?.whatsapp || (specialist as any)?.phone}
+          />
           <div className="space-y-2" id="bio-section">
             <Label htmlFor="bio">Краткое описание</Label>
             <Textarea
@@ -1305,7 +1357,7 @@ export default function SpecialistDashboard() {
               <Button
                 size="sm"
                 onClick={handleSaveBio}
-                disabled={savingBio || (bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null) && bookingUrl === ((specialist as any)?.bookingUrl || '') && whatsapp === ((specialist as any)?.whatsapp || '') && instagram === ((specialist as any)?.instagram || '') && contactPhone === ((specialist as any)?.phone || ''))}
+                disabled={savingBio || (!assistbotConnectionConsent && bio === specialist?.bio && city === (specialist?.city || 'Алматы') && subcategory === ((specialist as any)?.subcategory || '') && workAddress === ((specialist as any)?.workAddress || '') && workLat === ((specialist as any)?.workLat ?? null) && workLng === ((specialist as any)?.workLng ?? null) && bookingUrl === ((specialist as any)?.bookingUrl || '') && whatsapp === ((specialist as any)?.whatsapp || '') && instagram === ((specialist as any)?.instagram || '') && contactPhone === ((specialist as any)?.phone || ''))}
                 data-testid="button-save-bio"
               >
                 {savingBio ? 'Сохранение...' : 'Сохранить'}

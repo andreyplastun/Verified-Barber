@@ -653,6 +653,112 @@ app.use((req, res, next) => {
     enquiryMigrationClient.release();
   }
 
+  // AssistBot connection requests are intentionally persisted separately from
+  // the account token used for outbound messages.  Keep this additive migration
+  // bounded so a locked external/Supabase database cannot hold startup
+  // indefinitely; routes fail closed until a later startup completes it.
+  const assistbotConnectionMigrationClient = await pool.connect();
+  try {
+    await assistbotConnectionMigrationClient.query("BEGIN");
+    await assistbotConnectionMigrationClient.query("SET LOCAL lock_timeout = '1500ms'");
+    await assistbotConnectionMigrationClient.query("SET LOCAL statement_timeout = '5000ms'");
+    await assistbotConnectionMigrationClient.query(`
+      CREATE TABLE IF NOT EXISTS assistbot_connection_requests (
+        id SERIAL PRIMARY KEY,
+        specialist_id INTEGER NOT NULL REFERENCES specialists(id),
+        owner_user_id UUID NOT NULL REFERENCES users(id),
+        normalized_phone TEXT NOT NULL,
+        provider_login TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending_partner_configuration',
+        provider_order_id INTEGER,
+        error_code TEXT,
+        error_message TEXT,
+        consent_scope TEXT NOT NULL,
+        consent_version TEXT NOT NULL,
+        consented_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        submitted_at TIMESTAMP,
+        superseded_at TIMESTAMP,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS owner_user_id UUID;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS provider_login TEXT;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending_partner_configuration';
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS provider_order_id INTEGER;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS error_code TEXT;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS error_message TEXT;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS consent_scope TEXT;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS consent_version TEXT;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS consented_at TIMESTAMP;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMP;
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();
+      ALTER TABLE assistbot_connection_requests
+        ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+           WHERE conname = 'assistbot_connection_requests_specialist_fk'
+        ) THEN
+          ALTER TABLE assistbot_connection_requests
+            ADD CONSTRAINT assistbot_connection_requests_specialist_fk
+            FOREIGN KEY (specialist_id) REFERENCES specialists(id);
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint
+           WHERE conname = 'assistbot_connection_requests_owner_fk'
+        ) THEN
+          ALTER TABLE assistbot_connection_requests
+            ADD CONSTRAINT assistbot_connection_requests_owner_fk
+            FOREIGN KEY (owner_user_id) REFERENCES users(id);
+        END IF;
+      END $$;
+      CREATE UNIQUE INDEX IF NOT EXISTS assistbot_connection_requests_specialist_phone_uniq
+        ON assistbot_connection_requests (specialist_id, normalized_phone)
+        WHERE status <> 'superseded';
+      CREATE UNIQUE INDEX IF NOT EXISTS assistbot_connection_requests_owner_phone_uniq
+        ON assistbot_connection_requests (owner_user_id, normalized_phone)
+        WHERE status <> 'superseded';
+      CREATE UNIQUE INDEX IF NOT EXISTS assistbot_connection_requests_phone_uniq
+        ON assistbot_connection_requests (normalized_phone)
+        WHERE status <> 'superseded';
+      CREATE UNIQUE INDEX IF NOT EXISTS assistbot_connection_requests_login_uniq
+        ON assistbot_connection_requests (provider_login)
+        WHERE status <> 'superseded';
+      CREATE INDEX IF NOT EXISTS assistbot_connection_requests_status_idx
+        ON assistbot_connection_requests (status, updated_at DESC);
+      -- A crashed worker can leave a row in submitting forever. Treat it as
+      -- an unknown provider outcome; never repost it automatically.
+      UPDATE assistbot_connection_requests
+         SET status = 'submission_unknown',
+             error_code = 'stale_submitting',
+             error_message = 'Отправка прервалась; результат нужно проверить вручную',
+             updated_at = NOW()
+       WHERE status = 'submitting'
+         AND updated_at < NOW() - INTERVAL '10 minutes';
+    `);
+    await assistbotConnectionMigrationClient.query("COMMIT");
+    console.log("[STARTUP] AssistBot connection request schema ready");
+  } catch (assistbotConnectionMigrationError) {
+    await assistbotConnectionMigrationClient.query("ROLLBACK").catch(() => undefined);
+    console.error("[STARTUP] AssistBot connection request migration deferred (bounded):", assistbotConnectionMigrationError);
+  } finally {
+    assistbotConnectionMigrationClient.release();
+  }
+
   // Keep incident recovery isolated from the legacy migration block above:
   // an unrelated old migration failure must not prevent this repair.
   const repairClient = await pool.connect();

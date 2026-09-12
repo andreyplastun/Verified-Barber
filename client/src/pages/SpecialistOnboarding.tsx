@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { CheckCircle2, Star, ListChecks } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { Specialist } from '@shared/schema';
@@ -26,6 +28,19 @@ export default function SpecialistOnboarding() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [saving, setSaving] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState('');
+  const [assistbotConnectionConsent, setAssistbotConnectionConsent] = useState(false);
+
+  const { data: savedContact } = useQuery<{ savedPhone?: string | null }>({
+    queryKey: ['/api/specialists', currentUser?.specialistId, 'assistbot-connection'],
+    enabled: Boolean(currentUser?.specialistId),
+  });
+
+  useEffect(() => {
+    if (savedContact?.savedPhone && !whatsappPhone) {
+      setWhatsappPhone(savedContact.savedPhone);
+    }
+  }, [savedContact?.savedPhone, whatsappPhone]);
 
   // The catalog endpoint returns only active specialists, best profiles first.
   // Use the top one as a real "example profile" the new specialist can aspire to.
@@ -38,6 +53,14 @@ export default function SpecialistOnboarding() {
 
   const handleStart = async () => {
     if (!currentUser?.id) return;
+    if (assistbotConnectionConsent && !whatsappPhone.trim()) {
+      toast({
+        title: 'Укажите номер WhatsApp',
+        description: 'Номер нужен, чтобы подать заявку AssistBot.',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     setSaving(true);
     try {
@@ -51,6 +74,8 @@ export default function SpecialistOnboarding() {
           kaspiPhone: null,
           tipsEnabled: false,
           skipped: true,
+          whatsapp: whatsappPhone || savedContact?.savedPhone || '',
+          assistbotConnectionConsent,
         }),
       });
 
@@ -83,6 +108,36 @@ export default function SpecialistOnboarding() {
             профессиональную репутацию.
           </p>
         </div>
+
+        <Card className="border-primary/30 bg-primary/5" data-testid="card-onboarding-whatsapp">
+          <CardContent className="pt-6 space-y-4">
+            <div>
+              <p className="text-sm font-medium text-foreground">WhatsApp для записи</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Сначала сохраняем номер в профиле, затем (только с вашего согласия) подаём заявку AssistBot.
+              </p>
+            </div>
+            <Input
+              type="tel"
+              value={whatsappPhone}
+              onChange={(event) => setWhatsappPhone(event.target.value)}
+              placeholder="+7 777 123 45 67"
+              data-testid="input-onboarding-whatsapp"
+            />
+            <label className="flex items-start gap-3 text-sm leading-relaxed">
+              <Checkbox
+                checked={assistbotConnectionConsent}
+                onCheckedChange={(checked) => setAssistbotConnectionConsent(checked === true)}
+                data-testid="checkbox-onboarding-assistbot-consent"
+              />
+              <span>
+                Разрешаю передать AssistBot имя, email, телефон управляющего и сохранённый
+                номер WhatsApp для заявки на подключение. Это добровольное согласие;
+                подключение не считается подтверждённым автоматически.
+              </span>
+            </label>
+          </CardContent>
+        </Card>
 
         <Card>
           <CardContent className="pt-6 space-y-3">

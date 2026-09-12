@@ -169,9 +169,6 @@ async function buildAll() {
     bundle: true,
     format: "cjs",
     outfile: "dist/index.cjs",
-    define: {
-      "process.env.NODE_ENV": '"production"',
-    },
     minify: true,
     external: externals,
     logLevel: "info",
@@ -185,6 +182,10 @@ async function buildAll() {
     "SUPABASE_SERVICE_ROLE_KEY",
     "SESSION_SECRET",
     "ASSISTBOT_TOKEN",
+    // Partner provisioning credentials/gate are runtime-only. They are not
+    // bundled or persisted in app_config (unlike the account token above).
+    "ASSISTBOT_PARTNER_TOKEN",
+    "ASSISTBOT_PROVISIONING_ENABLED",
   ];
   const envLines: string[] = [];
   for (const key of runtimeEnvKeys) {

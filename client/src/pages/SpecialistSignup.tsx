@@ -39,6 +39,7 @@ const signupSchema = z.object({
   serviceLocation: z.string().min(1, "Укажите место приёма"),
   phone: z.string().trim().regex(/^\+?[\d\s\-()]{10,18}$/, "Введите корректный номер WhatsApp"),
   consentReviews: z.boolean().refine((val) => val === true, "Необходимо согласие на отзывы"),
+  assistbotConnectionConsent: z.boolean().default(false),
 });
 
 type SignupFormData = z.infer<typeof signupSchema>;
@@ -64,6 +65,7 @@ export default function SpecialistSignup() {
       serviceLocation: "",
       phone: "",
       consentReviews: false,
+      assistbotConnectionConsent: false,
     },
   });
 
@@ -223,6 +225,32 @@ export default function SpecialistSignup() {
                     Сюда придут подсказки по настройке профиля
                   </p>
                   <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="assistbotConnectionConsent"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-start space-x-3 space-y-0 rounded-md border border-dashed p-4">
+                  <FormControl>
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      data-testid="checkbox-assistbot-connection-consent"
+                    />
+                  </FormControl>
+                  <div className="space-y-1 leading-relaxed">
+                    <FormLabel className="text-sm font-normal">
+                      Разрешаю передать AssistBot моё имя, email, телефон управляющего
+                      и этот номер WhatsApp для заявки на подключение. Подключение не считается
+                      выполненным, пока его не подтвердит провайдер.
+                    </FormLabel>
+                    <p className="text-xs text-muted-foreground">
+                      Это отдельное добровольное согласие и не обязательно для создания профиля.
+                    </p>
+                  </div>
                 </FormItem>
               )}
             />

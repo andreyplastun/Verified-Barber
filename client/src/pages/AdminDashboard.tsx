@@ -17,6 +17,7 @@ import type { Specialist, User } from "@shared/schema";
 import { categoryLabels } from "@shared/schema";
 import { RatingThemeSettings } from "@/components/admin/RatingThemeSettings";
 import { AssistBotConnection } from "@/components/admin/AssistBotConnection";
+import { AssistBotConnectionRequests } from "@/components/admin/AssistBotConnectionRequests";
 
 type BookingWithDetails = {
   id: number;
@@ -1373,6 +1374,7 @@ export default function AdminDashboard() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <AssistBotConnection specialists={specialists} />
+                <AssistBotConnectionRequests userId={currentUser?.id || ""} />
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="font-medium">Автоотправка</Label>
