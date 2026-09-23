@@ -3999,7 +3999,7 @@ ${magicLink}`;
         return res.status(400).json({ message: "Запрос уже отправлен или профиль привязан" });
       }
 
-      const claim = await storage.createClaimRequest(specialistId, phone || "");
+      const claim = await storage.createClaimRequest(specialistId, phone);
 
       // Best-effort email notification
       notifyAdminNewClaim(claim, specialist.name).catch(() => {});

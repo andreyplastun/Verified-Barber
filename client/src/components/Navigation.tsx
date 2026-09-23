@@ -8,11 +8,18 @@ import { AuthModal } from "./auth/AuthModal";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { claimPhoneSchema } from "@shared/claim-phone";
 
 export function Navigation() {
   const [location, setLocation] = useLocation();
   const { authUser, currentUser, refetchUser, loading } = useAuth();
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [claimModalOpen, setClaimModalOpen] = useState(false);
+  const [claimPhone, setClaimPhone] = useState("");
+  const [claimPhoneError, setClaimPhoneError] = useState("");
   const { toast } = useToast();
 
   const handleLogout = async () => {
@@ -47,9 +54,10 @@ export function Navigation() {
   });
 
   const claimMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (phone: string) => {
       await apiRequest("POST", "/api/claim-requests", {
         specialistId: specialistId,
+        phone,
       });
     },
     onSuccess: () => {
@@ -57,6 +65,9 @@ export function Navigation() {
         title: "Запрос отправлен",
         description: "Администратор рассмотрит ваш запрос.",
       });
+      setClaimModalOpen(false);
+      setClaimPhone("");
+      setClaimPhoneError("");
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'claim-status'] });
     },
     onError: (error: any) => {
@@ -67,6 +78,16 @@ export function Navigation() {
       });
     },
   });
+
+  const submitClaim = () => {
+    const parsed = claimPhoneSchema.safeParse(claimPhone);
+    if (!parsed.success) {
+      setClaimPhoneError(parsed.error.errors[0].message);
+      return;
+    }
+    setClaimPhoneError("");
+    claimMutation.mutate(parsed.data);
+  };
 
   const showClaimButton = specialistId !== null && claimStatus && !claimStatus.isClaimed;
 
@@ -116,7 +137,7 @@ export function Navigation() {
 
           {showClaimButton && (
             <button
-              onClick={() => claimMutation.mutate()}
+              onClick={() => setClaimModalOpen(true)}
               disabled={claimMutation.isPending}
               className="flex flex-col items-center justify-center space-y-1 w-16 h-full cursor-pointer transition-colors duration-200 text-muted-foreground hover:text-foreground"
               data-testid="button-claim-profile"
@@ -158,6 +179,55 @@ export function Navigation() {
         onClose={() => setAuthModalOpen(false)}
         onSuccess={handleLoginSuccess}
       />
+
+      <Dialog
+        open={claimModalOpen}
+        onOpenChange={(open) => {
+          setClaimModalOpen(open);
+          if (!open) setClaimPhoneError("");
+        }}
+      >
+        <DialogContent className="sm:max-w-sm" data-testid="modal-navigation-claim">
+          <DialogHeader>
+            <DialogTitle>Забрать управление профилем</DialogTitle>
+            <DialogDescription>
+              Укажите ваш номер WhatsApp. После одобрения заявки на него придёт ссылка для привязки профиля.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label htmlFor="navigation-claim-phone" className="text-sm font-medium">
+              Номер WhatsApp
+            </label>
+            <Input
+              id="navigation-claim-phone"
+              type="tel"
+              placeholder="+7 (___) ___-__-__"
+              value={claimPhone}
+              onChange={(event) => {
+                setClaimPhone(event.target.value);
+                if (claimPhoneError) setClaimPhoneError("");
+              }}
+              aria-invalid={Boolean(claimPhoneError)}
+              data-testid="input-navigation-claim-phone"
+            />
+            {claimPhoneError && (
+              <p className="text-sm text-destructive" role="alert">{claimPhoneError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setClaimModalOpen(false)}>
+              Отмена
+            </Button>
+            <Button
+              onClick={submitClaim}
+              disabled={claimMutation.isPending}
+              data-testid="button-navigation-submit-claim"
+            >
+              {claimMutation.isPending ? "Отправляем..." : "Отправить запрос"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

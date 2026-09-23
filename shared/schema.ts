@@ -1,6 +1,7 @@
 import { pgTable, text, serial, integer, boolean, timestamp, uuid, pgEnum, real, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { claimPhoneSchema } from "./claim-phone";
 import { relations } from "drizzle-orm";
 import { sql } from "drizzle-orm";
 
@@ -460,7 +461,7 @@ export const claimRequestsRelations = relations(claimRequests, ({ one }) => ({
 
 export const claimRequestSchema = z.object({
   specialistId: z.number().int().positive(),
-  phone: z.string().optional().default(""),
+  phone: claimPhoneSchema,
 });
 
 export type CreateClaimRequest = z.infer<typeof claimRequestSchema>;

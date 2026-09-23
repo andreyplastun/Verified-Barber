@@ -16,6 +16,7 @@ import { motion } from "framer-motion";
 import { BookingButton } from "@/components/BookingButton";
 import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn, Confetti } from "@/components/ui/animations";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
+import { claimPhoneSchema } from "@shared/claim-phone";
 
 export default function SpecialistProfile() {
   const [, params] = useRoute("/specialist/:id");
@@ -46,15 +47,17 @@ export default function SpecialistProfile() {
   const [showClaimForm, setShowClaimForm] = useState(false);
   const [showClaimModal, setShowClaimModal] = useState(false);
   const [claimPhone, setClaimPhone] = useState("");
+  const [claimPhoneError, setClaimPhoneError] = useState("");
 
   const dismissClaimModal = () => {
     setShowClaimModal(false);
+    setClaimPhoneError("");
     if (id > 0) localStorage.setItem(`claim_modal_seen_${id}`, "1");
   };
 
   const claimMutation = useMutation({
-    mutationFn: async () => {
-      await apiRequest("POST", "/api/claim-requests", { specialistId: id, phone: claimPhone });
+    mutationFn: async (phone: string) => {
+      await apiRequest("POST", "/api/claim-requests", { specialistId: id, phone });
     },
     onSuccess: () => {
       toast({ title: "Запрос отправлен", description: "Администратор рассмотрит ваш запрос." });
@@ -62,11 +65,22 @@ export default function SpecialistProfile() {
       setShowClaimForm(false);
       setShowClaimModal(false);
       setClaimPhone("");
+      setClaimPhoneError("");
     },
     onError: (error: any) => {
       toast({ title: "Ошибка", description: error?.message || "Ошибка при отправке запроса", variant: "destructive" });
     },
   });
+
+  const submitClaim = () => {
+    const parsed = claimPhoneSchema.safeParse(claimPhone);
+    if (!parsed.success) {
+      setClaimPhoneError(parsed.error.errors[0].message);
+      return;
+    }
+    setClaimPhoneError("");
+    claimMutation.mutate(parsed.data);
+  };
 
   const showClaimButton = claimStatus && !claimStatus.isClaimed;
 
@@ -344,7 +358,7 @@ export default function SpecialistProfile() {
               <div className="space-y-3">
                 <div className="flex items-center gap-2">
                   <UserCheck className="w-5 h-5 text-primary flex-shrink-0" />
-                  <p className="text-sm font-medium">Укажите ваш номер телефона</p>
+                  <p className="text-sm font-medium">Укажите ваш номер WhatsApp</p>
                 </div>
                 <div className="flex gap-2">
                   <div className="relative flex-1">
@@ -353,23 +367,30 @@ export default function SpecialistProfile() {
                       type="tel"
                       placeholder="+7 (___) ___-__-__"
                       value={claimPhone}
-                      onChange={(e) => setClaimPhone(e.target.value)}
+                      onChange={(e) => {
+                        setClaimPhone(e.target.value);
+                        if (claimPhoneError) setClaimPhoneError("");
+                      }}
                       className="pl-9"
+                      aria-invalid={Boolean(claimPhoneError)}
                       data-testid="input-claim-phone"
                     />
                   </div>
                   <Button
                     size="sm"
-                    onClick={() => claimMutation.mutate()}
-                    disabled={claimMutation.isPending || !claimPhone.trim()}
+                    onClick={submitClaim}
+                    disabled={claimMutation.isPending}
                     data-testid="button-submit-claim"
                   >
                     {claimMutation.isPending ? "..." : "Отправить"}
                   </Button>
                 </div>
+                {claimPhoneError && (
+                  <p className="text-xs text-destructive" role="alert">{claimPhoneError}</p>
+                )}
                 <button
                   className="text-xs text-muted-foreground underline"
-                  onClick={() => { setShowClaimForm(false); setClaimPhone(""); }}
+                  onClick={() => { setShowClaimForm(false); setClaimPhone(""); setClaimPhoneError(""); }}
                   data-testid="button-cancel-claim"
                 >
                   Отмена
@@ -384,20 +405,33 @@ export default function SpecialistProfile() {
             <DialogHeader>
               <DialogTitle>Это ваш аккаунт?</DialogTitle>
               <DialogDescription>
-                Заберите свой аккаунт, чтобы управлять записями, фото и отзывами. Укажите ваш номер — администратор подтвердит, и профиль станет вашим.
+                Заберите свой аккаунт, чтобы управлять записями, фото и отзывами. Укажите ваш номер WhatsApp — администратор подтвердит, и профиль станет вашим.
               </DialogDescription>
             </DialogHeader>
-            <div className="relative">
-              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                type="tel"
-                placeholder="+7 (___) ___-__-__"
-                value={claimPhone}
-                onChange={(e) => setClaimPhone(e.target.value)}
-                className="pl-9"
-                data-testid="input-claim-phone-modal"
-              />
+            <div className="space-y-2">
+              <label htmlFor="claim-phone-modal" className="text-sm font-medium">
+                Номер WhatsApp
+              </label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  id="claim-phone-modal"
+                  type="tel"
+                  placeholder="+7 (___) ___-__-__"
+                  value={claimPhone}
+                  onChange={(e) => {
+                    setClaimPhone(e.target.value);
+                    if (claimPhoneError) setClaimPhoneError("");
+                  }}
+                  className="pl-9"
+                  aria-invalid={Boolean(claimPhoneError)}
+                  data-testid="input-claim-phone-modal"
+                />
+              </div>
             </div>
+            {claimPhoneError && (
+              <p className="text-sm text-destructive" role="alert">{claimPhoneError}</p>
+            )}
             <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button
                 variant="ghost"
@@ -407,8 +441,8 @@ export default function SpecialistProfile() {
                 Позже
               </Button>
               <Button
-                onClick={() => claimMutation.mutate()}
-                disabled={claimMutation.isPending || !claimPhone.trim()}
+                onClick={submitClaim}
+                disabled={claimMutation.isPending}
                 data-testid="button-claim-account-modal"
               >
                 {claimMutation.isPending ? "..." : "Забрать аккаунт"}

@@ -18,6 +18,7 @@ import { categoryLabels } from "@shared/schema";
 import { RatingThemeSettings } from "@/components/admin/RatingThemeSettings";
 import { AssistBotConnection } from "@/components/admin/AssistBotConnection";
 import { AssistBotConnectionRequests } from "@/components/admin/AssistBotConnectionRequests";
+import { normalizeClaimPhone } from "@shared/claim-phone";
 
 type BookingWithDetails = {
   id: number;
@@ -417,7 +418,7 @@ export default function AdminDashboard() {
   type ClaimRequestWithName = {
     id: number;
     specialistId: number;
-    phone: string;
+    phone: string | null;
     status: string;
     claimToken: string | null;
     tokenExpiresAt: string | null;
@@ -1226,7 +1227,20 @@ export default function AdminDashboard() {
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <div>
                           <p className="font-medium text-sm">{claim.specialistName}</p>
-                          <p className="text-xs text-muted-foreground">{claim.phone}</p>
+                          <p
+                            className={`text-xs ${
+                              claim.phone?.trim() && !normalizeClaimPhone(claim.phone)
+                                ? "text-destructive"
+                                : "text-muted-foreground"
+                            }`}
+                            data-testid={`text-claim-phone-${claim.id}`}
+                          >
+                            {!claim.phone?.trim()
+                              ? "Номер не указан"
+                              : normalizeClaimPhone(claim.phone)
+                                ? claim.phone
+                                : `Некорректный номер: ${claim.phone}`}
+                          </p>
                         </div>
                         <Badge
                           variant={
@@ -1308,12 +1322,16 @@ export default function AdminDashboard() {
                               disabled={Boolean(
                                 claim.tokenUsedAt
                                 || (claim.tokenExpiresAt && new Date(claim.tokenExpiresAt) <= new Date())
+                                || !normalizeClaimPhone(claim.phone)
                               )}
+                              title={!normalizeClaimPhone(claim.phone) ? "Корректный номер WhatsApp не указан" : undefined}
                               onClick={() => {
+                                const normalizedPhone = normalizeClaimPhone(claim.phone);
+                                if (!normalizedPhone) return;
                                 const baseUrl = window.location.origin;
                                 const link = `${baseUrl}/claim/${claim.claimToken}`;
                                 const text = `Здравствуйте! Ваш запрос на профиль «${claim.specialistName}» на WHO одобрен. Перейдите по ссылке для привязки: ${link}`;
-                                window.open(`https://wa.me/${claim.phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, "_blank");
+                                window.open(`https://wa.me/${normalizedPhone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, "_blank");
                               }}
                               data-testid={`button-whatsapp-claim-${claim.id}`}
                             >
