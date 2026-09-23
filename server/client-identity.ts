@@ -1,6 +1,8 @@
 import { storage } from "./storage";
 import type { Booking } from "@shared/schema";
 import type { AltegioFirstVisitStatus } from "./storage";
+import { normalizePhone } from "./phone-normalization";
+export { normalizePhone };
 
 const VALID_KZ_MOBILE_PREFIXES = new Set([
   "700", "701", "702", "703", "704", "705", "706", "707", "708", "709",
@@ -28,28 +30,6 @@ export function isValidKzPhone(normalizedPhone: string | null): boolean {
     return VALID_UZ_MOBILE_PREFIXES.has(operator);
   }
   return false;
-}
-
-export function normalizePhone(phone: string | null | undefined): string | null {
-  if (!phone) return null;
-
-  const digits = phone.replace(/\D/g, "");
-  if (!digits) return null;
-
-  if (digits.startsWith("8") && digits.length === 11) {
-    return "+7" + digits.slice(1);
-  }
-  if (digits.startsWith("7") && digits.length === 11) {
-    return "+7" + digits.slice(1);
-  }
-  // Uzbekistan: +998 XX XXXXXXX (12 digits)
-  if (digits.startsWith("998") && digits.length === 12) {
-    return "+" + digits;
-  }
-  if (!digits.startsWith("+")) {
-    return "+" + digits;
-  }
-  return phone.replace(/[\s\-\(\)]/g, "");
 }
 
 export interface ClientIdentityResult {

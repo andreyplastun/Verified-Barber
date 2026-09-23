@@ -425,6 +425,8 @@ export default function AdminDashboard() {
     createdAt: string;
     resolvedAt: string | null;
     specialistName: string;
+    notificationStatus: "queued" | "sending" | "sent" | "failed" | "skipped" | null;
+    notificationError: string | null;
   };
 
   const [claimCopied, setClaimCopied] = useState<number | null>(null);
@@ -439,6 +441,7 @@ export default function AdminDashboard() {
       return res.json();
     },
     enabled: !!currentUser && activeTab === "claims",
+    refetchInterval: activeTab === "claims" ? 15000 : false,
   });
 
   const approveClaimMutation = useMutation({
@@ -454,12 +457,22 @@ export default function AdminDashboard() {
       return res.json();
     },
     onSuccess: (data) => {
-      toast({ title: "Запрос одобрен" });
-      refetchClaims();
-      if (data.claimLink) {
-        navigator.clipboard.writeText(data.claimLink);
-        toast({ title: "Ссылка скопирована", description: "Отправьте её заявителю" });
+      const notificationStatus = data.notificationStatus;
+      if (notificationStatus === "sent") {
+        toast({ title: "Запрос одобрен", description: "WhatsApp отправлен" });
+      } else if (notificationStatus === "queued" || notificationStatus === "sending") {
+        toast({
+          title: "Запрос одобрен",
+          description: "WhatsApp поставлен в очередь — это ещё не означает доставку",
+        });
+      } else {
+        toast({
+          title: "Запрос одобрен",
+          description: "Автоотправка не выполнена. Используйте WhatsApp или скопируйте ссылку.",
+          variant: "destructive",
+        });
       }
+      refetchClaims();
     },
     onError: (err: Error) => {
       toast({ title: "Ошибка", description: err.message, variant: "destructive" });
@@ -1256,6 +1269,20 @@ export default function AdminDashboard() {
 
                       {claim.status === "approved" && claim.claimToken && (
                         <div className="pt-1">
+                          <p className={`text-xs mb-2 ${
+                            claim.notificationStatus === "sent"
+                              ? "text-green-600"
+                              : claim.notificationStatus === "failed" || claim.notificationStatus === "skipped"
+                                ? "text-destructive"
+                                : "text-muted-foreground"
+                          }`} data-testid={`claim-notification-status-${claim.id}`}>
+                            {claim.notificationStatus === "sent" && "WhatsApp отправлен"}
+                            {claim.notificationStatus === "sending" && "WhatsApp отправляется"}
+                            {claim.notificationStatus === "queued" && "WhatsApp в очереди (ещё не доставлен)"}
+                            {claim.notificationStatus === "failed" && "Автоотправка WhatsApp не удалась"}
+                            {claim.notificationStatus === "skipped" && "Автоотправка WhatsApp отменена"}
+                            {!claim.notificationStatus && "Автоотправка не запускалась"}
+                          </p>
                           <div className="flex items-center gap-2">
                             <Button
                               size="sm"
@@ -1278,6 +1305,10 @@ export default function AdminDashboard() {
                             <Button
                               size="sm"
                               variant="outline"
+                              disabled={Boolean(
+                                claim.tokenUsedAt
+                                || (claim.tokenExpiresAt && new Date(claim.tokenExpiresAt) <= new Date())
+                              )}
                               onClick={() => {
                                 const baseUrl = window.location.origin;
                                 const link = `${baseUrl}/claim/${claim.claimToken}`;

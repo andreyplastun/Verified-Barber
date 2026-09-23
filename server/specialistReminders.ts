@@ -24,7 +24,7 @@ const MAX_PROFILE_REMINDERS = 3; // profile/first-visit nudges capped at 3 total
 const MAX_CLAIM_REMINDERS = 3; // claim-ownership nudges capped at 3 total
 const MAX_UNCOMPLETED_REMINDERS = 4; // "finish your visits" nudges capped at 4 total
 
-type ReminderType = Exclude<SpecialistReminderType, "inactive">;
+type ReminderType = Exclude<SpecialistReminderType, "inactive" | "claim_approved">;
 
 interface Candidate {
   id: number;
@@ -179,7 +179,7 @@ async function claimReminder(
           const usage = await tx.execute(sql`
             SELECT
               COUNT(*)::int AS total_reserved,
-              COUNT(*) FILTER (WHERE reminder_type = 'claim_ownership')::int AS claim_reserved
+              COUNT(*) FILTER (WHERE reminder_type IN ('claim_ownership', 'claim_approved'))::int AS claim_reserved
             FROM specialist_reminders
             WHERE (
               status = 'sent'

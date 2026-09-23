@@ -1,5 +1,6 @@
 export type SpecialistReminderType =
   | "claim_ownership"
+  | "claim_approved"
   | "profile_incomplete"
   | "no_first_visit"
   | "uncompleted_visits"
@@ -37,7 +38,7 @@ export async function claimSpecialistReminderSlot(
       return { id: null, blockedBy: "daily_cap" };
     }
     if (
-      reminderType === "claim_ownership"
+      (reminderType === "claim_ownership" || reminderType === "claim_approved")
       && usage.claimReserved >= CLAIM_REMINDER_DAILY_LIMIT
     ) {
       return { id: null, blockedBy: "claim_cap" };
@@ -63,7 +64,7 @@ export function canDispatchSpecialistReminder(
     return { allowed: false, reason: "daily_cap" };
   }
   if (
-    reminderType === "claim_ownership"
+    (reminderType === "claim_ownership" || reminderType === "claim_approved")
     && usage.claimSent >= CLAIM_REMINDER_DAILY_LIMIT
   ) {
     return { allowed: false, reason: "claim_cap" };

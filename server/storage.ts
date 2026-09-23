@@ -1,7 +1,8 @@
-import { specialists, bookings, altegioClientHistory, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
+import { specialists, bookings, altegioClientHistory, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, specialistReminders, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, gte, asc, sql, or, inArray } from "drizzle-orm";
+import { approveClaimAndQueue, type ClaimApprovalRepository } from "./claim-approval";
 
 export type AltegioFirstVisitStatus = "unknown" | "confirmed_new" | "confirmed_returning";
 const NEW_CLIENT_PRIORITY_SQL = 100;
@@ -131,9 +132,17 @@ export interface IStorage {
   
   // Claim Requests
   createClaimRequest(specialistId: number, phone: string): Promise<ClaimRequest>;
-  getClaimRequests(): Promise<(ClaimRequest & { specialistName: string })[]>;
+  getClaimRequests(): Promise<(ClaimRequest & {
+    specialistName: string;
+    notificationStatus?: string | null;
+    notificationError?: string | null;
+  })[]>;
   getClaimRequestById(id: number): Promise<ClaimRequest | undefined>;
-  approveClaimRequest(id: number): Promise<{ claim: ClaimRequest; token: string }>;
+  approveClaimRequest(id: number, notification: {
+    specialistId: number;
+    phone: string;
+    buildMessage: (token: string) => string;
+  }): Promise<{ claim: ClaimRequest; token: string; notificationStatus: string | null; newlyApproved: boolean }>;
   rejectClaimRequest(id: number): Promise<ClaimRequest | undefined>;
   getClaimByToken(token: string): Promise<ClaimRequest | undefined>;
   bindSpecialistToUser(specialistId: number, userId: string): Promise<void>;
@@ -1817,12 +1826,32 @@ export class DatabaseStorage implements IStorage {
     return claim;
   }
 
-  async getClaimRequests(): Promise<(ClaimRequest & { specialistName: string })[]> {
+  async getClaimRequests(): Promise<(ClaimRequest & {
+    specialistName: string;
+    notificationStatus?: string | null;
+    notificationError?: string | null;
+  })[]> {
     const allClaims = await db.select().from(claimRequests).orderBy(desc(claimRequests.createdAt));
     const allSpecialists = await db.select().from(specialists);
+    const notifications = await db.select({
+      claimRequestId: specialistReminders.claimRequestId,
+      status: specialistReminders.status,
+      lastError: specialistReminders.lastError,
+      skipReason: specialistReminders.skipReason,
+    }).from(specialistReminders)
+      .where(sql`${specialistReminders.claimRequestId} IS NOT NULL`);
+    const notificationByClaim = new Map(notifications.map((row) => [
+      row.claimRequestId,
+      {
+        status: row.status,
+        error: row.lastError || row.skipReason || null,
+      },
+    ]));
     return allClaims.map(claim => ({
       ...claim,
       specialistName: allSpecialists.find(s => s.id === claim.specialistId)?.name || "Неизвестный",
+      notificationStatus: notificationByClaim.get(claim.id)?.status || null,
+      notificationError: notificationByClaim.get(claim.id)?.error || null,
     }));
   }
 
@@ -1831,20 +1860,72 @@ export class DatabaseStorage implements IStorage {
     return claim;
   }
 
-  async approveClaimRequest(id: number): Promise<{ claim: ClaimRequest; token: string }> {
-    const token = crypto.randomBytes(16).toString("base64url");
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-    const [claim] = await db.update(claimRequests)
-      .set({
-        status: "approved",
-        claimToken: token,
-        tokenExpiresAt: expiresAt,
-        resolvedAt: new Date(),
-      })
-      .where(eq(claimRequests.id, id))
-      .returning();
-    console.log(`[CLAIM] Approved claim #${id}, token generated`);
-    return { claim, token };
+  async approveClaimRequest(id: number, notification: {
+    specialistId: number;
+    phone: string;
+    buildMessage: (token: string) => string;
+  }): Promise<{ claim: ClaimRequest; token: string; notificationStatus: string | null; newlyApproved: boolean }> {
+    const repository: ClaimApprovalRepository<ClaimRequest> = {
+      runSerialized: (claimId, work) => db.transaction(async (tx) => {
+        // This lock and the surrounding DB transaction make token creation and
+        // outbox insertion one idempotent unit across processes.
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(73194000, ${claimId})`);
+        return work({
+          getClaim: async () => {
+            const [claim] = await tx.select().from(claimRequests)
+              .where(eq(claimRequests.id, claimId))
+              .limit(1);
+            return claim;
+          },
+          getOutboxStatus: async () => {
+            const [outbox] = await tx.select({ status: specialistReminders.status })
+              .from(specialistReminders)
+              .where(eq(specialistReminders.claimRequestId, claimId))
+              .limit(1);
+            return outbox?.status || null;
+          },
+          approvePending: async (token, expiresAt) => {
+            const [claim] = await tx.update(claimRequests)
+              .set({
+                status: "approved",
+                claimToken: token,
+                tokenExpiresAt: expiresAt,
+                resolvedAt: new Date(),
+              })
+              .where(and(eq(claimRequests.id, claimId), eq(claimRequests.status, "pending")))
+              .returning();
+            return claim;
+          },
+          insertOutbox: async (values) => {
+            const [outbox] = await tx.insert(specialistReminders).values({
+              specialistId: notification.specialistId,
+              claimRequestId: claimId,
+              phone: values.phone,
+              reminderType: "claim_approved",
+              status: values.status,
+              messageText: values.messageText,
+              dedupeKey: `claim-approved:${claimId}`,
+              scheduledAt: new Date(),
+              lastError: values.lastError,
+            }).onConflictDoNothing({ target: specialistReminders.dedupeKey })
+              .returning({ status: specialistReminders.status });
+            if (!outbox) throw new Error("Не удалось зарезервировать уведомление");
+            return outbox.status;
+          },
+        });
+      }),
+    };
+    const result = await approveClaimAndQueue(repository, {
+      claimId: id,
+      specialistId: notification.specialistId,
+      phone: notification.phone,
+      buildMessage: notification.buildMessage,
+    }, {
+      createToken: () => crypto.randomBytes(16).toString("base64url"),
+      now: () => new Date(),
+    });
+    console.log(`[CLAIM] claim #${id} approved=${result.newlyApproved}; notification=${result.notificationStatus || "none"}`);
+    return result;
   }
 
   async rejectClaimRequest(id: number): Promise<ClaimRequest | undefined> {
@@ -1853,9 +1934,9 @@ export class DatabaseStorage implements IStorage {
         status: "rejected",
         resolvedAt: new Date(),
       })
-      .where(eq(claimRequests.id, id))
+      .where(and(eq(claimRequests.id, id), eq(claimRequests.status, "pending")))
       .returning();
-    console.log(`[CLAIM] Rejected claim #${id}`);
+    if (claim) console.log(`[CLAIM] Rejected claim #${id}`);
     return claim;
   }
 

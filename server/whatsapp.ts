@@ -19,6 +19,7 @@ import { getVisitConfirmationSendAt } from "./visit-confirmation-policy";
 import { confirmVisitFromSpecialistChat } from "./visit-confirmations";
 import { hashPhoneToLockId } from "./wa-phone-lock";
 import { appConfig, waMessages, magicLinks, bookings, specialistReminders } from "@shared/schema";
+import { canSendClaimApprovalNotification } from "./claim-notification-policy";
 
 const IS_PRODUCTION = process.env.REPL_SLUG === 'rateus' || process.env.RAILWAY_ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production';
 
@@ -1861,7 +1862,7 @@ async function tryDispatchSpecialistReminder(params: {
     // Cold claim outreach is deliberately last behind reminders for specialists
     // who already own and actively use their profiles.
     .orderBy(
-      sql`CASE WHEN ${specialistReminders.reminderType} = 'claim_ownership' THEN 1 ELSE 0 END`,
+      sql`CASE WHEN ${specialistReminders.reminderType} IN ('claim_ownership', 'claim_approved') THEN 1 ELSE 0 END`,
       asc(specialistReminders.scheduledAt),
       asc(specialistReminders.id),
     )
@@ -1875,6 +1876,27 @@ async function tryDispatchSpecialistReminder(params: {
       ).allowed,
   );
   if (!reminder) return "none";
+
+  if (reminder.reminderType === "claim_approved") {
+    const claimState = await db.execute(sql`
+      SELECT cr.status, cr.token_used_at, cr.token_expires_at, s.owner_user_id
+      FROM claim_requests cr
+      JOIN specialists s ON s.id = cr.specialist_id
+      WHERE cr.id = ${reminder.claimRequestId}
+        AND cr.specialist_id = ${reminder.specialistId}
+      LIMIT 1
+    `);
+    const row = claimState.rows[0] as any;
+    if (!canSendClaimApprovalNotification(row ? {
+      status: row.status,
+      tokenUsedAt: row.token_used_at,
+      tokenExpiresAt: row.token_expires_at,
+      ownerUserId: row.owner_user_id,
+    } : null)) {
+      await finishSpecialistReminder(reminder.id, "skipped", { skipReason: "obsolete_claim" });
+      return "none";
+    }
+  }
 
   if (await storage.isWaOptedOut(reminder.phone)) {
     await finishSpecialistReminder(reminder.id, "skipped", { skipReason: "opt_out" });
@@ -1925,6 +1947,28 @@ async function tryDispatchSpecialistReminder(params: {
   if (!claimed) return "none";
 
   try {
+    // Re-check after winning the queue row. This closes the ordinary race where
+    // the link is consumed while this dispatcher was waiting for channel space.
+    if (claimed.reminderType === "claim_approved") {
+      const claimState = await db.execute(sql`
+        SELECT cr.status, cr.token_used_at, cr.token_expires_at, s.owner_user_id
+        FROM claim_requests cr
+        JOIN specialists s ON s.id = cr.specialist_id
+        WHERE cr.id = ${claimed.claimRequestId}
+          AND cr.specialist_id = ${claimed.specialistId}
+        LIMIT 1
+      `);
+      const row = claimState.rows[0] as any;
+      if (!canSendClaimApprovalNotification(row ? {
+        status: row.status,
+        tokenUsedAt: row.token_used_at,
+        tokenExpiresAt: row.token_expires_at,
+        ownerUserId: row.owner_user_id,
+      } : null)) {
+        await finishSpecialistReminder(claimed.id, "skipped", { skipReason: "obsolete_claim" });
+        return "none";
+      }
+    }
     const assistbotMessageId = await sendViaAssistBot(
       claimed.phone,
       claimed.messageText,
@@ -2006,7 +2050,7 @@ async function getSpecialistReminderDailyUsage(): Promise<{
   const result = await db.execute(sql`
     SELECT
       COUNT(*)::int AS specialist_sent,
-      COUNT(*) FILTER (WHERE reminder_type = 'claim_ownership')::int AS claim_sent
+      COUNT(*) FILTER (WHERE reminder_type IN ('claim_ownership', 'claim_approved'))::int AS claim_sent
     FROM specialist_reminders
     WHERE status = 'sent'
       AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'

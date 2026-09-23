@@ -583,8 +583,11 @@ export const specialistVisitConfirmationDecisions = pgTable("specialist_visit_co
 export const specialistReminders = pgTable("specialist_reminders", {
   id: serial("id").primaryKey(),
   specialistId: integer("specialist_id").notNull(),
+  // Present for one-shot, user-requested claim approval notifications. It lets
+  // the dispatcher verify that the exact claim is still usable before sending.
+  claimRequestId: integer("claim_request_id"),
   phone: text("phone").notNull(),
-  reminderType: text("reminder_type", { enum: ["claim_ownership", "profile_incomplete", "no_first_visit", "uncompleted_visits", "inactive"] }).notNull(),
+  reminderType: text("reminder_type", { enum: ["claim_ownership", "claim_approved", "profile_incomplete", "no_first_visit", "uncompleted_visits", "inactive"] }).notNull(),
   status: text("status", { enum: ["queued", "sending", "sent", "failed", "skipped"] }).default("queued").notNull(),
   messageText: text("message_text").notNull(),
   // Idempotency key (specialistId:type:periodBucket). Unique → guards against

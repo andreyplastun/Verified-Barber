@@ -321,6 +321,7 @@ app.use((req, res, next) => {
       CREATE TABLE IF NOT EXISTS specialist_reminders (
         id SERIAL PRIMARY KEY,
         specialist_id INTEGER NOT NULL,
+        claim_request_id INTEGER,
         phone TEXT NOT NULL,
         reminder_type TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'queued',
@@ -335,9 +336,12 @@ app.use((req, res, next) => {
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
       ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS dedupe_key TEXT;
+      ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS claim_request_id INTEGER;
       ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMP NOT NULL DEFAULT NOW();
       ALTER TABLE specialist_reminders ADD COLUMN IF NOT EXISTS sending_started_at TIMESTAMP;
       CREATE UNIQUE INDEX IF NOT EXISTS specialist_reminders_dedupe_key_uniq ON specialist_reminders (dedupe_key);
+      CREATE UNIQUE INDEX IF NOT EXISTS specialist_reminders_claim_request_uniq
+        ON specialist_reminders (claim_request_id) WHERE claim_request_id IS NOT NULL;
 
       CREATE TABLE IF NOT EXISTS altegio_client_history (
         id serial PRIMARY KEY,

@@ -4054,6 +4054,9 @@ ${magicLink}`;
             claim: existing,
             claimLink,
             whatsappText: `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на WHO одобрен. Перейдите по ссылке для привязки: ${claimLink}`,
+             notificationStatus: (await storage.getClaimRequests())
+               .find((claim) => claim.id === existing.id)?.notificationStatus || null,
+             newlyApproved: false,
           });
         }
         return res.status(400).json({ message: "Запрос уже обработан" });
@@ -4067,11 +4070,20 @@ ${magicLink}`;
         return res.status(400).json({ message: "Профиль уже привязан к другому пользователю" });
       }
 
-      const { claim, token } = await storage.approveClaimRequest(claimId);
-
       const baseUrl = process.env.NODE_ENV === 'production' 
         ? 'https://rateus.kz' 
         : `${req.protocol}://${req.get('host')}`;
+      const { claim, token, notificationStatus, newlyApproved } = await storage.approveClaimRequest(
+        claimId,
+        {
+          specialistId: existing.specialistId,
+          phone: existing.phone,
+          buildMessage: (approvedToken) => {
+            const link = `${baseUrl}/claim/${approvedToken}`;
+            return `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на WHO одобрен. Перейдите по ссылке для привязки: ${link}`;
+          },
+        },
+      );
       const claimLink = `${baseUrl}/claim/${token}`;
 
       const whatsappText = `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на WHO одобрен. Перейдите по ссылке для привязки: ${claimLink}`;
@@ -4080,6 +4092,8 @@ ${magicLink}`;
         claim, 
         claimLink,
         whatsappText,
+        notificationStatus,
+        newlyApproved,
       });
     } catch (err: any) {
       console.error("Error approving claim:", err);
@@ -4103,6 +4117,9 @@ ${magicLink}`;
       }
 
       const claim = await storage.rejectClaimRequest(claimId);
+      if (!claim) {
+        return res.status(409).json({ message: "Запрос уже обработан" });
+      }
       res.json(claim);
     } catch (err: any) {
       console.error("Error rejecting claim:", err);
