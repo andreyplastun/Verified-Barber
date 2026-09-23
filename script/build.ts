@@ -141,16 +141,21 @@ async function storeRuntimeSecretsToDb() {
 }
 
 async function buildAll() {
+  const compileOnly = process.argv.includes("--compile-only");
   console.log("cleaning dist...");
   await rm("dist", { recursive: true, force: true });
 
-  await runDbPush();
+  if (!compileOnly) {
+    await runDbPush();
 
-  console.log("seeding production database if needed...");
-  await seedProductionDB();
+    console.log("seeding production database if needed...");
+    await seedProductionDB();
 
-  console.log("storing runtime secrets to database...");
-  await storeRuntimeSecretsToDb();
+    console.log("storing runtime secrets to database...");
+    await storeRuntimeSecretsToDb();
+  } else {
+    console.log("[BUILD] Compile-only: skipping database operations and runtime secret capture");
+  }
 
   console.log("building client...");
   await viteBuild();
@@ -170,9 +175,14 @@ async function buildAll() {
     format: "cjs",
     outfile: "dist/index.cjs",
     minify: true,
-    external: externals,
+    // Loaded only in development by server/index.ts. Keep Vite's ESM config
+    // (including top-level await) out of the production CommonJS bundle.
+    // Do not inline NODE_ENV: production safety gates must read runtime values.
+    external: [...externals, "./vite"],
     logLevel: "info",
   });
+
+  if (compileOnly) return;
 
   const runtimeEnvKeys = [
     "ALTEGIO_PARTNER_TOKEN",

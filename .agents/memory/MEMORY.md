@@ -1,3 +1,4 @@
+- [Production build safety](production-build-boundary.md) — keep production gates runtime-evaluated; inspect build side effects before verification.
 - [WA delivery webhook correlation](wa-delivery-correlation.md) — parse `rateus_<source>_<bookingId>_<ts>` by tail-anchoring on 13-digit timestamp; constrain UPDATE by message_type; show sent vs delivered both.
 - [WA primary throughput vs deadline](wa-throughput-deadline.md) — 12-15min rate limit + short 30min deadline silently expired most primaries before send; deadline=full window fixes it; don't lower interval (ban risk).
 - [Altegio public booking URL](altegio-booking-url.md) — client booking page is `https://n{companyId}.alteg.io/`; not stored/derivable from code or company API.
