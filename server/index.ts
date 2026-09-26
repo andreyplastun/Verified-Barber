@@ -366,6 +366,24 @@ app.use((req, res, next) => {
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS booking_source text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS invalid_phone boolean DEFAULT false;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_eligible boolean NOT NULL DEFAULT false;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS manual_presence_version integer;
+      ALTER TABLE bookings ADD COLUMN IF NOT EXISTS duration_minutes integer;
+      CREATE TABLE IF NOT EXISTS manual_presence_sessions (
+        token text PRIMARY KEY,
+        booking_id integer NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+        data jsonb NOT NULL
+      );
+      ALTER TABLE manual_presence_sessions ENABLE ROW LEVEL SECURITY;
+      REVOKE ALL ON TABLE manual_presence_sessions FROM PUBLIC;
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+          REVOKE ALL ON TABLE manual_presence_sessions FROM anon;
+        END IF;
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+          REVOKE ALL ON TABLE manual_presence_sessions FROM authenticated;
+        END IF;
+      END $$;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_token text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_status text;
       ALTER TABLE bookings ADD COLUMN IF NOT EXISTS visit_confirmation_sent_at timestamp;

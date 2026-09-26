@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, uuid, pgEnum, real, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, uuid, pgEnum, real, uniqueIndex, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { claimPhoneSchema } from "./claim-phone";
@@ -173,6 +173,8 @@ export const bookings = pgTable("bookings", {
   invalidPhone: boolean("invalid_phone").default(false),
   visitConfirmationEligible: boolean("visit_confirmation_eligible").default(false).notNull(),
   visitConfirmationToken: text("visit_confirmation_token"),
+  manualPresenceVersion: integer("manual_presence_version"),
+  durationMinutes: integer("duration_minutes"),
   visitConfirmationStatus: text("visit_confirmation_status", {
     enum: ["pending", "confirmed", "declined", "expired", "superseded"],
   }),
@@ -183,6 +185,12 @@ export const bookings = pgTable("bookings", {
   visitConfirmationPostponedFor: timestamp("visit_confirmation_postponed_for"),
   price: integer("price"),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const manualPresenceSessions = pgTable("manual_presence_sessions", {
+  token: text("token").primaryKey(),
+  bookingId: integer("booking_id").notNull().references(() => bookings.id, { onDelete: "cascade" }),
+  data: jsonb("data").notNull(),
 });
 
 export const altegioClientHistory = pgTable("altegio_client_history", {
@@ -424,6 +432,8 @@ export const insertBookingSchema = createInsertSchema(bookings).omit({
   status: true, 
   hasReview: true, 
   visitConfirmationEligible: true,
+  manualPresenceVersion: true,
+  durationMinutes: true,
   visitConfirmationToken: true,
   visitConfirmationStatus: true,
   visitConfirmationSentAt: true,

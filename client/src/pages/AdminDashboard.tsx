@@ -89,6 +89,7 @@ export default function AdminDashboard() {
     customerPhone: "",
     customerEmail: "",
     appointmentTime: "",
+    durationMinutes: "",
   });
 
   const [activeTab, setActiveTab] = useState<"stats" | "bookings" | "specialists" | "claims" | "clients" | "whatsapp" | "theme">("bookings");
@@ -141,6 +142,25 @@ export default function AdminDashboard() {
     },
     enabled: !!currentUser,
   });
+  const selectedSpecialist = specialists.find((specialist) => specialist.id === Number(formData.specialistId));
+  const selectedHasAltegio = !!selectedSpecialist?.altegioStaffId ||
+    (!!selectedSpecialist?.altegioCompanyId && selectedSpecialist?.altegioConnectionStatus === "connected");
+  // Mirrors the server: a nominal connection only counts after an Altegio-sourced booking arrived.
+  const selectedBookingsQuery = useQuery<{ bookingSource?: string | null }[]>({
+    queryKey: ["/api/specialists", selectedSpecialist?.id, "bookings", "admin-duration-check"],
+    queryFn: async () => {
+      const response = await fetch(`/api/specialists/${selectedSpecialist!.id}/bookings`, {
+        headers: { "x-user-id": currentUser?.id || "" },
+      });
+      if (!response.ok) throw new Error("Не удалось проверить записи специалиста");
+      return response.json();
+    },
+    enabled: !!currentUser && !!selectedSpecialist && selectedHasAltegio,
+    retry: false,
+  });
+  const requiresManualDuration = !!selectedSpecialist &&
+    !(selectedHasAltegio && selectedBookingsQuery.data?.some((booking) => booking.bookingSource === "altegio"));
+  const checkingSource = !!selectedSpecialist && selectedHasAltegio && (selectedBookingsQuery.isPending || selectedBookingsQuery.isError);
 
   const { data: clients = [], isLoading: isLoadingClients, isError: isErrorClients } = useQuery<User[]>({
     queryKey: ["/api/admin/clients"],
@@ -221,7 +241,10 @@ export default function AdminDashboard() {
           "Content-Type": "application/json",
           "x-user-id": currentUser?.id || "",
         },
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          ...data,
+          ...(requiresManualDuration ? { durationMinutes: Number(data.durationMinutes) } : { durationMinutes: undefined }),
+        }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -239,6 +262,7 @@ export default function AdminDashboard() {
         customerPhone: "",
         customerEmail: "",
         appointmentTime: "",
+        durationMinutes: "",
       });
     },
     onError: (err: Error) => {
@@ -412,6 +436,15 @@ export default function AdminDashboard() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedSpecialist || checkingSource) {
+      toast({ title: "Не удалось определить источник записи", description: selectedBookingsQuery.isError ? "Не удалось проверить записи специалиста. Повторите попытку." : "Выберите специалиста и дождитесь проверки.", variant: "destructive" });
+      return;
+    }
+    const duration = Number(formData.durationMinutes);
+    if (requiresManualDuration && (!Number.isInteger(duration) || duration < 1 || duration > 1440)) {
+      toast({ title: "Укажите длительность услуги от 1 до 1440 минут", variant: "destructive" });
+      return;
+    }
     createBookingMutation.mutate(formData);
   };
 
@@ -909,11 +942,42 @@ export default function AdminDashboard() {
                   data-testid="input-appointment-time"
                 />
               </div>
+              {requiresManualDuration && (
+                <div className="space-y-2">
+                  <Label htmlFor="durationMinutes">Длительность услуги (минуты)</Label>
+                  <Input
+                    id="durationMinutes"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={1440}
+                    step={1}
+                    value={formData.durationMinutes}
+                    onChange={(event) => setFormData({ ...formData, durationMinutes: event.target.value })}
+                    placeholder="Например, 60"
+                    required
+                    data-testid="input-admin-booking-duration"
+                  />
+                  {formData.appointmentTime && Number(formData.durationMinutes) >= 1 && Number(formData.durationMinutes) <= 1440 && (
+                    <p className="text-xs text-muted-foreground" data-testid="text-admin-expected-visit-end">
+                      Расчётное окончание: {new Date(new Date(formData.appointmentTime).getTime() + Number(formData.durationMinutes) * 60_000).toLocaleString("ru-KZ")}.
+                      {' '}Тогда попросим клиента подтвердить визит.
+                    </p>
+                  )}
+                </div>
+              )}
+              {checkingSource && (
+                <p className="text-xs text-muted-foreground" role={selectedBookingsQuery.isError ? "alert" : undefined}>
+                  {selectedBookingsQuery.isError ? (
+                    <>Не удалось проверить источник записи. <button type="button" className="underline" onClick={() => void selectedBookingsQuery.refetch()}>Повторить проверку</button></>
+                  ) : "Проверяем источник записей специалиста…"}
+                </p>
+              )}
 
               <Button 
                 type="submit" 
                 className="w-full" 
-                disabled={createBookingMutation.isPending}
+                disabled={createBookingMutation.isPending || !selectedSpecialist || checkingSource}
                 data-testid="button-create-booking"
               >
                 {createBookingMutation.isPending ? "Создание..." : "Создать запись"}

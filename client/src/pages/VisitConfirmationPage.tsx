@@ -14,10 +14,12 @@ import {
   X,
 } from "lucide-react";
 
-type ConfirmationStatus = "pending" | "confirmed" | "declined" | "expired" | "superseded" | "postponed";
+type ConfirmationStatus = "pending" | "confirmed" | "declined" | "expired" | "superseded" | "postponed" | "still_in_service";
+type BrowserLocation = { latitude: number; longitude: number; accuracy: number; capturedAt: number };
 type ConfirmationAnswer =
-  | { answer: "yes" | "no" }
-  | { answer: "postponed"; appointmentDate: string };
+  | { answer: "yes"; attemptId?: string; location?: BrowserLocation }
+  | { answer: "no" | "still_in_service" }
+  | { answer: "postponed"; appointmentDate?: string; appointmentTime?: string };
 
 type Confirmation = {
   status: ConfirmationStatus;
@@ -27,6 +29,10 @@ type Confirmation = {
   appointmentTimeKnown: boolean;
   appointmentTimeIsDateOnly: boolean;
   reviewUrl?: string | null;
+  manualPresence?: boolean;
+  expectedEnd?: string;
+  expiresAt?: string;
+  canReschedule?: boolean;
 };
 
 type ApiError = Error & { status?: number };
@@ -55,6 +61,36 @@ async function respondToConfirmation(token: string, answer: ConfirmationAnswer):
     throw error;
   }
   return body;
+}
+
+async function startLocationAttempt(token: string): Promise<string> {
+  const response = await fetch(`/api/visit-confirmations/${encodeURIComponent(token)}/attempt`, {
+    method: "POST",
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(body?.message || "Не удалось начать подтверждение. Обновите страницу и попробуйте снова.");
+  }
+  if (typeof body?.id !== "string" || !body.id) {
+    throw new Error("Сервер не вернул данные подтверждения. Попробуйте снова.");
+  }
+  return body.id;
+}
+
+function getFreshBrowserLocation(): Promise<BrowserLocation | undefined> {
+  if (!window.isSecureContext || !navigator.geolocation) return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      (position) => resolve({
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        capturedAt: position.timestamp,
+      }),
+      () => resolve(undefined),
+      { maximumAge: 0, timeout: 10_000, enableHighAccuracy: true },
+    );
+  });
 }
 
 function formatAppointmentTime(value: string | null, dateOnly = false) {
@@ -175,6 +211,9 @@ export default function VisitConfirmationPage() {
   const [submitted, setSubmitted] = useState<Confirmation | null>(null);
   const [showPostpone, setShowPostpone] = useState(false);
   const [appointmentDate, setAppointmentDate] = useState("");
+  const [appointmentClock, setAppointmentClock] = useState("");
+  const [locationPending, setLocationPending] = useState(false);
+  const [locationError, setLocationError] = useState("");
 
   const confirmationQuery = useQuery<Confirmation, ApiError>({
     queryKey: ["/api/visit-confirmations", token],
@@ -195,6 +234,23 @@ export default function VisitConfirmationPage() {
   });
 
   const confirmation = submitted || confirmationQuery.data;
+  const confirmYes = async () => {
+    if (!confirmation?.manualPresence) {
+      respondMutation.mutate({ answer: "yes" });
+      return;
+    }
+    setLocationPending(true);
+    setLocationError("");
+    try {
+      const attemptId = await startLocationAttempt(token);
+      const location = await getFreshBrowserLocation();
+      respondMutation.mutate({ answer: "yes", attemptId, ...(location ? { location } : {}) });
+    } catch (error) {
+      setLocationError(error instanceof Error ? error.message : "Не удалось подтвердить визит. Попробуйте снова.");
+    } finally {
+      setLocationPending(false);
+    }
+  };
   const displayTime = useMemo(
     () => (
       confirmation
@@ -298,17 +354,33 @@ export default function VisitConfirmationPage() {
   }
 
   if (confirmation.status === "postponed") {
+    const stillInService = confirmation.manualPresence && respondMutation.variables?.answer === "still_in_service";
     return (
       <TerminalScreen
         tone="success"
         icon={<CalendarDays className="h-7 w-7" />}
-        title="Новая дата сохранена"
-        text={`Новая дата визита: ${displayTime}. После этой даты мы отправим ещё одно подтверждение в WhatsApp.`}
+        title={stillInService ? "Ответ сохранён" : "Новая дата сохранена"}
+        text={confirmation.manualPresence
+          ? stillInService
+            ? "Мы отметили, что услуга ещё продолжается. Если потребуется, вам придёт новое подтверждение."
+            : "Спасибо. Время визита обновлено. Если визит состоится, мы отправим новое подтверждение."
+          : `Новая дата визита: ${displayTime}. После этой даты мы отправим ещё одно подтверждение в WhatsApp.`}
       />
     );
   }
 
-  const isResponding = respondMutation.isPending;
+  if (confirmation.status === "still_in_service") {
+    return (
+      <TerminalScreen
+        tone="quiet"
+        icon={<Clock3 className="h-7 w-7" />}
+        title="Спасибо за ответ"
+        text="Мы отметили, что услуга ещё продолжается. Если потребуется, вам придёт новое подтверждение."
+      />
+    );
+  }
+
+  const isResponding = respondMutation.isPending || locationPending;
   const tomorrow = addAlmatyCalendarDays(formatAlmatyDateOnly(new Date()), 1);
   return (
     <ScreenShell>
@@ -354,6 +426,16 @@ export default function VisitConfirmationPage() {
           </div>
         </section>
 
+        {confirmation.manualPresence && (
+          <p className="mt-4 text-sm leading-6 text-muted-foreground" data-testid="text-location-purpose">
+            После ответа «Да» браузер может запросить местоположение: оно помогает подтвердить присутствие на месте услуги. Это необязательно — отзыв можно оставить и без геолокации.
+          </p>
+        )}
+        {locationError && (
+          <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/8 p-4 text-sm text-amber-800 dark:text-amber-300" role="alert">
+            {locationError}
+          </div>
+        )}
         {respondMutation.isError && (
           <div className="mt-4 flex items-start gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/8 p-4 text-sm leading-5 text-amber-800 dark:text-amber-300" role="alert" data-testid="text-response-error">
             <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -364,14 +446,26 @@ export default function VisitConfirmationPage() {
         <div className="mt-6 grid gap-3">
           <button
             type="button"
-            onClick={() => respondMutation.mutate({ answer: "yes" })}
+            onClick={() => { void confirmYes(); }}
             disabled={isResponding}
             className="group flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-primary-foreground shadow-[0_8px_20px_hsl(var(--primary)/0.16)] transition-transform hover:opacity-90 active:scale-[0.985] disabled:cursor-wait disabled:opacity-65"
             data-testid="button-confirm-yes"
           >
-            {isResponding && respondMutation.variables?.answer === "yes" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
+            {(locationPending || (respondMutation.isPending && respondMutation.variables?.answer === "yes")) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
             Да, я был(а)
           </button>
+          {confirmation.manualPresence && (
+            <button
+              type="button"
+              onClick={() => respondMutation.mutate({ answer: "still_in_service" })}
+              disabled={isResponding}
+              className="flex h-12 w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-65"
+              data-testid="button-still-in-service"
+            >
+              {respondMutation.isPending && respondMutation.variables?.answer === "still_in_service" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Clock3 className="h-4 w-4" />}
+              Ещё на услуге
+            </button>
+          )}
           <button
             type="button"
             onClick={() => respondMutation.mutate({ answer: "no" })}
@@ -382,7 +476,7 @@ export default function VisitConfirmationPage() {
             {isResponding && respondMutation.variables?.answer === "no" ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
             Нет / отменено
           </button>
-          {!showPostpone ? (
+          {(!confirmation.manualPresence || confirmation.canReschedule !== false) && (!showPostpone ? (
             <button
               type="button"
               onClick={() => setShowPostpone(true)}
@@ -400,16 +494,40 @@ export default function VisitConfirmationPage() {
               <input
                 id="postponed-date"
                 type="date"
-                min={tomorrow}
+                min={confirmation.manualPresence ? formatAlmatyDateOnly(new Date()) : tomorrow}
                 value={appointmentDate}
                 onChange={(event) => setAppointmentDate(event.target.value)}
                 className="mt-3 h-12 w-full rounded-xl border border-border bg-background px-3"
                 data-testid="input-postponed-date"
               />
+              {confirmation.manualPresence && (
+                <>
+                  <label htmlFor="postponed-time" className="mt-3 block text-sm font-semibold">Новое время визита</label>
+                  <input
+                    id="postponed-time"
+                    type="time"
+                    value={appointmentClock}
+                    onChange={(event) => setAppointmentClock(event.target.value)}
+                    className="mt-3 h-12 w-full rounded-xl border border-border bg-background px-3"
+                    data-testid="input-postponed-time"
+                  />
+                </>
+              )}
               <button
                 type="button"
-                onClick={() => respondMutation.mutate({ answer: "postponed", appointmentDate })}
-                disabled={isResponding || !appointmentDate}
+                onClick={() => {
+                  if (confirmation.manualPresence) {
+                    const next = new Date(`${appointmentDate}T${appointmentClock}`);
+                    if (!Number.isNaN(next.getTime()) && next.getTime() > Date.now()) {
+                      respondMutation.mutate({ answer: "postponed", appointmentTime: next.toISOString() });
+                    } else {
+                      setLocationError("Укажите будущие дату и время визита.");
+                    }
+                  } else {
+                    respondMutation.mutate({ answer: "postponed", appointmentDate });
+                  }
+                }}
+                disabled={isResponding || !appointmentDate || (confirmation.manualPresence && !appointmentClock)}
                 className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary text-sm font-semibold text-primary-foreground disabled:opacity-50"
                 data-testid="button-save-postponed-date"
               >
@@ -417,7 +535,7 @@ export default function VisitConfirmationPage() {
                 Сохранить новую дату
               </button>
             </div>
-          )}
+          ))}
         </div>
         <div className="mt-7 flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <ShieldCheck className="h-4 w-4 text-accent-foreground" />

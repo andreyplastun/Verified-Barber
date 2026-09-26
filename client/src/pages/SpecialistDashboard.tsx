@@ -79,6 +79,11 @@ export default function SpecialistDashboard() {
   const [newBookingPhone, setNewBookingPhone] = useState('');
   const [newBookingDate, setNewBookingDate] = useState('');
   const [newBookingTime, setNewBookingTime] = useState('');
+  const [newBookingDuration, setNewBookingDuration] = useState('');
+  const [editingPresenceBookingId, setEditingPresenceBookingId] = useState<number | null>(null);
+  const [editPresenceDate, setEditPresenceDate] = useState('');
+  const [editPresenceTime, setEditPresenceTime] = useState('');
+  const [editPresenceDuration, setEditPresenceDuration] = useState('');
   const [rateLimitWarningOpen, setRateLimitWarningOpen] = useState(false);
   const [dailyLimitMessage, setDailyLimitMessage] = useState<string | null>(null);
   const [showFirstVisitSuccess, setShowFirstVisitSuccess] = useState(false);
@@ -178,7 +183,7 @@ export default function SpecialistDashboard() {
       .catch((err) => console.error('Failed to sync celebration state:', err));
   };
 
-  const { data: bookings, isLoading: loadingBookings } = useQuery<Booking[]>({
+  const { data: bookings, isLoading: loadingBookings, isError: bookingsLoadFailed, refetch: refetchBookings } = useQuery<Booking[]>({
     queryKey: ['/api/specialists', specialistId, 'bookings'],
     queryFn: async () => {
       const res = await fetch(`/api/specialists/${specialistId}/bookings`);
@@ -219,6 +224,9 @@ export default function SpecialistDashboard() {
 
   const isAltegioConnected = !!(specialist as any)?.altegioStaffId ||
     (!!(specialist as any)?.altegioCompanyId && (specialist as any)?.altegioConnectionStatus === 'connected');
+  // The server considers Altegio "working" only when at least one Altegio booking has arrived.
+  const hasWorkingAltegio = isAltegioConnected && !!bookings?.some((booking) => (booking as any).bookingSource === 'altegio');
+  const needsPresenceDuration = !hasWorkingAltegio;
 
   const isNewSpecialist =
     !loadingBookings &&
@@ -554,10 +562,17 @@ export default function SpecialistDashboard() {
       }
       return res.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (data, bookingId) => {
       setCompletingBookingId(null);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
+      const enrolledManualVisit = (bookings || []).some((booking) =>
+        booking.id === bookingId && (booking as any).manualPresenceVersion === 1
+      );
+      if (enrolledManualVisit) {
+        toast({ title: 'Визит завершён', description: 'Подтверждение клиента запланировано по расчётному времени услуги. Отзыв пока не запрашивался.' });
+        return;
+      }
       const magicLinkInfo = data.magicLinkCreated
         ? '\nСсылка для отзыва создана и отправлена клиенту.'
         : '\nСсылка для отзыва не создана (нет контактных данных клиента).';
@@ -620,6 +635,10 @@ export default function SpecialistDashboard() {
       if (!actualDate || !actualTime) throw new Error('Укажите дату и время');
       const appointmentTime = new Date(`${actualDate}T${actualTime}`);
       if (isNaN(appointmentTime.getTime())) throw new Error('Неверный формат даты/времени');
+      const durationMinutes = Number(newBookingDuration);
+      if (needsPresenceDuration && (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 1440)) {
+        throw new Error('Укажите длительность услуги от 1 до 1440 минут');
+      }
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       if (appointmentTime < twentyFourHoursAgo) throw new Error('Можно выбрать только текущую дату или последние 24 часа');
       const controller = new AbortController();
@@ -635,6 +654,7 @@ export default function SpecialistDashboard() {
             customerName: (document.getElementById('new-booking-name') as HTMLInputElement)?.value || newBookingName || '',
             customerPhone: (document.getElementById('new-booking-phone') as HTMLInputElement)?.value || newBookingPhone || '',
             appointmentTime: appointmentTime.toISOString(),
+            ...(needsPresenceDuration ? { durationMinutes } : {}),
             force: opts?.force || false,
           }),
           signal: controller.signal,
@@ -681,11 +701,40 @@ export default function SpecialistDashboard() {
       setNewBookingPhone('');
       setNewBookingDate('');
       setNewBookingTime('');
+      setNewBookingDuration('');
     },
     onError: (err: Error) => {
       if ((err as any).silent) return;
       toast({ title: isNewSpecialist ? 'Не удалось добавить клиента' : 'Ошибка создания записи', description: err.message, variant: 'destructive' });
     },
+  });
+
+  const updatePresenceScheduleMutation = useMutation({
+    mutationFn: async (bookingId: number) => {
+      if (!currentUser?.id) throw new Error('Не авторизован');
+      const appointmentTime = new Date(`${editPresenceDate}T${editPresenceTime}`);
+      const durationMinutes = Number(editPresenceDuration);
+      if (!editPresenceDate || !editPresenceTime || Number.isNaN(appointmentTime.getTime()) || appointmentTime.getTime() <= Date.now()) {
+        throw new Error('Укажите будущие дату и время визита');
+      }
+      if (!Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 1440) {
+        throw new Error('Укажите длительность услуги от 1 до 1440 минут');
+      }
+      const res = await fetch(`/api/specialist/bookings/${bookingId}/presence-schedule`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', 'x-user-id': currentUser.id },
+        body: JSON.stringify({ appointmentTime: appointmentTime.toISOString(), durationMinutes }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.message || 'Не удалось изменить время визита');
+      return body;
+    },
+    onSuccess: () => {
+      setEditingPresenceBookingId(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'bookings'] });
+      toast({ title: 'Время визита обновлено' });
+    },
+    onError: (error: Error) => toast({ title: 'Ошибка', description: error.message, variant: 'destructive' }),
   });
 
   const isManualBooking = (b: any) => b.bookingSource === 'specialist_manual' || (!b.altegioAppointmentId && b.bookingSource !== 'altegio');
@@ -1936,9 +1985,34 @@ export default function SpecialistDashboard() {
                     />
                   </div>
                 </div>
+                {needsPresenceDuration && <div className="space-y-2">
+                  <Label htmlFor="new-booking-duration">Длительность услуги (минуты) *</Label>
+                  <Input
+                    id="new-booking-duration"
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={1440}
+                    step={1}
+                    value={newBookingDuration}
+                    onChange={(e) => setNewBookingDuration(e.target.value)}
+                    placeholder="Например, 60"
+                    data-testid="input-new-booking-duration"
+                  />
+                  {newBookingDate && newBookingTime && Number(newBookingDuration) >= 1 && Number(newBookingDuration) <= 1440 && (
+                    <p className="text-xs text-muted-foreground" data-testid="text-expected-visit-end">
+                      Расчётное окончание: {format(new Date(new Date(`${newBookingDate}T${newBookingTime}`).getTime() + Number(newBookingDuration) * 60_000), 'd MMM, HH:mm')}. Тогда попросим клиента подтвердить визит.
+                    </p>
+                  )}
+                </div>}
                 {isNewSpecialist && (
                   <p className="text-xs text-muted-foreground" data-testid="text-visit-date-hint">
-                    Уже обслужили клиента? Оставьте сегодняшнюю дату и время, затем завершите визит — клиент получит ссылку на отзыв.
+                    Укажите начало и длительность услуги. После расчётного окончания клиенту придёт запрос подтверждения визита.
+                  </p>
+                )}
+                {bookingsLoadFailed && (
+                  <p role="alert" className="text-xs text-destructive">
+                    Не удалось проверить источник записи. <button type="button" className="underline" onClick={() => void refetchBookings()}>Повторить проверку</button>
                   </p>
                 )}
                 <div className="flex gap-2">
@@ -1957,13 +2031,13 @@ export default function SpecialistDashboard() {
                       const name = nameEl?.value || newBookingName;
                       const date = dateEl?.value || newBookingDate;
                       const time = timeEl?.value || newBookingTime;
-                      if (!name || !date || !time) {
-                        toast({ title: 'Заполните все поля', description: `Имя: ${name ? '✓' : '✗'}, Дата: ${date ? '✓' : '✗'}, Время: ${time ? '✓' : '✗'}`, variant: 'destructive' });
+                      if (!name || !date || !time || (needsPresenceDuration && !newBookingDuration)) {
+                        toast({ title: 'Заполните все поля', description: `Имя: ${name ? '✓' : '✗'}, Дата: ${date ? '✓' : '✗'}, Время: ${time ? '✓' : '✗'}${needsPresenceDuration ? `, Длительность: ${newBookingDuration ? '✓' : '✗'}` : ''}`, variant: 'destructive' });
                         return;
                       }
                       createBookingMutation.mutate({});
                     }}
-                    disabled={createBookingMutation.isPending}
+                    disabled={createBookingMutation.isPending || loadingBookings || loadingSpecialist || bookingsLoadFailed}
                     data-testid="button-create-booking"
                   >
                     {createBookingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
@@ -1996,6 +2070,7 @@ export default function SpecialistDashboard() {
                   const isNotCompleted = (booking as any).notCompleted === true;
                   const canCancel = status === 'scheduled' || status === 'ready_to_complete';
                   const isManual = isManualBooking(booking);
+                  const hasPresenceSchedule = isManual && (booking as any).manualPresenceVersion === 1;
 
                   return (
                     <div 
@@ -2049,6 +2124,40 @@ export default function SpecialistDashboard() {
                           </Badge>
                         </div>
                       </div>
+                      {hasPresenceSchedule && (
+                        <div className="text-xs text-muted-foreground">
+                          Расчётное окончание: {format(new Date(new Date(booking.appointmentTime).getTime() + Number((booking as any).durationMinutes) * 60_000), 'd MMM, HH:mm')}.
+                          {' '}Подтверждение клиента не зависит от кнопки завершения.
+                        </div>
+                      )}
+                      {hasPresenceSchedule && status === 'scheduled' && (
+                        editingPresenceBookingId === booking.id ? (
+                          <div className="space-y-2 rounded-lg border border-border bg-background p-3" data-testid={`edit-presence-schedule-${booking.id}`}>
+                            <label className="block text-xs font-medium">Дата визита
+                              <Input type="date" value={editPresenceDate} onChange={(e) => setEditPresenceDate(e.target.value)} data-testid="input-edit-presence-date" />
+                            </label>
+                            <label className="block text-xs font-medium">Время начала
+                              <Input type="time" value={editPresenceTime} onChange={(e) => setEditPresenceTime(e.target.value)} data-testid="input-edit-presence-time" />
+                            </label>
+                            <label className="block text-xs font-medium">Длительность услуги (минуты)
+                              <Input type="number" min={1} max={1440} step={1} inputMode="numeric" value={editPresenceDuration} onChange={(e) => setEditPresenceDuration(e.target.value)} data-testid="input-edit-presence-duration" />
+                            </label>
+                            <div className="flex gap-2">
+                              <Button size="sm" disabled={updatePresenceScheduleMutation.isPending} onClick={() => updatePresenceScheduleMutation.mutate(booking.id)}>Сохранить</Button>
+                              <Button size="sm" variant="ghost" onClick={() => setEditingPresenceBookingId(null)}>Отмена</Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <Button size="sm" variant="ghost" onClick={() => {
+                            const value = new Date(booking.appointmentTime);
+                            const pad = (n: number) => String(n).padStart(2, '0');
+                            setEditPresenceDate(`${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`);
+                            setEditPresenceTime(`${pad(value.getHours())}:${pad(value.getMinutes())}`);
+                            setEditPresenceDuration(String((booking as any).durationMinutes ?? ''));
+                            setEditingPresenceBookingId(booking.id);
+                          }} data-testid={`button-edit-presence-schedule-${booking.id}`}>Изменить время услуги</Button>
+                        )
+                      )}
                       {!suppressIndividualBanners && (booking as any).bookingSource !== 'specialist_manual' && (
                         <AltegioSyncBanner
                           config={getBookingSyncBannerConfig(
@@ -2070,7 +2179,7 @@ export default function SpecialistDashboard() {
                         <>
                           <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400" data-testid={`text-ready-to-complete-${booking.id}`}>
                             <Clock className="w-3 h-3" />
-                            <span>Время визита прошло — завершите визит</span>
+                            <span>{hasPresenceSchedule ? 'Время визита прошло — подтверждение клиента запланировано отдельно' : 'Время визита прошло — завершите визит'}</span>
                           </div>
                           <div className="flex gap-2">
                             <Button

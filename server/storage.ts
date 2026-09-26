@@ -1,3 +1,4 @@
+import { manualPresenceReviewAllowed } from "./manual-presence-policy";
 import { specialists, bookings, altegioClientHistory, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, specialistReminders, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
 import crypto from "crypto";
 import { db } from "./db";
@@ -1012,6 +1013,13 @@ export class DatabaseStorage implements IStorage {
       customerPhone: booking.customerPhone,
       customerEmail: booking.customerEmail,
       appointmentTime: booking.appointmentTime,
+      ...((booking as any).manualPresenceVersion === 1 ? {
+        manualPresenceVersion: 1,
+        durationMinutes: (booking as any).durationMinutes,
+        bookingSource: "specialist_manual" as const,
+        visitConfirmationEligible: true,
+        normalizedPhone: (booking as any).normalizedPhone,
+      } : {}),
       status: "scheduled",
     }).returning();
     return newBooking;
@@ -1456,6 +1464,10 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createReview(review: any): Promise<Review> {
+    const presenceBooking = await this.getBooking(review.bookingId);
+    if (presenceBooking && !manualPresenceReviewAllowed(presenceBooking)) {
+      throw Object.assign(new Error("Отзыв доступен после подтверждения визита клиентом"), { statusCode: 403 });
+    }
     const editableWindowMinutes = 5; // Exactly 5 minutes
     const now = new Date();
     const editableUntil = new Date(now.getTime() + editableWindowMinutes * 60000);
@@ -1496,6 +1508,10 @@ export class DatabaseStorage implements IStorage {
   async updateReview(id: number, data: { rating?: number; comment?: string; triggers?: string[]; showName?: boolean; priceMismatch?: boolean }): Promise<Review | undefined> {
     const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
     if (!review) return undefined;
+    const presenceBooking = await this.getBooking(review.bookingId);
+    if (presenceBooking && !manualPresenceReviewAllowed(presenceBooking)) {
+      throw Object.assign(new Error("Отзыв доступен после подтверждения визита клиентом"), { statusCode: 403 });
+    }
 
     const now = new Date();
     if (review.isFinalized || (review.editableUntil && now > review.editableUntil)) {
@@ -1529,6 +1545,10 @@ export class DatabaseStorage implements IStorage {
   async finalizeReview(id: number): Promise<Review | undefined> {
     const [review] = await db.select().from(reviews).where(eq(reviews.id, id));
     if (!review) return undefined;
+    const presenceBooking = await this.getBooking(review.bookingId);
+    if (presenceBooking && !manualPresenceReviewAllowed(presenceBooking)) {
+      throw Object.assign(new Error("Отзыв доступен после подтверждения визита клиентом"), { statusCode: 403 });
+    }
 
     const [finalized] = await db.update(reviews)
       .set({ isFinalized: true, finalizedAt: new Date() })
@@ -1652,6 +1672,10 @@ export class DatabaseStorage implements IStorage {
 
   // Magic Links
   async createMagicLink(userId: string | null, bookingId: number, specialistId: number, isFollowup: boolean = false, customerPhone: string | null = null): Promise<MagicLink> {
+    const presenceBooking = await this.getBooking(bookingId);
+    if (presenceBooking && (!manualPresenceReviewAllowed(presenceBooking) || (presenceBooking.manualPresenceVersion && isFollowup))) {
+      throw Object.assign(new Error("Отзыв доступен после подтверждения визита клиентом"), { statusCode: 403 });
+    }
     const token = crypto.randomBytes(12).toString('base64url'); // 16 chars, URL-safe
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 

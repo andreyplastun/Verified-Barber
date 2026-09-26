@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { manualPresenceDispatchAllowed } from "./manual-presence-policy";
 import { db, pool } from "./db";
 import { eq, and, asc, gte, sql, getTableColumns } from "drizzle-orm";
 import { isValidKzPhone, normalizePhone } from "./client-identity";
@@ -1104,6 +1105,21 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
       }
     }
 
+    const presenceBooking = await storage.getBooking(msg.bookingId);
+    if (presenceBooking?.manualPresenceVersion && (
+      msg.messageType !== "visit_confirmation" ||
+      !manualPresenceDispatchAllowed({
+        status: presenceBooking.visitConfirmationStatus || "",
+        bookingToken: presenceBooking.visitConfirmationToken || "",
+        messageToken: msg.reviewLink.split("/").pop() || "",
+        dueAt: new Date(presenceBooking.appointmentTime).getTime() + (presenceBooking.durationMinutes || 0) * 60_000,
+        deadline: msg.deadline ? new Date(msg.deadline).getTime() : 0,
+        expiresAt: presenceBooking.visitConfirmationExpiresAt ? new Date(presenceBooking.visitConfirmationExpiresAt).getTime() : 0,
+      }, Date.now())
+    )) {
+      await storage.markWaMessageSkipped(msg.id, "manual_presence_gate_at_send");
+      return false;
+    }
     msg = await refreshLinkIfExpired(msg);
     const assistbotMessageId = await sendViaAssistBot(
       msg.customerPhone,
@@ -1291,12 +1307,21 @@ async function claimWaMessageForDispatch(
         WHERE b.id = wm.booking_id
           AND b.status <> 'cancelled'
           AND COALESCE(b.has_review, false) = false
+          AND (
+            b.manual_presence_version IS NULL
+            OR wm.message_type = 'visit_confirmation'
+          )
            AND (
              wm.message_type <> 'visit_confirmation'
              OR (
-               b.status = 'ready_to_complete'
+               (b.status = 'ready_to_complete' OR b.manual_presence_version = 1)
                AND b.visit_confirmation_status = 'pending'
                AND b.visit_confirmation_expires_at > NOW()
+               AND (b.manual_presence_version IS NULL OR (
+                 wm.review_link = 'https://www.rateus.kz/visit-confirm/' || b.visit_confirmation_token
+                 AND wm.deadline > NOW()
+                 AND b.appointment_time + b.duration_minutes * INTERVAL '1 minute' <= NOW()
+               ))
              )
            )
       )
@@ -1576,9 +1601,23 @@ export async function startWaWorkerLoop(): Promise<void> {
           await storage.markWaMessageSkipped(candidate.id, "booking_cancelled");
           return false;
         }
+        if (booking.manualPresenceVersion && (
+          candidate.messageType !== "visit_confirmation" ||
+          !manualPresenceDispatchAllowed({
+            status: booking.visitConfirmationStatus || "",
+            bookingToken: booking.visitConfirmationToken || "",
+            messageToken: candidate.reviewLink.split("/").pop() || "",
+            dueAt: new Date(booking.appointmentTime).getTime() + (booking.durationMinutes || 0) * 60_000,
+            deadline: candidate.deadline ? new Date(candidate.deadline).getTime() : 0,
+            expiresAt: booking.visitConfirmationExpiresAt ? new Date(booking.visitConfirmationExpiresAt).getTime() : 0,
+          }, Date.now())
+        )) {
+          await storage.markWaMessageSkipped(candidate.id, "manual_presence_gate");
+          return false;
+        }
         if (
           candidate.messageType === "visit_confirmation" &&
-          (booking.status !== "ready_to_complete" || booking.visitConfirmationStatus !== "pending")
+          ((!booking.manualPresenceVersion && booking.status !== "ready_to_complete") || booking.visitConfirmationStatus !== "pending")
         ) {
           await storage.markWaMessageSkipped(candidate.id, "visit_confirmation_superseded");
           return false;

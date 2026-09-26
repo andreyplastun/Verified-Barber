@@ -1,4 +1,10 @@
-import type { Express } from "express";
+import type { Express, Response } from "express";
+import { reviewAttemptSuppression, reviewClientEligibility } from "./review-invitation-policy";
+import { recoverManualPresenceReview } from "./manual-presence-review-recovery";
+import { sanitizeManualPresencePayload } from "./manual-presence-privacy";
+import { presenceReviewAccess } from "./manual-presence-review-access";
+import { enrollManualPresence, isManualPresenceToken, manualPresenceEngine } from "./manual-presence-store";
+import { manualPresenceReviewAllowed, manualPresenceSchedule } from "./manual-presence-policy";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
@@ -142,18 +148,11 @@ async function checkReviewEligibility(
     return { eligible: false, reason: 'REFUNDED' };
   }
   const lastReview = await storage.getLastReviewByClientForSpecialist(clientId, specialistId);
-  if (!lastReview) {
-    return { eligible: true, reason: 'FIRST_VISIT' };
-  }
-  const daysSinceLastReview = (Date.now() - new Date(lastReview.createdAt!).getTime()) / (1000 * 60 * 60 * 24);
-  if (daysSinceLastReview < 60) {
-    return { eligible: false, reason: '<60_DAYS' };
-  }
+  if (!lastReview) return reviewClientEligibility(null, 0);
+  const ageEligibility = reviewClientEligibility(new Date(lastReview.createdAt!), 0);
+  if (!ageEligibility.eligible) return ageEligibility;
   const ignoredCount = await storage.getIgnoredMagicLinkCount(clientId, specialistId);
-  if (ignoredCount >= 2) {
-    return { eligible: false, reason: 'IGNORED' };
-  }
-  return { eligible: true, reason: 'OK' };
+  return reviewClientEligibility(new Date(lastReview.createdAt!), ignoredCount);
 }
 
 async function sendReviewLinkDirect(booking: any, link: string, source: string): Promise<boolean> {
@@ -275,6 +274,8 @@ export async function tryCreateMagicLinkForCompletedVisit(
 ): Promise<boolean> {
   try {
     let booking = await storage.getBooking(bookingId);
+    if (booking && !manualPresenceReviewAllowed(booking)) return false;
+    if (booking?.manualPresenceVersion) opts = { ...opts, suppressWhatsApp: true };
     const specAction = isSpecialistAction(source);
 
     if (opts?.altegioStaffId && booking && opts.altegioStaffId !== (booking as any).altegioStaffId) {
@@ -326,20 +327,7 @@ export async function tryCreateMagicLinkForCompletedVisit(
 
       console.log(`[ATTEMPT_CHECK] phone=${lookupPhone} (normalized=${booking.normalizedPhone || 'null'}) specialist=${booking.specialistId} attempts=${stats.attemptCount} lastAttempt=${stats.lastAttemptAt?.toISOString() || 'never'} lastReview=${stats.lastReviewAt?.toISOString() || 'never'} hasReviewAfter=${hasReviewAfterLastAttempt}`);
 
-      let skipReason: string | null = null;
-
-      if (hasReviewAfterLastAttempt) {
-        if (daysSinceLastReview !== null && daysSinceLastReview < 90) {
-          skipReason = 'skip_90d';
-        }
-      } else {
-        if (stats.attemptCount === 1 && daysSinceLastAttempt !== null && daysSinceLastAttempt < 30) {
-          skipReason = 'skip_30d';
-        }
-        if (stats.attemptCount >= 2 && daysSinceLastAttempt !== null && daysSinceLastAttempt < 180) {
-          skipReason = 'skip_180d';
-        }
-      }
+      const skipReason = reviewAttemptSuppression(stats, now);
 
       if (skipReason) {
         console.log(`[ATTEMPT_CHECK] SKIP phone=${lookupPhone} specialist=${booking.specialistId} reason=${skipReason} attempts=${stats.attemptCount} daysSinceAttempt=${daysSinceLastAttempt?.toFixed(1)} daysSinceReview=${daysSinceLastReview?.toFixed(1)}`);
@@ -574,6 +562,102 @@ export async function registerRoutes(
   // SECURITY: derive caller identity from the verified Supabase JWT only.
   // Strips any spoofed client-supplied x-user-id before route handlers run.
   app.use("/api", authenticateRequest);
+  app.use("/api", (_req, res, next) => {
+    const json = res.json.bind(res);
+    res.json = body => json(sanitizeManualPresencePayload(body));
+    next();
+  });
+  app.use("/api", presenceReviewAccess(storage));
+
+  // The new presence protocol is opt-in per booking, not a retrofit of old links.
+  function sendManualPresenceFailure(res: Response, error: any) {
+    const status = error.statusCode || 500;
+    if (status === 503) res.setHeader("Retry-After", "3");
+    return res.status(status).json({
+      message: status === 500 ? "Не удалось подтвердить визит. Попробуйте ещё раз." : error.message,
+      retryable: status >= 500 || Boolean(error.retryable),
+    });
+  }
+
+  async function manualPresenceResponse(token: string) {
+    const session = await manualPresenceEngine.get(token);
+    const booking = await storage.getBooking(session.bookingId);
+    const specialist = booking && await storage.getSpecialist(booking.specialistId);
+    let reviewUrl: string | null = null;
+    if (session.status === "confirmed" && session.reviewUrl) reviewUrl = session.reviewUrl;
+    else if (session.status === "confirmed") {
+      reviewUrl = await recoverManualPresenceReview(session.bookingId, {
+        getLink: id => storage.getMagicLinkByBookingId(id),
+        issueLink: id => tryCreateMagicLinkForCompletedVisit(id, "client_visit_confirmation", { suppressWhatsApp: true }),
+        getEligibility: async id => (await storage.getBooking(id))?.reviewEligibility,
+        buildUrl: link => buildVisitConfirmationReviewUrl(link, id => storage.getSpecialist(id)),
+      });
+    }
+    return {
+      manualPresence: true, status: session.status, reviewUrl,
+      specialistName: specialist?.name || "", specialistImageUrl: specialist?.imageUrl || null,
+      appointmentTime: session.start.toISOString(), appointmentTimeKnown: true, appointmentTimeIsDateOnly: false,
+      expectedEnd: session.expectedEnd.toISOString(), expiresAt: session.expiresAt.toISOString(),
+      canReschedule: session.status === "pending" && session.session < 4,
+    };
+  }
+
+  app.get("/api/visit-confirmations/:token", async (req, res, next) => {
+    try {
+      if (!await isManualPresenceToken(req.params.token)) return next();
+      res.json(await manualPresenceResponse(req.params.token));
+    } catch (error: any) { sendManualPresenceFailure(res, error); }
+  });
+  app.post("/api/visit-confirmations/:token/attempt", async (req, res) => {
+    try {
+      if (!await isManualPresenceToken(req.params.token)) return res.status(404).json({ message: "Ссылка не найдена" });
+      const attempt = await manualPresenceEngine.beginAttempt(req.params.token);
+      if (!attempt) return res.status(409).json({ message: "Подтверждение сейчас недоступно" });
+      res.json(attempt);
+    } catch (error: any) { sendManualPresenceFailure(res, error); }
+  });
+  app.patch("/api/specialist/bookings/:id/presence-schedule", async (req, res) => {
+    try {
+      const userId = req.headers["x-user-id"] as string;
+      const user = userId ? await storage.getUser(userId) : null;
+      const booking = await storage.getBooking(Number(req.params.id));
+      if (!user || !booking || (user.role !== "admin" && (user.role !== "specialist" || user.specialistId !== booking.specialistId))) {
+        return res.status(403).json({ message: "Нет доступа" });
+      }
+      if (!booking.manualPresenceVersion || !booking.visitConfirmationToken) return res.status(409).json({ message: "Запись не поддерживает этот способ переноса" });
+      const input = z.object({
+        appointmentTime: z.string().datetime({ offset: true }),
+        durationMinutes: z.number().int().min(1).max(1440),
+      }).safeParse(req.body);
+      if (!input.success) return res.status(400).json({ message: "Укажите время и длительность услуги" });
+      const result = await manualPresenceEngine.reschedule(booking.visitConfirmationToken, "edit",
+        new Date(input.data.appointmentTime), input.data.durationMinutes);
+      if (!result.changed) return res.status(409).json({ message: "Подтверждение уже закрыто" });
+      res.json(await storage.getBooking(booking.id));
+    } catch (error: any) { sendManualPresenceFailure(res, error); }
+  });
+  app.post("/api/visit-confirmations/:token/respond", async (req, res, next) => {
+    try {
+      if (!await isManualPresenceToken(req.params.token)) return next();
+      const input = z.discriminatedUnion("answer", [
+        z.object({ answer: z.literal("yes"), attemptId: z.string().max(100).optional(), location: z.unknown().optional() }),
+        z.object({ answer: z.literal("no") }),
+        z.object({ answer: z.literal("still_in_service") }),
+        z.object({ answer: z.literal("postponed"), appointmentTime: z.string().datetime({ offset: true }) }),
+      ]).safeParse(req.body);
+      if (!input.success) return res.status(400).json({ message: "Проверьте ответ и время записи" });
+      const data = input.data;
+      if (data.answer === "still_in_service" || data.answer === "postponed") {
+        const result = await manualPresenceEngine.reschedule(req.params.token, data.answer,
+          data.answer === "postponed" ? new Date(data.appointmentTime) : undefined);
+        if (result.changed) return res.json({ status: "postponed", changed: true, manualPresence: true });
+      } else {
+        await manualPresenceEngine.answer(req.params.token, data.answer,
+          data.answer === "yes" ? data.attemptId : undefined, data.answer === "yes" ? data.location : undefined);
+      }
+      res.json(await manualPresenceResponse(req.params.token));
+    } catch (error: any) { sendManualPresenceFailure(res, error); }
+  });
 
   async function buildVisitConfirmationResponse(
     token: string,
@@ -1965,7 +2049,15 @@ export async function registerRoutes(
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
       
-      const { specialistId, customerName, customerPhone, customerEmail, appointmentTime } = req.body;
+      const { specialistId, customerName, customerPhone, customerEmail, appointmentTime, durationMinutes } = req.body;
+      const adminSpecialist = await storage.getSpecialist(Number(specialistId));
+      const presenceFlow = !await specialistHasWorkingAltegio(adminSpecialist);
+      if (presenceFlow) {
+        const phone = normalizePhone(customerPhone || "");
+        if (!phone || !isValidKzPhone(phone)) return res.status(400).json({ message: "Для подтверждения визита укажите действующий WhatsApp клиента" });
+        try { manualPresenceSchedule(new Date(appointmentTime), durationMinutes, null); }
+        catch (error: any) { return res.status(400).json({ message: error.message }); }
+      }
       
       if (!specialistId || !customerName || !customerPhone || !customerEmail || !appointmentTime) {
         return res.status(400).json({ message: "Missing required fields (including email)" });
@@ -1991,9 +2083,14 @@ export async function registerRoutes(
         customerPhone,
         customerEmail: customerEmail.toLowerCase(),
         appointmentTime: new Date(appointmentTime),
-      });
+        ...(presenceFlow ? {
+          manualPresenceVersion: 1, durationMinutes, bookingSource: "specialist_manual",
+          visitConfirmationEligible: true, normalizedPhone: normalizePhone(customerPhone),
+        } : {}),
+      } as any);
+      if (presenceFlow) await enrollManualPresence(booking.id);
 
-      if (isAltegioConfigured()) {
+      if (isAltegioConfigured() && !presenceFlow) {
         const spec = await storage.getSpecialist(booking.specialistId);
         await storage.updateBooking(booking.id, { altegioSyncStatus: "pending", updatedFrom: "rateus" } as any);
         syncWithRetry(
@@ -2812,7 +2909,13 @@ ${magicLink}`;
         return res.status(403).json({ message: "Нет привязанного профиля специалиста" });
       }
 
-      const { customerName, customerPhone, appointmentTime, force } = req.body;
+      const { customerName, customerPhone, appointmentTime, force, durationMinutes } = req.body;
+      const manualSpecialist = await storage.getSpecialist(user.specialistId);
+      const presenceFlow = !await specialistHasWorkingAltegio(manualSpecialist);
+      if (presenceFlow) {
+        try { manualPresenceSchedule(new Date(appointmentTime), durationMinutes, null); }
+        catch (error: any) { return res.status(400).json({ message: error.message }); }
+      }
 
       if (!customerName || !appointmentTime) {
         return res.status(400).json({ message: "Имя клиента и время записи обязательны" });
@@ -2851,6 +2954,9 @@ ${magicLink}`;
 
       const normalized = normalizePhone(customerPhone || '');
       const phoneIsInvalid = normalized ? !isValidKzPhone(normalized) : false;
+      if (presenceFlow && (!normalized || phoneIsInvalid)) {
+        return res.status(400).json({ message: "Для подтверждения визита укажите действующий WhatsApp клиента" });
+      }
 
       if (phoneIsInvalid) {
         console.log(`[ANTIFRAUD_INVALID_PHONE] specialist=${user.specialistId} phone=${normalized} — invalid KZ phone prefix`);
@@ -2867,7 +2973,10 @@ ${magicLink}`;
         bookingSource: "specialist_manual",
         invalidPhone: phoneIsInvalid,
         visitConfirmationEligible: true,
+        manualPresenceVersion: presenceFlow ? 1 : null,
+        durationMinutes: presenceFlow ? durationMinutes : null,
       } as any);
+      if (presenceFlow) await enrollManualPresence(booking.id);
 
       console.log(`[SPECIALIST_BOOKING] Created booking: specialistId=${user.specialistId}, customer=${customerName}, time=${appointmentTime}, source=specialist_manual, invalidPhone=${phoneIsInvalid}`);
 
@@ -2991,6 +3100,10 @@ ${magicLink}`;
       }
 
       const specialist = await storage.getSpecialist(booking.specialistId);
+      if (booking.manualPresenceVersion) {
+        const paid = await storage.updateBooking(bookingId, { paymentStatus: "paid", paymentReceivedAt: new Date() });
+        return res.json({ booking: paid, magicLinkCreated: false });
+      }
       const isManualBooking = (booking as any).bookingSource === "specialist_manual";
       const hasAltegio = isManualBooking && (await specialistHasWorkingAltegio(specialist));
       const trustWeight = isManualBooking ? (hasAltegio ? 0.3 : 0.6) : 1.05;
@@ -3066,12 +3179,16 @@ ${magicLink}`;
       const hasAltegio = isManualBooking && (await specialistHasWorkingAltegio(specialist));
       const trustWeight = isManualBooking ? (hasAltegio ? 0.3 : 0.6) : 1.0;
 
+      if (booking.manualPresenceVersion) {
+        return res.status(409).json({ message: "Клиент получит подтверждение после расчётного окончания услуги. Отзыв доступен только после его ответа «Да»." });
+      }
       const completionResult = await pool.query(
+        // New manual visits are completed by the client's explicit answer.
         `UPDATE bookings
          SET status = 'completed',
              completion_type = 'with_review',
              visit_trust_weight = $2
-         WHERE id = $1 AND status = 'ready_to_complete'
+         WHERE id = $1 AND status = 'ready_to_complete' AND manual_presence_version IS NULL
          RETURNING id`,
         [bookingId, trustWeight],
       );

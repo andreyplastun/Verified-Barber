@@ -391,6 +391,7 @@ export async function confirmVisitFromSpecialistChat(
        FROM bookings
        WHERE specialist_id = $1
          AND booking_source = 'specialist_manual'
+         AND manual_presence_version IS NULL
          AND visit_confirmation_eligible = true
          AND status = 'ready_to_complete'
          AND appointment_time <= NOW()
@@ -522,6 +523,7 @@ export async function runVisitConfirmationScan(): Promise<{
             visit_confirmation_status = 'expired',
             visit_confirmation_responded_at = NOW()
         WHERE visit_confirmation_status = 'pending'
+          AND manual_presence_version IS NULL
           AND visit_confirmation_expires_at <= NOW()
         RETURNING id
       )
@@ -540,6 +542,7 @@ export async function runVisitConfirmationScan(): Promise<{
         SET visit_confirmation_status = 'superseded',
             visit_confirmation_responded_at = NOW()
         WHERE visit_confirmation_status = 'pending'
+          AND manual_presence_version IS NULL
           AND status <> 'ready_to_complete'
         RETURNING id
       )
@@ -558,6 +561,7 @@ export async function runVisitConfirmationScan(): Promise<{
       FROM bookings b
       JOIN specialists s ON s.id = b.specialist_id
       WHERE b.booking_source = 'specialist_manual'
+        AND b.manual_presence_version IS NULL
         AND b.visit_confirmation_eligible = true
         AND b.visit_confirmation_status IS NULL
         AND b.status = 'ready_to_complete'
@@ -663,6 +667,7 @@ export async function supersedeVisitConfirmation(
        SET visit_confirmation_status = 'superseded',
            visit_confirmation_responded_at = NOW()
        WHERE id = $1 AND visit_confirmation_status = 'pending'
+         AND manual_presence_version IS NULL
        RETURNING id
      )
      UPDATE wa_messages wm

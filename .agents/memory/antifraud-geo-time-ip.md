@@ -5,6 +5,13 @@ description: Why review-weight penalties for late reviews and shared IPs were re
 
 # Anti-fraud: geo is a bonus, time/IP penalties removed (decided 2026-06-16)
 
+## Scoped exception agreed 2026-09-26: new manual visits
+The user approved a separate, time-anchored presence checkpoint for new manual visits outside the existing Altegio flow. Explicit client Yes is required for review access; absent response expires without review solicitation. Browser geo at this checkpoint raises internal visit trust from 0.6 to 1.0, while denied/unavailable geo still permits a review after Yes. Both branches must have identical review text/UI and must not expose trust results.
+
+**Why:** the user prefers missing a review over requesting one for a visit that may never have happened. A master's unpredictable completion action must not determine the checkpoint time or bypass it. This is distinct from penalizing someone for writing a review late.
+
+**How to apply:** use expected service end for the checkpoint, keep the existing Altegio flow and historical bookings unchanged, and keep GPS explicitly a spoofable supporting signal rather than proof. Do not revive QR/check-in or background web tracking proposals; they were rejected for this flow.
+
 **Rule:** Review-weight signals must penalize *fraud*, not *normal honest-but-busy client behavior*.
 
 ## Time penalty — REMOVED
