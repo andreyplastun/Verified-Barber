@@ -5,6 +5,8 @@ import { eq, and, asc, gte, sql, getTableColumns } from "drizzle-orm";
 import { isValidKzPhone, normalizePhone } from "./client-identity";
 import {
   evaluateDispatchBudget,
+  dispatchTierSql,
+  expiredManualConfirmationSweepSql,
   findFirstEligibleCandidate,
   getChannelRateLimitWaitMs,
   getEffectiveHardLimit,
@@ -1386,6 +1388,11 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       const settings = await getWaSettings();
+      // Even a closed send window or exhausted budget must not leave timed-out links queued.
+      const expiredConfirmations = await db.execute(expiredManualConfirmationSweepSql());
+      if (expiredConfirmations.rows.length > 0) {
+        console.log(`[WA_PROCESSOR] Expired ${expiredConfirmations.rows.length} manual visit confirmations`);
+      }
       if (!settings.enabled) {
         await sleep(30000);
         continue;
@@ -1483,6 +1490,7 @@ export async function startWaWorkerLoop(): Promise<void> {
       const candidates = await db.select({
         ...getTableColumns(waMessages),
         firstVisitStatus: bookings.firstVisitStatus,
+        manualPresenceVersion: bookings.manualPresenceVersion,
       })
         .from(waMessages)
         .leftJoin(bookings, eq(bookings.id, waMessages.bookingId))
@@ -1494,14 +1502,10 @@ export async function startWaWorkerLoop(): Promise<void> {
           )
         )
         .orderBy(
-          sql`CASE
-            WHEN ${waMessages.messageType} = 'primary'
-              AND ${waMessages.priority} >= ${NEW_CLIENT_PRIORITY}
-              AND ${bookings.firstVisitStatus} = 'confirmed_new'
-              THEN 0
-            WHEN ${waMessages.messageType} = 'primary' THEN 1
-            ELSE 2
-          END`,
+          dispatchTierSql(
+            waMessages.messageType, waMessages.priority, bookings.firstVisitStatus,
+            bookings.manualPresenceVersion, NEW_CLIENT_PRIORITY,
+          ),
           sql`COALESCE(${waMessages.deadline}, '2099-01-01'::timestamp) ASC`,
           asc(waMessages.id),
         )
@@ -1537,7 +1541,7 @@ export async function startWaWorkerLoop(): Promise<void> {
           candidate.firstVisitStatus = "confirmed_new";
         }
 
-        if (msgDeadline && Date.now() > msgDeadline.getTime()) {
+        if (msgDeadline && Date.now() >= msgDeadline.getTime()) {
           const reason = candidate.messageType === "primary"
             ? "expired_primary"
             : candidate.messageType === "visit_confirmation"

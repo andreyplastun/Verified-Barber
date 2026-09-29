@@ -1,5 +1,7 @@
+import { sql, type SQLWrapper } from "drizzle-orm";
+
 export type FirstVisitStatus = "unknown" | "confirmed_new" | "confirmed_returning";
-export type DispatchMessageType = "primary" | "reminder";
+export type DispatchMessageType = "primary" | "reminder" | "visit_confirmation";
 
 export interface DispatchCandidateShape {
   id: number;
@@ -7,6 +9,7 @@ export interface DispatchCandidateShape {
   priority: number;
   deadline?: Date | string | null;
   firstVisitStatus?: FirstVisitStatus;
+  manualPresenceVersion?: number | null;
 }
 
 export interface DispatchBudget {
@@ -31,11 +34,44 @@ export function isConfirmedPriorityCandidate(
 }
 
 export function getDispatchTier(
-  candidate: Pick<DispatchCandidateShape, "messageType" | "priority" | "firstVisitStatus">,
-): 0 | 1 | 2 {
-  if (isConfirmedPriorityCandidate(candidate)) return 0;
-  if (candidate.messageType === "primary") return 1;
-  return 2;
+  candidate: Pick<DispatchCandidateShape, "messageType" | "priority" | "firstVisitStatus" | "manualPresenceVersion">,
+): 0 | 1 | 2 | 3 {
+  if (candidate.messageType === "visit_confirmation" && candidate.manualPresenceVersion === 1) return 0;
+  if (isConfirmedPriorityCandidate(candidate)) return 1;
+  if (candidate.messageType === "primary") return 2;
+  return 3;
+}
+
+// Shared with the in-memory ordering above; used by the actual LIMIT 200 query.
+export function dispatchTierSql(
+  messageType: SQLWrapper,
+  priority: SQLWrapper,
+  firstVisitStatus: SQLWrapper,
+  manualPresenceVersion: SQLWrapper,
+  newClientPriority: number,
+) {
+  return sql`CASE
+    WHEN ${messageType} = 'visit_confirmation' AND ${manualPresenceVersion} = 1 THEN 0
+    WHEN ${messageType} = 'primary' AND ${priority} >= ${newClientPriority}
+      AND ${firstVisitStatus} = 'confirmed_new' THEN 1
+    WHEN ${messageType} = 'primary' THEN 2
+    ELSE 3
+  END`;
+}
+
+// Sweep is deliberately not gated by the daily budget or the candidate LIMIT.
+// Only new manual-presence confirmations are touched; legacy expiry rules remain unchanged.
+export function expiredManualConfirmationSweepSql() {
+  return sql`UPDATE wa_messages wm
+    SET status = 'skipped', skip_reason = 'expired_visit_confirmation'
+    WHERE wm.status = 'queued'
+      AND wm.message_type = 'visit_confirmation'
+      AND wm.deadline <= NOW()
+      AND EXISTS (
+        SELECT 1 FROM bookings b
+        WHERE b.id = wm.booking_id AND b.manual_presence_version = 1
+      )
+    RETURNING wm.id`;
 }
 
 export function compareDispatchCandidates(a: DispatchCandidateShape, b: DispatchCandidateShape): number {
