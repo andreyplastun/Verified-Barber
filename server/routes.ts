@@ -597,6 +597,8 @@ export async function registerRoutes(
       specialistName: specialist?.name || "", specialistImageUrl: specialist?.imageUrl || null,
       appointmentTime: session.start.toISOString(), appointmentTimeKnown: true, appointmentTimeIsDateOnly: false,
       expectedEnd: session.expectedEnd.toISOString(), expiresAt: session.expiresAt.toISOString(),
+      geoAllowed: session.status === "pending" &&
+        Date.now() < (session.geoExpiresAt?.getTime() ?? session.expectedEnd.getTime() + 2 * 60 * 60_000),
       canReschedule: session.status === "pending" && session.session < 4,
     };
   }

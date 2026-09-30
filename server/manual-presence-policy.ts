@@ -4,7 +4,9 @@
  */
 export const MANUAL_PRESENCE = {
   sendDeadlineMs: 30 * 60_000,
-  responseLifetimeMs: 2 * 60 * 60_000,
+  // The original visit-time bound is kept independently from the answer link.
+  geoLifetimeMs: 2 * 60 * 60_000,
+  responseLifetimeMs: 24 * 60 * 60_000,
   attemptLifetimeMs: 2 * 60_000,
   maxSessions: 4,
   radiusMeters: 200,
@@ -29,8 +31,14 @@ export function manualPresenceSchedule(
     expectedEnd,
     dueAt: expectedEnd,
     deadline: new Date(expectedEnd.getTime() + MANUAL_PRESENCE.sendDeadlineMs),
-    expiresAt: new Date(expectedEnd.getTime() + MANUAL_PRESENCE.responseLifetimeMs),
+    geoExpiresAt: new Date(expectedEnd.getTime() + MANUAL_PRESENCE.geoLifetimeMs),
+    // Provisional unsent bound. Only a successful send grants 24h from send time.
+    expiresAt: new Date(expectedEnd.getTime() + MANUAL_PRESENCE.geoLifetimeMs),
   };
+}
+
+export function manualPresenceSentExpiry(sentAt: Date): Date {
+  return new Date(sentAt.getTime() + MANUAL_PRESENCE.responseLifetimeMs);
 }
 
 export type PresenceCoordinates = { latitude: number; longitude: number };

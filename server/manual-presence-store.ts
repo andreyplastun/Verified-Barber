@@ -3,7 +3,7 @@ import { issueManualPresenceReview } from "./manual-presence-review-issue";
 import { pool } from "./db";
 import { hashPhoneToLockId } from "./wa-phone-lock";
 import { buildVisitConfirmationMessage } from "./visit-confirmation-policy";
-import { manualPresenceSchedule } from "./manual-presence-policy";
+import { manualPresenceSchedule, manualPresenceSentExpiry } from "./manual-presence-policy";
 import {
   ManualPresenceEngine, PresenceError,
   type ManualPresenceRepository, type ManualPresenceSession,
@@ -13,7 +13,58 @@ const newToken = () => crypto.randomBytes(24).toString("base64url");
 
 function hydrate(data: any): ManualPresenceSession {
   for (const field of ["start", "expectedEnd", "dueAt", "deadline", "expiresAt"]) data[field] = new Date(data[field]);
+  if (data.geoExpiresAt) data.geoExpiresAt = new Date(data.geoExpiresAt);
+  if (data.sentAt) data.sentAt = new Date(data.sentAt);
   return data;
+}
+
+/**
+ * Called only after the provider acknowledges the manual confirmation message,
+ * while the dispatcher still owns its phone lock. Persist message, booking and
+ * private session together so the public endpoint cannot see a half-sent link.
+ */
+export async function markManualPresenceMessageSent(
+  messageId: number, bookingId: number, token: string, providerMessageId: string | null,
+  database: Pick<typeof pool, "connect"> = pool,
+  sentAt = new Date(),
+): Promise<void> {
+  const client = await database.connect();
+  try {
+    await client.query("BEGIN");
+    const booking = await client.query(
+      `SELECT visit_confirmation_status, visit_confirmation_token, visit_confirmation_expires_at,
+              visit_confirmation_sent_at
+       FROM bookings WHERE id=$1 FOR UPDATE`, [bookingId]);
+    const sessionRow = await client.query(
+      "SELECT data FROM manual_presence_sessions WHERE token=$1 AND booking_id=$2 FOR UPDATE", [token, bookingId]);
+    const session = sessionRow.rows[0] && hydrate(sessionRow.rows[0].data);
+    if (booking.rows[0]?.visit_confirmation_status !== "pending" ||
+        booking.rows[0]?.visit_confirmation_token !== token ||
+        booking.rows[0]?.visit_confirmation_sent_at != null ||
+        !session || session.status !== "pending" || session.sentAt ||
+        sentAt.getTime() >= session.expiresAt.getTime() ||
+        new Date(booking.rows[0].visit_confirmation_expires_at).getTime() <= sentAt.getTime()) {
+      throw new Error("Manual presence send cannot extend an expired or superseded link");
+    }
+    const expiry = manualPresenceSentExpiry(sentAt);
+    session.sentAt = sentAt;
+    session.expiresAt = expiry;
+    await client.query("UPDATE manual_presence_sessions SET data=$2 WHERE token=$1",
+      [token, JSON.stringify(session)]);
+    await client.query(
+      `UPDATE bookings SET visit_confirmation_sent_at=$2, visit_confirmation_expires_at=$3
+       WHERE id=$1`, [bookingId, sentAt, expiry]);
+    const result = await client.query(
+      `UPDATE wa_messages SET status='sent', sent_at=$2, sending_started_at=NULL,
+       assistbot_message_id=COALESCE($3, assistbot_message_id)
+       WHERE id=$1 AND booking_id=$4 AND status='sending' RETURNING id`,
+      [messageId, sentAt, providerMessageId, bookingId]);
+    if (result.rows.length !== 1) throw new Error("Manual presence send message state changed");
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
 }
 
 export function createManualPresenceRepository(

@@ -1,9 +1,84 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createManualPresenceRepository } from "./manual-presence-store";
+import { createManualPresenceRepository, markManualPresenceMessageSent } from "./manual-presence-store";
 import { ManualPresenceEngine, type ManualPresenceSession } from "./manual-presence-engine";
 import { manualPresenceSchedule } from "./manual-presence-policy";
 import { pool } from "./db";
+
+test("delayed dispatch sets answer expiry from send, without reviving expired or superseded links", async () => {
+  const expectedEnd = new Date("2026-06-16T09:00:00Z");
+  const sentAt = new Date(expectedEnd.getTime() + 29 * 60_000);
+  const initial = {
+    ...manualPresenceSchedule(new Date(expectedEnd.getTime() - 3600_000), 60, null),
+    bookingId: 1, token: "token", session: 1, status: "pending" as const,
+    start: new Date(expectedEnd.getTime() - 3600_000), attempt: null, reviewUrl: null,
+  };
+  let state = { session: structuredClone(initial), bookingStatus: "pending",
+    bookingToken: "token", bookingExpiry: initial.expiresAt, messageStatus: "sending" };
+  let snapshot = structuredClone(state);
+  const sqlLog: string[] = [];
+  const client = {
+    async query(sql: string, values: any[] = []) {
+      sqlLog.push(sql);
+      if (sql === "BEGIN") snapshot = structuredClone(state);
+      else if (sql === "ROLLBACK") state = structuredClone(snapshot);
+      else if (sql.startsWith("SELECT visit_confirmation_status")) return { rows: [{
+        visit_confirmation_status: state.bookingStatus, visit_confirmation_token: state.bookingToken,
+        visit_confirmation_expires_at: state.bookingExpiry,
+      }] };
+      else if (sql.startsWith("SELECT data FROM manual_presence_sessions")) return {
+        rows: [{ data: JSON.parse(JSON.stringify(state.session)) }],
+      };
+      else if (sql.startsWith("UPDATE manual_presence_sessions")) state.session = JSON.parse(values[1]);
+      else if (sql.startsWith("UPDATE bookings SET visit_confirmation_sent_at")) state.bookingExpiry = values[2];
+      else if (sql.startsWith("UPDATE wa_messages SET status='sent'")) {
+        if (state.messageStatus !== "sending") return { rows: [] };
+        state.messageStatus = "sent";
+        return { rows: [{ id: values[0] }] };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+  const database = { connect: async () => client } as any;
+  await markManualPresenceMessageSent(1, 1, "token", "provider-id", database, sentAt);
+  assert.equal(new Date(state.session.expiresAt).getTime(), sentAt.getTime() + 24 * 3600_000);
+  assert.equal(state.bookingExpiry.getTime(), sentAt.getTime() + 24 * 3600_000);
+  assert.equal(new Date(state.session.geoExpiresAt).getTime(), expectedEnd.getTime() + 2 * 3600_000);
+  assert.equal(state.messageStatus, "sent");
+  assert.ok(sqlLog.indexOf("COMMIT") > sqlLog.findIndex(sql => sql.startsWith("UPDATE wa_messages SET status='sent'")));
+  state.messageStatus = "sending";
+  await assert.rejects(markManualPresenceMessageSent(1, 1, "token", null, database,
+    new Date(sentAt.getTime() + 1000)), /cannot extend/);
+  assert.equal(new Date(state.session.expiresAt).getTime(), sentAt.getTime() + 24 * 3600_000);
+  state = { ...state, session: structuredClone(initial), messageStatus: "sending" };
+  // A previously sent pending booking from the old format may lack session.sentAt.
+  const priorQuery = client.query;
+  client.query = async (sql: string, values: any[] = []) => {
+    const result = await priorQuery(sql, values);
+    if (sql.startsWith("SELECT visit_confirmation_status")) {
+      result.rows[0].visit_confirmation_sent_at = sentAt;
+    }
+    return result;
+  };
+  await assert.rejects(markManualPresenceMessageSent(1, 1, "token", null, database,
+    new Date(sentAt.getTime() + 1000)), /cannot extend/);
+  client.query = priorQuery;
+  for (const status of ["expired", "superseded"] as const) {
+    state = { ...state, session: { ...structuredClone(initial), status }, bookingStatus: status,
+      bookingExpiry: initial.expiresAt, messageStatus: "sending" };
+    await assert.rejects(markManualPresenceMessageSent(1, 1, "token", null, database, sentAt),
+      /cannot extend/);
+    assert.equal(state.session.status, status);
+    assert.equal(state.messageStatus, "sending");
+  }
+  state = { ...state, session: structuredClone(initial), bookingStatus: "pending",
+    bookingExpiry: initial.expiresAt, messageStatus: "sending" };
+  await assert.rejects(markManualPresenceMessageSent(1, 1, "token", null, database, initial.expiresAt),
+    /cannot extend/);
+  assert.equal(state.messageStatus, "sending");
+  assert.equal(pool.totalCount, 0);
+});
 
 test("production repository rolls back completion, score and session if its transaction link issuer fails", async () => {
   const now = Date.now();

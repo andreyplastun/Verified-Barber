@@ -32,6 +32,7 @@ type Confirmation = {
   manualPresence?: boolean;
   expectedEnd?: string;
   expiresAt?: string;
+  geoAllowed?: boolean;
   canReschedule?: boolean;
 };
 
@@ -221,7 +222,7 @@ export default function VisitConfirmationPage() {
 
   const confirmation = submitted || confirmationQuery.data;
   const confirmYes = async () => {
-    if (!confirmation?.manualPresence) {
+    if (!confirmation?.manualPresence || confirmation.geoAllowed === false) {
       respondMutation.mutate({ answer: "yes" });
       return;
     }
@@ -429,7 +430,7 @@ export default function VisitConfirmationPage() {
           </div>
         </section>
 
-        {confirmation.manualPresence && (
+        {confirmation.manualPresence && confirmation.geoAllowed !== false && (
           <p className="mt-4 text-sm leading-6 text-muted-foreground" data-testid="text-location-purpose">
             Если вы были на услуге, можно отдельно разрешить браузеру проверить местоположение. Это необязательно — отзыв можно оставить и без геолокации.
           </p>

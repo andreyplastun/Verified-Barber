@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ManualPresenceEngine, type ManualPresenceRepository, type ManualPresenceSession } from "./manual-presence-engine";
-import { manualPresenceSchedule, presenceTrust, presenceValidationReason, manualPresenceDispatchAllowed, manualPresenceReviewAllowed } from "./manual-presence-policy";
+import { manualPresenceSchedule, manualPresenceSentExpiry, presenceTrust, presenceValidationReason, manualPresenceDispatchAllowed, manualPresenceReviewAllowed } from "./manual-presence-policy";
 import { presenceReviewAccess } from "./manual-presence-review-access";
 import { buildVisitConfirmationMessage } from "./visit-confirmation-policy";
 
@@ -84,6 +84,8 @@ test("duration is explicit; standard fallback is configured, never universal", (
   assert.equal(p.dueAt.getTime(), p.expectedEnd.getTime());
   assert.equal(p.deadline.getTime(), p.expectedEnd.getTime() + 30 * 60_000);
   assert.equal(p.expiresAt.getTime(), p.expectedEnd.getTime() + 120 * 60_000);
+  assert.equal(p.geoExpiresAt.getTime(), p.expectedEnd.getTime() + 120 * 60_000);
+  assert.equal(manualPresenceSentExpiry(p.expectedEnd).getTime(), p.expectedEnd.getTime() + 24 * 3600_000);
 });
 
 test("dispatch due/deadline are exclusive boundaries and old token never dispatches", () => {
@@ -271,6 +273,36 @@ test("queue deadline does not truncate valid response window or extend it after 
   const late = harness();
   late.setNow(late.now() + 121 * 60_000);
   assert.equal((await late.engine.answer("first", "yes")).status, "expired");
+});
+
+test("late answers remain available until 24h after actual send, but cannot yield late geo trust", async () => {
+  for (const answer of ["yes", "no"] as const) {
+    const h = harness();
+    const sentAt = h.now() + 29 * 60_000;
+    const session = h.sessions.get("first")!;
+    session.expiresAt = manualPresenceSentExpiry(new Date(sentAt));
+    session.sentAt = new Date(sentAt);
+    h.setNow(h.now() + 3 * 3600_000);
+    assert.equal(await h.engine.beginAttempt("first"), null);
+    // A forged old attempt/reading cannot upgrade a late Yes.
+    session.attempt = {
+      id: "old", session: 1, issuedAt: h.now() - 100,
+      expiresAt: h.now() + 60_000, venue: { latitude: 43.25, longitude: 76.95 },
+    };
+    const result = await h.engine.answer("first", answer, "old", {
+      latitude: 43.25, longitude: 76.95, accuracy: 1, capturedAt: h.now(),
+    });
+    assert.equal(result.status, answer === "yes" ? "confirmed" : "declined");
+    assert.deepEqual(h.weights, answer === "yes" ? [0.6] : []);
+    if (answer === "yes") {
+      assert.equal(h.sessions.get("first")!.geoDiagnostic?.validationReason, "stale");
+    }
+  }
+  const expired = harness();
+  expired.sessions.get("first")!.expiresAt = manualPresenceSentExpiry(new Date(expired.now() + 29 * 60_000));
+  expired.setNow(expired.sessions.get("first")!.expiresAt.getTime());
+  assert.equal((await expired.engine.answer("first", "yes")).status, "expired");
+  assert.equal((await expired.engine.answer("first", "no")).status, "expired");
 });
 
 test("public review APIs deny new pending/expired/No even if master marked completed; legacy remains allowed", async () => {

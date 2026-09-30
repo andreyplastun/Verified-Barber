@@ -965,7 +965,7 @@ export default function SpecialistDashboard() {
               {guideMode === 'create-visit' ? (
                 <>
                   <span className="block">1. Заполните данные клиента — имя и телефон в форме ниже.</span>
-                  <span className="block">2. Нажмите «Создать запись».</span>
+                  <span className="block">2. Нажмите «{isNewSpecialist ? 'Добавить клиента' : 'Записать'}».</span>
                   <span className="block">3. После визита нажмите «Завершить визит» — клиент получит ссылку на отзыв.</span>
                 </>
               ) : (
@@ -1303,7 +1303,7 @@ export default function SpecialistDashboard() {
                   data-testid="note-manual-booking"
                 >
                   <p className="text-xs text-amber-900 dark:text-amber-200">
-                    ⚠️ Чтобы собирать отзывы: создавайте визиты вручную ниже (кнопка «Создать запись») и завершайте их после приёма.
+                    ⚠️ Чтобы собирать отзывы: создавайте визиты вручную ниже (кнопка «{isNewSpecialist ? 'Добавить первого клиента' : 'Записать'}») и завершайте их после приёма.
                   </p>
                 </div>
                 <p className="text-xs text-muted-foreground">
@@ -2004,7 +2004,7 @@ export default function SpecialistDashboard() {
                     data-testid="button-create-booking"
                   >
                     {createBookingMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-1" /> : null}
-                    {isNewSpecialist ? "Добавить клиента" : "Создать запись"}
+                    {isNewSpecialist ? "Добавить клиента" : "Записать"}
                   </Button>
                   <Button
                     size="sm"

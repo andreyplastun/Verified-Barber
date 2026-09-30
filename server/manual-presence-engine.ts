@@ -16,6 +16,8 @@ export type ManualPresenceSession = {
   dueAt: Date;
   deadline: Date;
   expiresAt: Date;
+  geoExpiresAt?: Date;
+  sentAt?: Date;
   attempt: PresenceAttempt | null;
   /** Private session.data only; never project this into the public confirmation DTO. */
   geoDiagnostic?: { browserStatus: BrowserGeoStatus | "unknown"; validationReason: PresenceValidationReason; recordedAt: number };
@@ -71,7 +73,8 @@ export class ManualPresenceEngine {
   async beginAttempt(token: string): Promise<{ id: string; expiresAt: number } | null> {
     return this.repository.transaction(token, async tx => {
       const session = await this.active(tx);
-      if (session.status !== "pending" || this.now() < session.expectedEnd.getTime()) return null;
+       if (session.status !== "pending" || this.now() < session.expectedEnd.getTime() ||
+           this.now() >= (session.geoExpiresAt?.getTime() ?? session.expectedEnd.getTime() + MANUAL_PRESENCE.geoLifetimeMs)) return null;
       // One bounded live attempt per session; retry cannot extend its lifetime.
       if (session.attempt) return {
         id: session.attempt.id,
@@ -81,7 +84,8 @@ export class ManualPresenceEngine {
       const venue = await tx.venue();
       session.attempt = {
         id: this.randomToken(), session: session.session, issuedAt: now,
-        expiresAt: Math.min(now + MANUAL_PRESENCE.attemptLifetimeMs, session.expiresAt.getTime()),
+         expiresAt: Math.min(now + MANUAL_PRESENCE.attemptLifetimeMs,
+           session.geoExpiresAt?.getTime() ?? session.expectedEnd.getTime() + MANUAL_PRESENCE.geoLifetimeMs),
         venue: validPresenceCoordinates(venue) ? { ...venue } : null,
       };
       await tx.save(session);
@@ -103,7 +107,9 @@ export class ManualPresenceEngine {
       } else {
         const boundAttempt = session.attempt?.id === attemptId ? session.attempt : null;
         const recordedAt = this.now();
-        const validationReason = presenceValidationReason(boundAttempt, reading, recordedAt, session.session);
+         const geoDeadline = session.geoExpiresAt?.getTime() ?? session.expectedEnd.getTime() + MANUAL_PRESENCE.geoLifetimeMs;
+         const validationReason = recordedAt >= geoDeadline
+           ? "stale" : presenceValidationReason(boundAttempt, reading, recordedAt, session.session);
         // Browser status is observational/untrusted; only server validation affects trust.
         session.geoDiagnostic = { browserStatus: geoStatus ?? "unknown", validationReason, recordedAt };
         const trust = validationReason === "accepted" ? MANUAL_PRESENCE.higherTrust : MANUAL_PRESENCE.lowerTrust;
@@ -139,7 +145,8 @@ export class ManualPresenceEngine {
       await tx.save(previous);
       const next: ManualPresenceSession = {
         ...previous, ...schedule, start: nextStart, token: this.randomToken(),
-        session: previous.session + 1, status: "pending", attempt: null, geoDiagnostic: undefined, reviewUrl: null,
+         session: previous.session + 1, status: "pending", attempt: null, sentAt: undefined,
+         geoDiagnostic: undefined, reviewUrl: null,
       };
       await tx.save(next);
       await tx.queue(next);

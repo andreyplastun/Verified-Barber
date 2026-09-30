@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { manualPresenceDispatchAllowed } from "./manual-presence-policy";
+import { markManualPresenceMessageSent } from "./manual-presence-store";
 import { db, pool } from "./db";
 import { eq, and, asc, gte, sql, getTableColumns } from "drizzle-orm";
 import { isValidKzPhone, normalizePhone } from "./client-identity";
@@ -1130,8 +1131,14 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
       `${source}_${msg.messageType}`,
       msg.createdAt ? new Date(msg.createdAt).getTime() : 946684800000 + msg.id,
     );
-    await storage.markWaMessageSent(msg.id, assistbotMessageId);
-    if (msg.messageType === "visit_confirmation") {
+    if (msg.messageType === "visit_confirmation" && presenceBooking?.manualPresenceVersion === 1) {
+      await markManualPresenceMessageSent(
+        msg.id, msg.bookingId, msg.reviewLink.split("/").pop() || "", assistbotMessageId,
+      );
+    } else {
+      await storage.markWaMessageSent(msg.id, assistbotMessageId);
+    }
+    if (msg.messageType === "visit_confirmation" && !presenceBooking?.manualPresenceVersion) {
       await db.update(bookings)
         .set({ visitConfirmationSentAt: new Date() } as any)
         .where(and(
