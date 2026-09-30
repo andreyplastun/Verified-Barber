@@ -15,6 +15,7 @@ import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
 import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig, resolveBookform, verifyAltegioCompany } from "./altegio";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
+import { isOwnPhoneBooking, OWN_PHONE_BOOKING_MESSAGE } from "./own-phone-booking";
 import { getAltegioInvalidatedBookingStatus } from "./altegio-attendance-policy";
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
@@ -46,8 +47,6 @@ import {
   getCurrentAssistbotConnectionRequest,
   invalidateAssistbotConnectionRequests,
   listAssistbotConnectionRequests,
-  requestAssistbotConnection,
-  resubmitAssistbotConnectionRequest,
 } from "./assistbot-connections";
 import {
   addAlmatyCalendarDays,
@@ -1002,10 +1001,8 @@ export async function registerRoutes(
       }
 
       // If the user is a specialist with specialistId, save tips settings with analytics
-      let assistbotConnection: Awaited<ReturnType<typeof requestAssistbotConnection>> | null = null;
-      let assistbotError: string | null = null;
       if (user.role === "specialist" && user.specialistId) {
-        const { kaspiPhone, tipsEnabled, skipped, whatsapp, assistbotConnectionConsent } = req.body;
+        const { kaspiPhone, tipsEnabled, skipped, whatsapp } = req.body;
         const cleanWhatsapp =
           typeof whatsapp === "string" ? whatsapp.trim() : whatsapp === null ? "" : undefined;
         if (cleanWhatsapp && !isValidKzPhone(normalizePhone(cleanWhatsapp))) {
@@ -1034,40 +1031,13 @@ export async function registerRoutes(
           }
         }
 
-        if (assistbotConnectionConsent === true) {
-          try {
-            const refreshedSpecialist = await storage.getSpecialist(user.specialistId);
-            if (!refreshedSpecialist) {
-              throw new AssistbotConnectionError("Профиль специалиста не найден", 404, "specialist_not_found");
-            }
-            if (
-              refreshedSpecialist.ownerUserId &&
-              String(refreshedSpecialist.ownerUserId) !== String(user.id)
-            ) {
-              throw new AssistbotConnectionError(
-                "Профиль принадлежит другому владельцу",
-                403,
-                "profile_owner_mismatch",
-              );
-            }
-            // Phone changes are committed before this request, so the
-            // idempotency check uses exactly the saved profile number.
-            assistbotConnection = await requestAssistbotConnection(refreshedSpecialist, user);
-          } catch (assistbotRequestError) {
-            assistbotError =
-              assistbotRequestError instanceof Error
-                ? assistbotRequestError.message
-                : "Заявка AssistBot не сохранена";
-            console.error("[ASSISTBOT_CONNECTION] onboarding request error:", assistbotRequestError);
-          }
-        }
       }
 
       // Mark onboarding as complete
       console.log("[ONBOARDING API] Marking onboarding complete for:", userId);
       const updated = await storage.completeOnboarding(userId);
       console.log("[ONBOARDING API] Updated user:", updated);
-      res.json({ ...updated, assistbotConnection, assistbotError });
+      res.json({ ...updated, assistbotConnection: null, assistbotError: null });
     } catch (err: any) {
       console.error("Error completing onboarding:", err);
       res.status(500).json({ message: err.message });
@@ -1284,7 +1254,6 @@ export async function registerRoutes(
         country,
         serviceLocation,
         phone,
-        assistbotConnectionConsent,
         referredBySpecialistId,
       } = result.data;
 
@@ -1295,11 +1264,6 @@ export async function registerRoutes(
         if (existingSpecialist) {
           return res.status(400).json({ message: "Специалист с таким номером телефона уже зарегистрирован" });
         }
-      }
-      if (assistbotConnectionConsent && !isValidKzPhone(normalizePhone(phone))) {
-        return res.status(400).json({
-          message: "Для заявки AssistBot укажите корректный номер WhatsApp Казахстана или Узбекистана",
-        });
       }
 
       // Check if email already registered
@@ -1359,28 +1323,13 @@ export async function registerRoutes(
           ownerUserId: authUserId,
         });
 
-        const signupUser = await storage.createUser({
+        await storage.createUser({
           id: authUserId,
           email: email.toLowerCase(),
           role: "specialist",
           specialistId: specialist.id,
         });
 
-        if (assistbotConnectionConsent) {
-          try {
-            const connection = await requestAssistbotConnection(specialist, signupUser);
-            console.log(
-              `[SIGNUP] AssistBot request specialist=${specialist.id} status=${connection.request?.status || "none"}`,
-            );
-          } catch (assistbotError) {
-            // The account/profile creation must remain successful when the
-            // optional provider request cannot be persisted or submitted.
-            console.error(
-              "[SIGNUP] AssistBot request was not completed:",
-              assistbotError instanceof Error ? assistbotError.message : assistbotError,
-            );
-          }
-        }
       } catch (dbErr) {
         console.error("[SIGNUP] DB error, rolling back auth user:", dbErr);
         await supabaseAdmin.auth.admin.deleteUser(authUserId);
@@ -1453,25 +1402,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/admin/assistbot-connection-requests/:id/submit", async (req, res) => {
-    try {
-      const userId = req.headers["x-user-id"] as string;
-      const user = userId ? await storage.getUser(userId) : undefined;
-      if (!user || user.role !== "admin") {
-        return res.status(userId ? 403 : 401).json({ message: userId ? "Forbidden" : "Unauthorized" });
-      }
-      const requestId = Number(req.params.id);
-      if (!Number.isInteger(requestId) || requestId <= 0) {
-        return res.status(400).json({ message: "Invalid request ID" });
-      }
-      const result = await resubmitAssistbotConnectionRequest(requestId);
-      res.status(result.request?.status === "pending_provider" ? 202 : 200).json(result);
-    } catch (err: any) {
-      if (err instanceof AssistbotConnectionError) {
-        return res.status(err.statusCode).json({ message: err.message, code: err.code });
-      }
-      console.error("[ADMIN] AssistBot connection request submit error:", err);
-      res.status(500).json({ message: "Не удалось отправить заявку AssistBot" });
-    }
+    res.status(410).json({ message: "Подключение мастеров к AssistBot больше недоступно" });
   });
 
   app.post("/api/admin/assistbot-connection-requests/:id/reconcile", async (req, res) => {
@@ -1671,6 +1602,10 @@ export async function registerRoutes(
       }
       
       const input = api.bookings.create.input.parse(body);
+      const bookingSpecialist = await storage.getSpecialist(input.specialistId);
+      if (isOwnPhoneBooking(input.customerPhone, bookingSpecialist)) {
+        return res.status(400).json({ message: OWN_PHONE_BOOKING_MESSAGE });
+      }
 
       const apptDate = new Date(input.appointmentTime);
       if (isNaN(apptDate.getTime())) {
@@ -2055,6 +1990,9 @@ export async function registerRoutes(
       
       const { specialistId, customerName, customerPhone, customerEmail, appointmentTime, durationMinutes } = req.body;
       const adminSpecialist = await storage.getSpecialist(Number(specialistId));
+      if (isOwnPhoneBooking(customerPhone, adminSpecialist)) {
+        return res.status(400).json({ message: OWN_PHONE_BOOKING_MESSAGE });
+      }
       const presenceFlow = !await specialistHasWorkingAltegio(adminSpecialist);
       if (presenceFlow) {
         const phone = normalizePhone(customerPhone || "");
@@ -2915,6 +2853,9 @@ ${magicLink}`;
 
       const { customerName, customerPhone, appointmentTime, force, durationMinutes } = req.body;
       const manualSpecialist = await storage.getSpecialist(user.specialistId);
+      if (isOwnPhoneBooking(customerPhone, manualSpecialist)) {
+        return res.status(400).json({ message: OWN_PHONE_BOOKING_MESSAGE });
+      }
       const presenceFlow = !await specialistHasWorkingAltegio(manualSpecialist);
       if (presenceFlow) {
         try { manualPresenceSchedule(new Date(appointmentTime), durationMinutes, null); }
@@ -3581,54 +3522,7 @@ ${magicLink}`;
   });
 
   app.post("/api/specialists/:id/assistbot-connection-requests", async (req, res) => {
-    try {
-      const userId = req.headers["x-user-id"] as string;
-      const specialistId = Number(req.params.id);
-      if (!userId) return res.status(401).json({ message: "Unauthorized" });
-      if (!Number.isInteger(specialistId) || specialistId <= 0) {
-        return res.status(400).json({ message: "Invalid specialist ID" });
-      }
-      if (req.body?.consent !== true) {
-        return res.status(400).json({
-          message: "Подтвердите согласие на передачу данных для заявки AssistBot",
-        });
-      }
-      const owner = await storage.getUser(userId);
-      if (!owner || owner.role !== "specialist" || owner.specialistId !== specialistId) {
-        return res.status(403).json({ message: "Только владелец профиля может подать заявку" });
-      }
-      const specialist = await storage.getSpecialist(specialistId);
-      if (!specialist) return res.status(404).json({ message: "Specialist not found" });
-      if (
-        specialist.ownerUserId &&
-        String(specialist.ownerUserId) !== String(owner.id)
-      ) {
-        return res.status(403).json({ message: "Профиль принадлежит другому владельцу" });
-      }
-
-      const result = await requestAssistbotConnection(specialist, owner);
-      const accepted = result.request?.status === "pending_provider";
-      res.status(accepted ? 202 : 200).json({
-        ...result,
-        message: accepted
-          ? "AssistBot принял заявку. Подключение ещё не подтверждено провайдером."
-          : result.request?.status === "pending_partner_configuration"
-            ? "Заявка сохранена. Интеграция AssistBot пока не настроена администратором."
-            : result.request?.status === "pending_submission"
-              ? result.request.errorMessage || "Заявка сохранена; отправка провайдеру пока недоступна."
-              : result.request?.status === "provider_error"
-                ? result.request.errorMessage
-                : result.request?.status === "submission_unknown"
-                  ? result.request.errorMessage
-                : "Заявка сохранена.",
-      });
-    } catch (err: any) {
-      if (err instanceof AssistbotConnectionError) {
-        return res.status(err.statusCode).json({ message: err.message, code: err.code });
-      }
-      console.error("[ASSISTBOT_CONNECTION] request error:", err);
-      res.status(500).json({ message: "Не удалось сохранить заявку на подключение AssistBot" });
-    }
+    res.status(410).json({ message: "Подключение мастеров к AssistBot больше недоступно" });
   });
 
   // Update specialist bio
@@ -3648,7 +3542,6 @@ ${magicLink}`;
         whatsapp,
         instagram,
         phone,
-        assistbotConnectionConsent,
       } = req.body;
 
       if (!userId) {
@@ -3766,44 +3659,7 @@ ${magicLink}`;
         );
       }
       await trackProfileEdit(specialistId, req, 'bio');
-      let assistbotConnection: Awaited<ReturnType<typeof requestAssistbotConnection>> | null = null;
-      let assistbotError: string | null = null;
-      if (assistbotConnectionConsent === true) {
-        try {
-          const owner = await storage.getUser(userId);
-          const refreshedSpecialist = await storage.getSpecialist(specialistId);
-          if (!owner || owner.role !== "specialist" || owner.specialistId !== specialistId) {
-            throw new AssistbotConnectionError(
-              "Только владелец профиля может подать заявку AssistBot",
-              403,
-              "not_specialist_owner",
-            );
-          }
-          if (
-            refreshedSpecialist?.ownerUserId &&
-            String(refreshedSpecialist.ownerUserId) !== String(owner.id)
-          ) {
-            throw new AssistbotConnectionError(
-              "Профиль принадлежит другому владельцу",
-              403,
-              "profile_owner_mismatch",
-            );
-          }
-          if (!refreshedSpecialist) {
-            throw new AssistbotConnectionError("Профиль специалиста не найден", 404, "specialist_not_found");
-          }
-          // The profile PATCH has completed before this call. The request
-          // therefore always uses the saved/normalized number.
-          assistbotConnection = await requestAssistbotConnection(refreshedSpecialist, owner);
-        } catch (assistbotRequestError) {
-          assistbotError =
-            assistbotRequestError instanceof Error
-              ? assistbotRequestError.message
-              : "Заявка AssistBot не сохранена";
-          console.error("[ASSISTBOT_CONNECTION] profile-save request error:", assistbotRequestError);
-        }
-      }
-      res.json({ success: true, assistbotConnection, assistbotError });
+      res.json({ success: true, assistbotConnection: null, assistbotError: null });
     } catch (err: any) {
       console.error("Error updating bio:", err);
       res.status(500).json({ message: err.message });
