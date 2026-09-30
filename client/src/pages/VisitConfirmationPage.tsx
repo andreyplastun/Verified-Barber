@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useLocation, useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -13,11 +13,11 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
+import { getFreshBrowserLocation, type BrowserLocation, type GeoStatus } from "./manualPresenceLocation";
 
 type ConfirmationStatus = "pending" | "confirmed" | "declined" | "expired" | "superseded" | "postponed" | "still_in_service";
-type BrowserLocation = { latitude: number; longitude: number; accuracy: number; capturedAt: number };
 type ConfirmationAnswer =
-  | { answer: "yes"; attemptId?: string; location?: BrowserLocation }
+  | { answer: "yes"; attemptId?: string; location?: BrowserLocation; geoStatus?: GeoStatus }
   | { answer: "no" | "still_in_service" }
   | { answer: "postponed"; appointmentDate?: string; appointmentTime?: string };
 
@@ -75,22 +75,6 @@ async function startLocationAttempt(token: string): Promise<string> {
     throw new Error("Сервер не вернул данные подтверждения. Попробуйте снова.");
   }
   return body.id;
-}
-
-function getFreshBrowserLocation(): Promise<BrowserLocation | undefined> {
-  if (!window.isSecureContext || !navigator.geolocation) return Promise.resolve(undefined);
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy,
-        capturedAt: position.timestamp,
-      }),
-      () => resolve(undefined),
-      { maximumAge: 0, timeout: 10_000, enableHighAccuracy: true },
-    );
-  });
 }
 
 function formatAppointmentTime(value: string | null, dateOnly = false) {
@@ -214,6 +198,8 @@ export default function VisitConfirmationPage() {
   const [appointmentClock, setAppointmentClock] = useState("");
   const [locationPending, setLocationPending] = useState(false);
   const [locationError, setLocationError] = useState("");
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const geoRequestRef = useRef(0);
 
   const confirmationQuery = useQuery<Confirmation, ApiError>({
     queryKey: ["/api/visit-confirmations", token],
@@ -239,17 +225,34 @@ export default function VisitConfirmationPage() {
       respondMutation.mutate({ answer: "yes" });
       return;
     }
+    // Prepare server-bound timestamp first. The subsequent location request gets its
+    // own explicit tap: no browser activation depends on this network round trip.
     setLocationPending(true);
     setLocationError("");
     try {
-      const attemptId = await startLocationAttempt(token);
-      const location = await getFreshBrowserLocation();
-      respondMutation.mutate({ answer: "yes", attemptId, ...(location ? { location } : {}) });
+      setAttemptId(await startLocationAttempt(token));
     } catch (error) {
       setLocationError(error instanceof Error ? error.message : "Не удалось подтвердить визит. Попробуйте снова.");
     } finally {
       setLocationPending(false);
     }
+  };
+  const confirmWithLocation = () => {
+    if (!attemptId || locationPending || respondMutation.isPending) return;
+    const request = ++geoRequestRef.current;
+    setLocationPending(true);
+    // No await before getCurrentPosition: this call runs directly in the click handler.
+    void getFreshBrowserLocation(window.isSecureContext, navigator.geolocation).then(({ status, location }) => {
+      if (request !== geoRequestRef.current) return; // User continued without location.
+      setLocationPending(false);
+      respondMutation.mutate({ answer: "yes", attemptId, geoStatus: status, ...(location ? { location } : {}) });
+    });
+  };
+  const confirmWithoutLocation = () => {
+    if (!attemptId || respondMutation.isPending) return;
+    ++geoRequestRef.current;
+    setLocationPending(false);
+    respondMutation.mutate({ answer: "yes", attemptId, geoStatus: "skipped" });
   };
   const displayTime = useMemo(
     () => (
@@ -428,7 +431,7 @@ export default function VisitConfirmationPage() {
 
         {confirmation.manualPresence && (
           <p className="mt-4 text-sm leading-6 text-muted-foreground" data-testid="text-location-purpose">
-            После ответа «Да» браузер может запросить местоположение: оно помогает подтвердить присутствие на месте услуги. Это необязательно — отзыв можно оставить и без геолокации.
+            Если вы были на услуге, можно отдельно разрешить браузеру проверить местоположение. Это необязательно — отзыв можно оставить и без геолокации.
           </p>
         )}
         {locationError && (
@@ -444,7 +447,31 @@ export default function VisitConfirmationPage() {
         )}
 
         <div className="mt-6 grid gap-3">
-          <button
+          {attemptId && confirmation.manualPresence ? (
+            <div className="rounded-2xl border border-border bg-card p-4" data-testid="location-choice">
+              <p className="text-sm font-semibold">Подтвердить визит</p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">Разрешите местоположение по желанию или продолжите без него. Если браузер не сможет определить место, ответ всё равно сохранится.</p>
+              <button
+                type="button"
+                onClick={confirmWithLocation}
+                disabled={isResponding}
+                className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-65"
+                data-testid="button-confirm-with-location"
+              >
+                {locationPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
+                Разрешить местоположение
+              </button>
+              <button
+                type="button"
+                onClick={confirmWithoutLocation}
+                disabled={respondMutation.isPending}
+                className="mt-2 flex h-12 w-full items-center justify-center rounded-xl border border-border text-sm font-semibold disabled:opacity-65"
+                data-testid="button-confirm-without-location"
+              >
+                Продолжить без геолокации
+              </button>
+            </div>
+          ) : <button
             type="button"
             onClick={() => { void confirmYes(); }}
             disabled={isResponding}
@@ -453,7 +480,7 @@ export default function VisitConfirmationPage() {
           >
             {(locationPending || (respondMutation.isPending && respondMutation.variables?.answer === "yes")) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
             Да, я был(а)
-          </button>
+          </button>}
           {confirmation.manualPresence && (
             <button
               type="button"

@@ -12,6 +12,12 @@ The user approved a separate, time-anchored presence checkpoint for new manual v
 
 **How to apply:** use expected service end for the checkpoint, keep the existing Altegio flow and historical bookings unchanged, and keep GPS explicitly a spoofable supporting signal rather than proof. Do not revive QR/check-in or background web tracking proposals; they were rejected for this flow.
 
+For browser-location support, never infer “client was far away” from the lower trust weight alone. Retain bounded private diagnostic categories, not raw coordinates, and distinguish client-reported browser outcomes from server-validated eligibility.
+
+**Why:** A Safari test produced 0.6 without a visible permission prompt; the old flow discarded both browser errors and the attempt after confirmation, making retrospective diagnosis impossible. A browser can reuse permission or denial without prompting; an awaited request alone does not prove the cause.
+
+**How to apply:** Report what is verified and what remains unknown. WebKit tests with simulated geolocation validate application behavior, not the native permission sheet on the user's actual Safari device.
+
 **Rule:** Review-weight signals must penalize *fraud*, not *normal honest-but-busy client behavior*.
 
 ## Time penalty — REMOVED

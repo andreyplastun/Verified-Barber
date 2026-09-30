@@ -1,7 +1,9 @@
 import {
-  MANUAL_PRESENCE, manualPresenceSchedule, presenceTrust, validPresenceCoordinates,
-  type PresenceAttempt, type PresenceCoordinates,
+  MANUAL_PRESENCE, manualPresenceSchedule, presenceValidationReason, validPresenceCoordinates,
+  type PresenceAttempt, type PresenceCoordinates, type PresenceValidationReason,
 } from "./manual-presence-policy";
+
+type BrowserGeoStatus = "success" | "unsupported" | "insecure" | "denied" | "timeout" | "unavailable" | "skipped";
 
 export type ManualPresenceSession = {
   bookingId: number;
@@ -15,6 +17,8 @@ export type ManualPresenceSession = {
   deadline: Date;
   expiresAt: Date;
   attempt: PresenceAttempt | null;
+  /** Private session.data only; never project this into the public confirmation DTO. */
+  geoDiagnostic?: { browserStatus: BrowserGeoStatus | "unknown"; validationReason: PresenceValidationReason; recordedAt: number };
   reviewUrl: string | null;
 };
 
@@ -85,7 +89,8 @@ export class ManualPresenceEngine {
     });
   }
 
-  async answer(token: string, answer: "yes" | "no", attemptId?: string, reading?: unknown) {
+  async answer(token: string, answer: "yes" | "no", attemptId?: string, reading?: unknown,
+    geoStatus?: BrowserGeoStatus) {
     return this.repository.transaction(token, async tx => {
       const session = await this.active(tx);
       if (session.status !== "pending") return { status: session.status, reviewUrl: session.reviewUrl };
@@ -96,10 +101,12 @@ export class ManualPresenceEngine {
         session.status = "declined";
         session.reviewUrl = null;
       } else {
-        const trust = presenceTrust(
-          session.attempt?.id === attemptId ? session.attempt : null,
-          reading, this.now(), session.session,
-        );
+        const boundAttempt = session.attempt?.id === attemptId ? session.attempt : null;
+        const recordedAt = this.now();
+        const validationReason = presenceValidationReason(boundAttempt, reading, recordedAt, session.session);
+        // Browser status is observational/untrusted; only server validation affects trust.
+        session.geoDiagnostic = { browserStatus: geoStatus ?? "unknown", validationReason, recordedAt };
+        const trust = validationReason === "accepted" ? MANUAL_PRESENCE.higherTrust : MANUAL_PRESENCE.lowerTrust;
         session.status = "confirmed";
         // Persist the gate BEFORE creating a review, inside the same transaction.
         await tx.save(session);
@@ -132,7 +139,7 @@ export class ManualPresenceEngine {
       await tx.save(previous);
       const next: ManualPresenceSession = {
         ...previous, ...schedule, start: nextStart, token: this.randomToken(),
-        session: previous.session + 1, status: "pending", attempt: null, reviewUrl: null,
+        session: previous.session + 1, status: "pending", attempt: null, geoDiagnostic: undefined, reviewUrl: null,
       };
       await tx.save(next);
       await tx.queue(next);

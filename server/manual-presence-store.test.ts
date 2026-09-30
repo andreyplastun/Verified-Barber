@@ -52,13 +52,25 @@ test("production repository rolls back completion, score and session if its tran
     return "/r/atomic-review";
   });
   const engine = new ManualPresenceEngine(repository, () => now, () => "unused");
-  await assert.rejects(engine.answer("token", "yes"), /magic-link insert failure/);
+  const attempt = await engine.beginAttempt("token");
+  const reading = { latitude: 43.25, longitude: 76.95, accuracy: 10, capturedAt: now };
+  await assert.rejects(engine.answer("token", "yes", attempt!.id, reading, "success"), /magic-link insert failure/);
   assert.equal(state.session.status, "pending");
+  assert.equal(state.session.geoDiagnostic, undefined, "rolled-back diagnostic must not persist");
   assert.equal(state.status, "ready_to_complete");
   assert.equal(state.score + state.skipped + state.issued, 0);
   assert.ok(sqlLog.includes("ROLLBACK"));
   fail = false;
-  assert.deepEqual(await engine.answer("token", "yes"), { status: "confirmed", reviewUrl: "/r/atomic-review" });
+  assert.deepEqual(await engine.answer("token", "yes", attempt!.id, reading, "success"),
+    { status: "confirmed", reviewUrl: "/r/atomic-review" });
+  assert.equal(state.session.attempt, null);
+  assert.deepEqual(state.session.geoDiagnostic, {
+    browserStatus: "success", validationReason: "no_venue", recordedAt: now,
+  });
+  assert.deepEqual((await engine.get("token")).geoDiagnostic, state.session.geoDiagnostic,
+    "private diagnostic survives repository JSON serialization after attempt is cleared");
+  assert.equal(JSON.stringify(state.session.geoDiagnostic).includes("43.25"), false);
+  assert.equal(JSON.stringify(state.session.geoDiagnostic).includes(attempt!.id), false);
   assert.deepEqual(await engine.answer("token", "yes"), { status: "confirmed", reviewUrl: "/r/atomic-review" });
   assert.equal(state.score, 1);
   assert.equal(state.issued, 1);

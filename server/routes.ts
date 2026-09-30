@@ -640,7 +640,10 @@ export async function registerRoutes(
     try {
       if (!await isManualPresenceToken(req.params.token)) return next();
       const input = z.discriminatedUnion("answer", [
-        z.object({ answer: z.literal("yes"), attemptId: z.string().max(100).optional(), location: z.unknown().optional() }),
+        z.object({
+          answer: z.literal("yes"), attemptId: z.string().max(100).optional(), location: z.unknown().optional(),
+          geoStatus: z.enum(["success", "unsupported", "insecure", "denied", "timeout", "unavailable", "skipped"]).optional(),
+        }),
         z.object({ answer: z.literal("no") }),
         z.object({ answer: z.literal("still_in_service") }),
         z.object({ answer: z.literal("postponed"), appointmentTime: z.string().datetime({ offset: true }) }),
@@ -653,7 +656,8 @@ export async function registerRoutes(
         if (result.changed) return res.json({ status: "postponed", changed: true, manualPresence: true });
       } else {
         await manualPresenceEngine.answer(req.params.token, data.answer,
-          data.answer === "yes" ? data.attemptId : undefined, data.answer === "yes" ? data.location : undefined);
+          data.answer === "yes" ? data.attemptId : undefined, data.answer === "yes" ? data.location : undefined,
+          data.answer === "yes" ? data.geoStatus : undefined);
       }
       res.json(await manualPresenceResponse(req.params.token));
     } catch (error: any) { sendManualPresenceFailure(res, error); }

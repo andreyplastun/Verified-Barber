@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ManualPresenceEngine, type ManualPresenceRepository, type ManualPresenceSession } from "./manual-presence-engine";
-import { manualPresenceSchedule, presenceTrust, manualPresenceDispatchAllowed, manualPresenceReviewAllowed } from "./manual-presence-policy";
+import { manualPresenceSchedule, presenceTrust, presenceValidationReason, manualPresenceDispatchAllowed, manualPresenceReviewAllowed } from "./manual-presence-policy";
 import { presenceReviewAccess } from "./manual-presence-review-access";
 import { buildVisitConfirmationMessage } from "./visit-confirmation-policy";
 
@@ -163,6 +163,29 @@ test("geo is conservative, fresh, server-bound and never trusts client pass flag
   assert.equal(presenceTrust(attempt, good, 120100, 1), 0.6);
   assert.equal(presenceTrust(attempt, good, 101, 2), 0.6);
   assert.equal(presenceTrust({ ...attempt, venue: null }, good, 101, 1), 0.6);
+});
+
+test("geo validation reason is bounded and never included in the public response", async () => {
+  const h = harness();
+  const issued = await h.engine.beginAttempt("first");
+  const attempt = h.sessions.get("first")!.attempt!;
+  const good = { latitude: 43.25, longitude: 76.95, accuracy: 10, capturedAt: h.now() };
+  assert.equal(presenceValidationReason(attempt, good, h.now(), 1), "accepted");
+  assert.equal(presenceValidationReason(attempt, null, h.now(), 1), "no_reading");
+  assert.equal(presenceValidationReason(null, good, h.now(), 1), "invalid_attempt");
+  assert.equal(presenceValidationReason({ ...attempt, venue: null }, good, h.now(), 1), "no_venue");
+  assert.equal(presenceValidationReason(attempt, { ...good, latitude: "43" }, h.now(), 1), "invalid_reading");
+  assert.equal(presenceValidationReason(attempt, { ...good, accuracy: 101 }, h.now(), 1), "accuracy");
+  assert.equal(presenceValidationReason(attempt, { ...good, capturedAt: h.now() - 1 }, h.now(), 1), "stale");
+  assert.equal(presenceValidationReason(attempt, { ...good, latitude: 44 }, h.now(), 1), "distance");
+  assert.equal(presenceValidationReason(attempt, good, attempt.expiresAt, 1), "stale");
+  const result = await h.engine.answer("first", "yes", issued!.id, good, "success");
+  assert.deepEqual(Object.keys(result).sort(), ["reviewUrl", "status"]);
+  assert.deepEqual(h.sessions.get("first")!.geoDiagnostic, {
+    browserStatus: "success", validationReason: "accepted", recordedAt: h.now(),
+  });
+  assert.equal(h.sessions.get("first")!.attempt, null);
+  assert.deepEqual((await h.engine.get("first")).geoDiagnostic, h.sessions.get("first")!.geoDiagnostic);
 });
 
 test("attempt cannot be repeatedly refreshed; mismatched attempt yields lower trust", async () => {

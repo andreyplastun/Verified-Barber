@@ -43,6 +43,9 @@ export type PresenceAttempt = {
   venue: PresenceCoordinates | null;
 };
 
+export type PresenceValidationReason = "accepted" | "no_reading" | "invalid_attempt" |
+  "no_venue" | "invalid_reading" | "accuracy" | "stale" | "distance";
+
 export function validPresenceCoordinates(value: unknown): value is PresenceCoordinates {
   if (!value || typeof value !== "object") return false;
   const point = value as PresenceCoordinates;
@@ -60,29 +63,39 @@ export function presenceDistanceMeters(a: PresenceCoordinates, b: PresenceCoordi
   return 6371000 * 2 * Math.asin(Math.sqrt(Math.min(1, Math.max(0, haversine))));
 }
 
-/** Untrusted browser GPS is an internal positive signal, never proof of a visit. */
-export function presenceTrust(
+/** Internal diagnostics only. Never return the reason to the public confirmation endpoint. */
+export function presenceValidationReason(
   attempt: PresenceAttempt | null,
   reading: unknown,
   now: number,
   session: number,
-): number {
+): PresenceValidationReason {
+  if (reading == null) return "no_reading";
   if (!attempt || attempt.session !== session || now < attempt.issuedAt ||
-      now >= attempt.expiresAt || attempt.expiresAt - attempt.issuedAt > MANUAL_PRESENCE.attemptLifetimeMs ||
-      !validPresenceCoordinates(attempt.venue) || !validPresenceCoordinates(reading)) {
-    return MANUAL_PRESENCE.lowerTrust;
+      attempt.expiresAt - attempt.issuedAt > MANUAL_PRESENCE.attemptLifetimeMs) {
+    return "invalid_attempt";
   }
+  if (now >= attempt.expiresAt) return "stale";
+  if (!validPresenceCoordinates(attempt.venue)) return "no_venue";
+  if (!validPresenceCoordinates(reading)) return "invalid_reading";
   const sample = reading as PresenceReading;
   if (typeof sample.accuracy !== "number" || !Number.isFinite(sample.accuracy) ||
-      sample.accuracy < 0 || sample.accuracy > MANUAL_PRESENCE.maxAccuracyMeters ||
-      typeof sample.capturedAt !== "number" || !Number.isFinite(sample.capturedAt) ||
+      sample.accuracy < 0 || sample.accuracy > MANUAL_PRESENCE.maxAccuracyMeters) return "accuracy";
+  if (typeof sample.capturedAt !== "number" || !Number.isFinite(sample.capturedAt) ||
       sample.capturedAt < attempt.issuedAt || sample.capturedAt > now ||
       now - sample.capturedAt >= MANUAL_PRESENCE.attemptLifetimeMs) {
-    return MANUAL_PRESENCE.lowerTrust;
+    return "stale";
   }
   return presenceDistanceMeters(attempt.venue, sample) + sample.accuracy <= MANUAL_PRESENCE.radiusMeters
-    ? MANUAL_PRESENCE.higherTrust
-    : MANUAL_PRESENCE.lowerTrust;
+    ? "accepted" : "distance";
+}
+
+/** Untrusted browser GPS is an internal positive signal, never proof of a visit. */
+export function presenceTrust(
+  attempt: PresenceAttempt | null, reading: unknown, now: number, session: number,
+): number {
+  return presenceValidationReason(attempt, reading, now, session) === "accepted"
+    ? MANUAL_PRESENCE.higherTrust : MANUAL_PRESENCE.lowerTrust;
 }
 
 /** A single gate shared by all public review reads/writes and review producers. */
