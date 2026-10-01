@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SpecialistPhoto } from '@/components/specialist-photo';
 import { Star, Calendar as CalendarIcon, MessageSquare, User, Camera, Image, Trash2, Upload, Banknote, UserPlus, Copy, AlertTriangle, CheckCircle2, Clock, Link2, Unlink, RefreshCw, CircleCheck, Loader2, Info, Plus, CalendarDays, MapPin, Navigation, MessageCircle, X, Trophy } from 'lucide-react';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -17,7 +18,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import type { Specialist, Booking, Review, SpecialistPhoto } from '@shared/schema';
+import type { Specialist, Booking, Review, SpecialistPhoto as SpecialistPhotoRecord } from '@shared/schema';
 import AltegioErrorScreen, { type AltegioErrorType } from '@/components/AltegioErrorScreen';
 import AltegioSyncBanner, { getBookingSyncBannerConfig, getGlobalAltegioBannerConfig } from '@/components/AltegioSyncBanner';
 import AltegioStatusCard from '@/components/AltegioStatusCard';
@@ -27,8 +28,6 @@ import OnboardingPathModal from '@/components/OnboardingPathModal';
 import AddressPicker from '@/components/AddressPicker';
 import { BarberCelebrationOverlay, type CelebrationEvent } from '@/components/celebrations/BarberCelebration';
 import { useMemo } from 'react';
-import { createPhotoUploadForm } from '@/lib/photo-thumbnail';
-import PhotoThumbnail from '@/components/PhotoThumbnail';
 
 type AchievementBadge = { id: string; emoji: string; title: string; desc: string };
 type SpecialistAchievements = {
@@ -208,7 +207,7 @@ export default function SpecialistDashboard() {
     enabled: !!specialistId,
   });
 
-  const { data: photos = [], isLoading: loadingPhotos } = useQuery<SpecialistPhoto[]>({
+  const { data: photos = [], isLoading: loadingPhotos } = useQuery<SpecialistPhotoRecord[]>({
     queryKey: ['/api/specialists', specialistId, 'photos'],
     queryFn: async () => {
       const res = await fetch(`/api/specialists/${specialistId}/photos`);
@@ -364,7 +363,9 @@ export default function SpecialistDashboard() {
   const uploadPhoto = async (file: File, photoType: 'avatar' | 'work') => {
     if (!specialistId || !currentUser?.id) return;
 
-    const { formData, warning: thumbnailWarning } = await createPhotoUploadForm(file, photoType);
+    const formData = new FormData();
+    formData.append('photo', file);
+    formData.append('photoType', photoType);
 
     const res = await fetch(`/api/specialists/${specialistId}/photos`, {
       method: 'POST',
@@ -379,8 +380,7 @@ export default function SpecialistDashboard() {
       throw new Error(error.message || 'Upload failed');
     }
 
-    const photo = await res.json();
-    return { ...photo, warning: photo.warning || thumbnailWarning };
+    return res.json();
   };
 
   const deletePhotoMutation = useMutation({
@@ -427,17 +427,10 @@ export default function SpecialistDashboard() {
 
     setUploading(photoType);
     try {
-      const photo = await uploadPhoto(file, photoType);
+      await uploadPhoto(file, photoType);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'photos'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
       toast({ title: photoType === 'avatar' ? 'Аватар обновлён' : 'Фото добавлено' });
-      if (photo?.warning) {
-        toast({
-          title: 'Загружен оригинал без оптимизации',
-          description: photo.warning,
-          duration: 10000,
-        });
-      }
     } catch (err: any) {
       toast({ title: 'Ошибка загрузки', description: err.message, variant: 'destructive' });
     } finally {
@@ -1112,7 +1105,7 @@ export default function SpecialistDashboard() {
       ) : specialist ? (
         <Card>
           <CardHeader className="flex flex-row items-center gap-4">
-            <PhotoThumbnail
+            <SpecialistPhoto
               src={specialist.imageUrl} 
               alt={specialist.name}
               className="w-20 h-20 rounded-full object-cover"
@@ -1672,7 +1665,7 @@ export default function SpecialistDashboard() {
             </h3>
             <div className="flex items-center gap-4">
               {specialist && (
-                <PhotoThumbnail
+                <SpecialistPhoto
                   src={specialist.imageUrl} 
                   alt="Avatar"
                   loading="lazy"
@@ -1719,8 +1712,8 @@ export default function SpecialistDashboard() {
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                 {workPhotos.map((photo) => (
                   <div key={photo.id} className="relative group" data-testid={`work-photo-${photo.id}`}>
-                    <a href={photo.photoUrl} target="_blank" rel="noopener noreferrer" aria-label="Открыть оригинал фото работы">
-                      <PhotoThumbnail
+                    <a href={photo.photoUrl} target="_blank" rel="noopener noreferrer" aria-label="Открыть оригинал фото работы" className="block">
+                      <SpecialistPhoto
                         src={photo.photoUrl}
                         alt="Work"
                         loading="lazy"

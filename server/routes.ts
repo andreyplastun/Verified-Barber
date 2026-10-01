@@ -14,6 +14,7 @@ import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
 import { validatePhotoDerivative } from "./photo-storage";
+import { InvalidPhotoError, PhotoProcessingBusyError } from "./photo-processing";
 import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig, resolveBookform, verifyAltegioCompany } from "./altegio";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { isOwnPhoneBooking, OWN_PHONE_BOOKING_MESSAGE } from "./own-phone-booking";
@@ -1916,9 +1917,9 @@ export async function registerRoutes(
     res.json(maskedReview);
   });
 
-  // =====================
+  // ---------------------
   // ADMIN ENDPOINTS
-  // =====================
+  // ---------------------
 
   // Middleware to check admin role
   const checkAdminRole = async (req: any, res: any, userId: string) => {
@@ -2125,10 +2126,10 @@ export async function registerRoutes(
     }
   });
 
-  // =====================
-  // =====================
+  // ---------------------
+  // ---------------------
   // ADMIN: ANTIFRAUD FLAGS
-  // =====================
+  // ---------------------
 
   app.get("/api/admin/reviews-today", async (req, res) => {
     try {
@@ -2155,7 +2156,7 @@ export async function registerRoutes(
   });
 
   // MAGIC LINK ENDPOINTS
-  // =====================
+  // ---------------------
 
   // Create magic link after payment (admin creates when marking complete)
   app.post("/api/admin/bookings/:id/create-magic-link", async (req, res) => {
@@ -2817,9 +2818,9 @@ ${magicLink}
 ${magicLink}`;
   }
 
-  // =====================
+  // ---------------------
   // SPECIALIST: CREATE BOOKING ENDPOINT
-  // =====================
+  // ---------------------
 
   app.post("/api/specialist/bookings", async (req, res) => {
     try {
@@ -2922,10 +2923,10 @@ ${magicLink}`;
     }
   });
 
-  // =====================
+  // ---------------------
   // SPECIALIST: REQUEST PAYMENT (Kaspi link)
   // ReadyToComplete → PaymentRequested
-  // =====================
+  // ---------------------
 
   app.post("/api/specialist/bookings/:id/complete-request-payment", async (req, res) => {
     try {
@@ -3003,10 +3004,10 @@ ${magicLink}`;
     }
   });
 
-  // =====================
+  // ---------------------
   // SPECIALIST: MARK PAID
   // PaymentRequested → Completed + magic link + WA review
-  // =====================
+  // ---------------------
 
   app.post("/api/specialist/bookings/:id/mark-paid", async (req, res) => {
     try {
@@ -3078,10 +3079,10 @@ ${magicLink}`;
     }
   });
 
-  // =====================
+  // ---------------------
   // SPECIALIST: COMPLETE + SEND REVIEW ENDPOINT
   // ReadyToComplete → Completed (directly, +1 score, magic link sent)
-  // =====================
+  // ---------------------
 
   app.post("/api/specialist/bookings/:id/complete-send-review", async (req, res) => {
     try {
@@ -3169,9 +3170,9 @@ ${magicLink}`;
     }
   });
 
-  // =====================
+  // ---------------------
   // SPECIALIST: CANCEL BOOKING ENDPOINT
-  // =====================
+  // ---------------------
 
   app.post("/api/specialist/bookings/:id/cancel", async (req, res) => {
     try {
@@ -3245,16 +3246,16 @@ ${magicLink}`;
     }
   });
 
-  // =====================
+  // ---------------------
   // NOT_COMPLETED BACKGROUND JOB
   // Flags bookings as not_completed after 24h past appointment with no completion
   // Runs via setInterval in server/index.ts — NOT on fetch
-  // =====================
+  // ---------------------
 
-  // =====================
+  // ---------------------
   // PAYMENT PROCESSING (triggered by Altegio webhook or payment provider callback ONLY)
   // No manual "Confirm Payment" button — payment is determined by external systems
-  // =====================
+  // ---------------------
 
   async function processPaymentSuccess(
     bookingId: number,
@@ -3452,9 +3453,9 @@ ${magicLink}`;
     }
   });
 
-  // =====================
+  // ---------------------
   // SPECIALIST PHOTO ENDPOINTS
-  // =====================
+  // ---------------------
 
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -3814,7 +3815,7 @@ ${magicLink}`;
       
       // Ensure bucket exists
       if (!(await ensureBucketExists())) {
-        return res.status(500).json({ message: "Photo storage unavailable" });
+        return res.status(503).json({ message: "Хранилище фотографий временно недоступно" });
       }
 
       // Upload to Supabase Storage
@@ -3822,23 +3823,11 @@ ${magicLink}`;
         original.buffer,
         original.originalname,
         original.mimetype,
-        derivative
+        { preview: true }
       );
 
       if (!result) {
         return res.status(500).json({ message: "Failed to upload photo" });
-      }
-
-      // Replace an old avatar only after the new untouched original is safe.
-      if (photoType === 'avatar') {
-        const existingAvatars = existingPhotos.filter(p => p.photoType === 'avatar');
-        for (const oldAvatar of existingAvatars) {
-          if (!(await deletePhoto(oldAvatar.storagePath))) {
-            await deletePhoto(result.path);
-            return res.status(500).json({ message: "Failed to remove previous avatar" });
-          }
-          await storage.deleteSpecialistPhoto(oldAvatar.id);
-        }
       }
 
       // Save to database
@@ -3852,12 +3841,24 @@ ${magicLink}`;
       // If it's an avatar, also update the specialist's imageUrl
       if (photoType === 'avatar') {
         await storage.updateSpecialistAvatar(specialistId, result.url);
+        // Remove old records only after saving the replacement. Retain storage
+        // objects so existing original URLs remain valid.
+        for (const oldAvatar of existingPhotos.filter(p => p.photoType === 'avatar')) {
+          await storage.deleteSpecialistPhoto(oldAvatar.id);
+        }
       }
 
       await trackProfileEdit(specialistId, req, photoType === 'avatar' ? 'avatar' : 'photo');
       res.status(201).json({ ...photo, ...(result.warning ? { warning: result.warning } : {}) });
     } catch (err: any) {
       console.error("Error uploading photo:", err);
+      if (err instanceof InvalidPhotoError) {
+        return res.status(400).json({ message: err.message });
+      }
+      if (err instanceof PhotoProcessingBusyError) {
+        res.setHeader("Retry-After", "3");
+        return res.status(429).json({ message: err.message });
+      }
       res.status(500).json({ message: err.message });
     }
   });
@@ -3904,9 +3905,9 @@ ${magicLink}`;
     }
   });
 
-  // =====================
+  // ---------------------
   // CLAIM PROFILE ROUTES
-  // =====================
+  // ---------------------
 
   // Helper: send email notification to admin about new claim
   async function notifyAdminNewClaim(claim: any, specialistName: string) {
@@ -4304,9 +4305,9 @@ ${magicLink}`;
     }
   });
 
-  // ==========================================
+  // ------------------------------------------
   // Altegio Connection Management
-  // ==========================================
+  // ------------------------------------------
 
   app.get("/api/altegio/status", async (req, res) => {
     try {
@@ -4565,9 +4566,9 @@ ${magicLink}`;
     }
   });
 
-  // ==========================================
+  // ------------------------------------------
   // Altegio Sync Appointments
-  // ==========================================
+  // ------------------------------------------
   app.post("/api/altegio/sync-appointments", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
@@ -4588,9 +4589,9 @@ ${magicLink}`;
     }
   });
 
-  // ==========================================
+  // ------------------------------------------
   // Altegio Config (DB-based, for Railway env var workaround)
-  // ==========================================
+  // ------------------------------------------
   app.post("/api/altegio/config", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
@@ -4629,9 +4630,9 @@ ${magicLink}`;
     }
   });
 
-  // ==========================================
+  // ------------------------------------------
   // Altegio Webhook
-  // ==========================================
+  // ------------------------------------------
   app.post("/api/altegio/webhook", async (req, res) => {
     // Diagnostic: log EVERY incoming hit (even rejected/skipped) so we can verify
     // whether Altegio events actually arrive and where they get dropped.
@@ -5212,7 +5213,7 @@ ${magicLink}`;
     }
   });
 
-  // =====================
+  // ---------------------
   // ASSISTBOT DELIVERY WEBHOOK
   app.post("/api/webhooks/assistbot-delivery", async (req, res) => {
     try {
@@ -5502,7 +5503,7 @@ ${magicLink}`;
   });
 
   // LOCATION ADMIN ROUTES
-  // =====================
+  // ---------------------
 
   app.get("/api/admin/locations", async (req, res) => {
     try {
@@ -5685,7 +5686,7 @@ ${magicLink}`;
   });
 
   // WHATSAPP ADMIN ROUTES
-  // =====================
+  // ---------------------
 
   app.get("/api/admin/whatsapp/settings", async (req, res) => {
     try {

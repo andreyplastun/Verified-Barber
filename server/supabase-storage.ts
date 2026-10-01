@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { PHOTO_BUCKET_NAME, storePhoto, removePhoto, type PhotoDerivative, type PhotoUploadResult } from './photo-storage';
+import { uploadSpecialistPhoto } from './photo-upload';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -68,14 +69,20 @@ export async function uploadPhoto(
   file: Buffer,
   fileName: string,
   contentType: string,
-  derivative?: PhotoDerivative
+  options?: PhotoDerivative | { preview?: boolean }
 ): Promise<PhotoUploadResult | null> {
   if (!supabaseAdmin) {
     console.error('[SUPABASE STORAGE] Storage not configured - cannot upload');
     return null;
   }
   
+  // Keep validation/busy errors typed for the upload route's 400/429 responses.
+  if (options && "preview" in options && options.preview) {
+    return uploadSpecialistPhoto(supabaseAdmin.storage.from(BUCKET_NAME), file, contentType);
+  }
+
   try {
+    const derivative = options && "file" in options ? options : undefined;
     const result = await storePhoto(supabaseAdmin.storage.from(BUCKET_NAME), file, fileName, contentType, derivative);
     if (result.warning) console.warn('[SUPABASE STORAGE]', result.warning);
     return result;

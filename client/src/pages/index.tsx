@@ -3,6 +3,7 @@ import { LegalFooter } from "@/components/LegalFooter";
 import { Link, useLocation, useRoute } from "wouter";
 import { MapPin, ArrowRight, Filter, ChevronDown, Star, Info, Search, X } from "lucide-react";
 import { BookingButton } from "@/components/BookingButton";
+import { SpecialistPhoto } from "@/components/specialist-photo";
 import { motion } from "framer-motion";
 import { AnimatedRating, AnimatedStar } from "@/components/ui/animations";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
-import PhotoThumbnail from "@/components/PhotoThumbnail";
 import {
   Popover,
   PopoverContent,
@@ -463,7 +463,7 @@ export default function SpecialistList() {
                 <div className="flex gap-3">
                   {/* Avatar */}
                   <div className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
-                    <PhotoThumbnail
+                    <SpecialistPhoto
                       src={specialist.imageUrl} 
                       alt={specialist.name}
                       loading="lazy"

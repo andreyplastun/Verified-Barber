@@ -14,10 +14,10 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { BookingButton } from "@/components/BookingButton";
+import { SpecialistPhoto } from "@/components/specialist-photo";
 import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn, Confetti } from "@/components/ui/animations";
-import type { Booking, SpecialistPhoto } from "@shared/schema";
+import type { Booking, SpecialistPhoto as SpecialistPhotoRecord } from "@shared/schema";
 import { claimPhoneSchema } from "@shared/claim-phone";
-import PhotoThumbnail from "@/components/PhotoThumbnail";
 
 export default function SpecialistProfile() {
   const [, params] = useRoute("/specialist/:id");
@@ -129,7 +129,7 @@ export default function SpecialistProfile() {
   );
 
   // Fetch work photos
-  const { data: photos = [] } = useQuery<SpecialistPhoto[]>({
+  const { data: photos = [] } = useQuery<SpecialistPhotoRecord[]>({
     queryKey: ['/api/specialists', id, 'photos'],
     queryFn: async () => {
       const res = await fetch(`/api/specialists/${id}/photos`);
@@ -213,6 +213,8 @@ export default function SpecialistProfile() {
           src={specialist.imageUrl} 
           alt={specialist.name}
           className="w-full h-full object-cover"
+          loading="eager"
+          decoding="async"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-background/40 to-transparent" />
         
@@ -461,20 +463,22 @@ export default function SpecialistProfile() {
             </div>
             <div className="grid grid-cols-3 gap-2">
               {workPhotos.map((photo) => (
-                <div 
+                <a
                   key={photo.id} 
+                  href={photo.photoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Открыть оригинал фото работы"
                   className="aspect-square rounded-lg overflow-hidden border border-border"
                   data-testid={`work-photo-display-${photo.id}`}
                 >
-                  <a href={photo.photoUrl} target="_blank" rel="noopener noreferrer" aria-label="Открыть оригинал фото работы">
-                    <PhotoThumbnail
-                      src={photo.photoUrl}
-                      alt="Work"
-                      loading="lazy"
-                      className="w-full h-full object-cover"
-                    />
-                  </a>
-                </div>
+                  <SpecialistPhoto
+                    src={photo.photoUrl}
+                    alt="Work"
+                    loading="lazy"
+                    className="w-full h-full object-cover"
+                  />
+                </a>
               ))}
             </div>
           </div>

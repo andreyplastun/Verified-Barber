@@ -115,3 +115,10 @@ test("derivative MIME, signature and 256KB bound are checked before any writes",
     assert.equal(fake.uploads.length, 0);
   }
 });
+
+test("explicit deletion also cleans server-generated preview-v1 companions", async () => {
+  const fake = fakeBucket();
+  const path = "photos/preview-v1/12345678-1234-4123-8123-123456789abc/original.png";
+  await removePhoto(fake.bucket, path);
+  assert.deepEqual(fake.removals, [[path, path.replace("/original.", "/preview.")]]);
+});

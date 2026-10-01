@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import {
-  getPhotoDeletePaths,
   getPhotoThumbnailPath,
   PHOTO_IMMUTABLE_CACHE_SECONDS,
   PHOTO_THUMBNAIL_MAX_BYTES,
 } from "../shared/photo-images";
+import { getPhotoStoragePaths } from "../shared/photo-variants";
 
 export const PHOTO_BUCKET_NAME = "specialist-photos";
 
@@ -97,6 +97,6 @@ export async function storePhoto(
 }
 
 export async function removePhoto(bucket: PhotoBucket, path: string): Promise<void> {
-  const { error } = await bucket.remove(getPhotoDeletePaths(path));
+  const { error } = await bucket.remove(getPhotoStoragePaths(path));
   if (error) throw new Error(error.message);
 }

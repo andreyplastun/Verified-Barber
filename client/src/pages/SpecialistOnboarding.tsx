@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { SpecialistPhoto } from '@/components/specialist-photo';
 import { CheckCircle2, Star, ListChecks } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import type { Specialist } from '@shared/schema';
-import PhotoThumbnail from '@/components/PhotoThumbnail';
 
 const STEPS = [
   'Добавьте фото',
@@ -105,7 +105,7 @@ export default function SpecialistOnboarding() {
             <p className="text-xs text-muted-foreground mb-3">Пример профиля специалиста</p>
             <div className="flex items-center gap-4">
               {example?.imageUrl ? (
-                <PhotoThumbnail
+                <SpecialistPhoto
                   src={example.imageUrl}
                   alt={example.name}
                   className="w-14 h-14 rounded-full object-cover shrink-0"
