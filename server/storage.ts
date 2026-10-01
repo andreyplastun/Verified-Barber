@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { db } from "./db";
 import { eq, desc, and, lt, gte, asc, sql, or, inArray } from "drizzle-orm";
 import { approveClaimAndQueue, type ClaimApprovalRepository } from "./claim-approval";
+import { readAntifraudFlagsToday, readClaimRequests, readInvalidPhoneCountToday, type AntifraudFlag } from "./admin-read-queries";
 
 export type AltegioFirstVisitStatus = "unknown" | "confirmed_new" | "confirmed_returning";
 const NEW_CLIENT_PRIORITY_SQL = 100;
@@ -75,6 +76,7 @@ export interface IStorage {
   ): Promise<void>;
   getRecentSpecialistManualBookings(specialistId: number, since: Date): Promise<Booking[]>;
   getInvalidPhoneCountToday(specialistId: number): Promise<number>;
+  getAntifraudFlagsToday(): Promise<AntifraudFlag[]>;
   getRecentMagicLinkByPhone(specialistId: number, normalizedPhone: string, withinDays: number): Promise<boolean>;
   getClientAttemptStats(phone: string, specialistId: number): Promise<{ attemptCount: number; lastAttemptAt: Date | null; lastReviewAt: Date | null }>;
   getBookings(): Promise<Booking[]>; // Admin/Debug
@@ -1217,18 +1219,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getInvalidPhoneCountToday(specialistId: number): Promise<number> {
-    const almatyOffset = 5 * 60 * 60 * 1000;
-    const almatyNow = new Date(Date.now() + almatyOffset);
-    const startOfDayAlmaty = new Date(Date.UTC(almatyNow.getUTCFullYear(), almatyNow.getUTCMonth(), almatyNow.getUTCDate(), 0, 0, 0) - almatyOffset);
-    const result = await db.select().from(bookings).where(
-      and(
-        eq(bookings.specialistId, specialistId),
-        eq(bookings.invalidPhone, true),
-        eq(bookings.bookingSource, "specialist_manual"),
-        gte(bookings.createdAt, startOfDayAlmaty)
-      )
-    );
-    return result.length;
+    return readInvalidPhoneCountToday(db, specialistId);
+  }
+
+  async getAntifraudFlagsToday(): Promise<AntifraudFlag[]> {
+    return readAntifraudFlagsToday(db);
   }
 
   async getRecentMagicLinkByPhone(specialistId: number, normalizedPhone: string, withinDays: number): Promise<boolean> {
@@ -1855,28 +1850,7 @@ export class DatabaseStorage implements IStorage {
     notificationStatus?: string | null;
     notificationError?: string | null;
   })[]> {
-    const allClaims = await db.select().from(claimRequests).orderBy(desc(claimRequests.createdAt));
-    const allSpecialists = await db.select().from(specialists);
-    const notifications = await db.select({
-      claimRequestId: specialistReminders.claimRequestId,
-      status: specialistReminders.status,
-      lastError: specialistReminders.lastError,
-      skipReason: specialistReminders.skipReason,
-    }).from(specialistReminders)
-      .where(sql`${specialistReminders.claimRequestId} IS NOT NULL`);
-    const notificationByClaim = new Map(notifications.map((row) => [
-      row.claimRequestId,
-      {
-        status: row.status,
-        error: row.lastError || row.skipReason || null,
-      },
-    ]));
-    return allClaims.map(claim => ({
-      ...claim,
-      specialistName: allSpecialists.find(s => s.id === claim.specialistId)?.name || "Неизвестный",
-      notificationStatus: notificationByClaim.get(claim.id)?.status || null,
-      notificationError: notificationByClaim.get(claim.id)?.error || null,
-    }));
+    return readClaimRequests(db);
   }
 
   async getClaimRequestById(id: number): Promise<ClaimRequest | undefined> {

@@ -2145,20 +2145,7 @@ export async function registerRoutes(
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
 
-      const allSpecialists = await storage.getSpecialists();
-      const flags: Array<{ specialistId: number; specialistName: string; invalidPhoneCount: number }> = [];
-
-      for (const spec of allSpecialists) {
-        const count = await storage.getInvalidPhoneCountToday(spec.id);
-        if (count >= 2) {
-          flags.push({
-            specialistId: spec.id,
-            specialistName: spec.name,
-            invalidPhoneCount: count,
-          });
-        }
-      }
-
+      const flags = await storage.getAntifraudFlagsToday();
       res.json({ flags });
     } catch (err: any) {
       console.error("Error fetching antifraud flags:", err);

@@ -465,7 +465,7 @@ export default function AdminDashboard() {
 
   const [claimCopied, setClaimCopied] = useState<number | null>(null);
 
-  const { data: claimRequests = [], refetch: refetchClaims } = useQuery<ClaimRequestWithName[]>({
+  const { data: claimRequests = [], refetch: refetchClaims, isFetching: refreshingClaims, isLoading: loadingClaims, isError: claimsFailed } = useQuery<ClaimRequestWithName[]>({
     queryKey: ["/api/admin/claim-requests"],
     queryFn: async () => {
       const res = await fetch("/api/admin/claim-requests", {
@@ -475,7 +475,11 @@ export default function AdminDashboard() {
       return res.json();
     },
     enabled: !!currentUser && activeTab === "claims",
-    refetchInterval: activeTab === "claims" ? 15000 : false,
+    // Refresh on entering the tab or after a mutation, not every 15 seconds.
+    // Delivery status can be refreshed explicitly without repeatedly reading history.
+    refetchInterval: false,
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
   });
 
   const approveClaimMutation = useMutation({
@@ -1270,13 +1274,24 @@ export default function AdminDashboard() {
         {activeTab === "claims" && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <UserCheck size={20} />
-                Заявки на профили
-              </CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle className="flex items-center gap-2">
+                  <UserCheck size={20} />
+                  Заявки на профили
+                </CardTitle>
+                <Button variant="outline" size="sm" onClick={() => refetchClaims()} disabled={refreshingClaims} data-testid="button-refresh-claims">
+                  {refreshingClaims ? "Обновление…" : "Обновить"}
+                </Button>
+              </div>
+              <p className="text-sm text-muted-foreground">Чтобы увидеть новые заявки и текущий статус отправки, нажмите «Обновить».</p>
             </CardHeader>
             <CardContent>
-              {claimRequests.length === 0 ? (
+              {claimsFailed && (
+                <p role="alert" className="text-sm text-destructive mb-3">Не удалось обновить заявки. Нажмите «Обновить», чтобы повторить.</p>
+              )}
+              {loadingClaims ? (
+                <p className="text-sm text-muted-foreground py-8 text-center">Загрузка заявок…</p>
+              ) : claimRequests.length === 0 && !claimsFailed ? (
                 <p className="text-sm text-muted-foreground text-center py-8" data-testid="text-no-claims">
                   Заявок пока нет
                 </p>
