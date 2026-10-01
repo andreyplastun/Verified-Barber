@@ -17,6 +17,7 @@ import { BookingButton } from "@/components/BookingButton";
 import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn, Confetti } from "@/components/ui/animations";
 import type { Booking, SpecialistPhoto } from "@shared/schema";
 import { claimPhoneSchema } from "@shared/claim-phone";
+import PhotoThumbnail from "@/components/PhotoThumbnail";
 
 export default function SpecialistProfile() {
   const [, params] = useRoute("/specialist/:id");
@@ -465,11 +466,14 @@ export default function SpecialistProfile() {
                   className="aspect-square rounded-lg overflow-hidden border border-border"
                   data-testid={`work-photo-display-${photo.id}`}
                 >
-                  <img
-                    src={photo.photoUrl}
-                    alt="Work"
-                    className="w-full h-full object-cover"
-                  />
+                  <a href={photo.photoUrl} target="_blank" rel="noopener noreferrer" aria-label="Открыть оригинал фото работы">
+                    <PhotoThumbnail
+                      src={photo.photoUrl}
+                      alt="Work"
+                      loading="lazy"
+                      className="w-full h-full object-cover"
+                    />
+                  </a>
                 </div>
               ))}
             </div>

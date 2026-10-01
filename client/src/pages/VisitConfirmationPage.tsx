@@ -14,6 +14,7 @@ import {
   X,
 } from "lucide-react";
 import { getFreshBrowserLocation, type BrowserLocation, type GeoStatus } from "./manualPresenceLocation";
+import PhotoThumbnail from "@/components/PhotoThumbnail";
 
 type ConfirmationStatus = "pending" | "confirmed" | "declined" | "expired" | "superseded" | "postponed" | "still_in_service";
 type ConfirmationAnswer =
@@ -403,7 +404,7 @@ export default function VisitConfirmationPage() {
         <section className="mt-8 overflow-hidden rounded-[24px] border border-border/80 bg-card shadow-[0_14px_40px_hsl(var(--primary)/0.06)]">
           <div className="flex items-center gap-4 border-b border-border/70 p-5">
             {confirmation.specialistImageUrl ? (
-              <img
+              <PhotoThumbnail
                 src={confirmation.specialistImageUrl}
                 alt=""
                 className="h-14 w-14 rounded-[18px] object-cover"

@@ -13,6 +13,7 @@ import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type Ma
 import { pool } from "./db";
 import multer from "multer";
 import { uploadPhoto, deletePhoto, ensureBucketExists } from "./supabase-storage";
+import { validatePhotoDerivative } from "./photo-storage";
 import { syncWithRetry, syncBookingToAltegio, isAltegioConfigured, fetchAltegioStaffList, checkAltegioHealth, manualRetrySync, cancelRetry, autoMapAltegioStaff, syncUpcomingAppointments, clearConfigCache, initAltegioConfig, resolveBookform, verifyAltegioCompany } from "./altegio";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater, isValidKzPhone } from "./client-identity";
 import { isOwnPhoneBooking, OWN_PHONE_BOOKING_MESSAGE } from "./own-phone-booking";
@@ -3457,7 +3458,7 @@ ${magicLink}`;
 
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+    limits: { fileSize: 5 * 1024 * 1024, files: 2 }, // Original max 5MB; derivative validated below
     fileFilter: (_req, file, cb) => {
       if (!['image/jpeg', 'image/png'].includes(file.mimetype)) {
         cb(new Error('Only JPG and PNG allowed'));
@@ -3758,7 +3759,16 @@ ${magicLink}`;
   });
 
   // Upload photo for specialist
-  app.post("/api/specialists/:id/photos", upload.single('photo'), async (req, res) => {
+  const uploadSpecialistPhotos = upload.fields([
+    { name: 'photo', maxCount: 1 },
+    { name: 'thumbnail', maxCount: 1 },
+  ]);
+  app.post("/api/specialists/:id/photos", (req, res, next) => {
+    uploadSpecialistPhotos(req, res, error => {
+      if (error) return res.status(400).json({ message: error.message || "Invalid photo upload" });
+      next();
+    });
+  }, async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
       const specialistId = Number(req.params.id);
@@ -3780,8 +3790,16 @@ ${magicLink}`;
         return res.status(400).json({ message: "Photo type must be 'avatar' or 'work'" });
       }
 
-      if (!req.file) {
+      const files = req.files as { [field: string]: Express.Multer.File[] } | undefined;
+      const original = files?.photo?.[0];
+      const thumbnail = files?.thumbnail?.[0];
+      if (!original) {
         return res.status(400).json({ message: "No file uploaded" });
+      }
+      const derivative = thumbnail ? { file: thumbnail.buffer, contentType: thumbnail.mimetype } : undefined;
+      if (derivative) {
+        const validationError = validatePhotoDerivative(derivative, original.mimetype);
+        if (validationError) return res.status(400).json({ message: validationError });
       }
 
       // Check limits and handle existing photos
@@ -3794,27 +3812,33 @@ ${magicLink}`;
         }
       }
       
-      // For avatar: delete existing avatar first (enforce single avatar rule)
-      if (photoType === 'avatar') {
-        const existingAvatars = existingPhotos.filter(p => p.photoType === 'avatar');
-        for (const oldAvatar of existingAvatars) {
-          await deletePhoto(oldAvatar.storagePath);
-          await storage.deleteSpecialistPhoto(oldAvatar.id);
-        }
-      }
-
       // Ensure bucket exists
-      await ensureBucketExists();
+      if (!(await ensureBucketExists())) {
+        return res.status(500).json({ message: "Photo storage unavailable" });
+      }
 
       // Upload to Supabase Storage
       const result = await uploadPhoto(
-        req.file.buffer,
-        req.file.originalname,
-        req.file.mimetype
+        original.buffer,
+        original.originalname,
+        original.mimetype,
+        derivative
       );
 
       if (!result) {
         return res.status(500).json({ message: "Failed to upload photo" });
+      }
+
+      // Replace an old avatar only after the new untouched original is safe.
+      if (photoType === 'avatar') {
+        const existingAvatars = existingPhotos.filter(p => p.photoType === 'avatar');
+        for (const oldAvatar of existingAvatars) {
+          if (!(await deletePhoto(oldAvatar.storagePath))) {
+            await deletePhoto(result.path);
+            return res.status(500).json({ message: "Failed to remove previous avatar" });
+          }
+          await storage.deleteSpecialistPhoto(oldAvatar.id);
+        }
       }
 
       // Save to database
@@ -3831,7 +3855,7 @@ ${magicLink}`;
       }
 
       await trackProfileEdit(specialistId, req, photoType === 'avatar' ? 'avatar' : 'photo');
-      res.status(201).json(photo);
+      res.status(201).json({ ...photo, ...(result.warning ? { warning: result.warning } : {}) });
     } catch (err: any) {
       console.error("Error uploading photo:", err);
       res.status(500).json({ message: err.message });
@@ -3866,7 +3890,9 @@ ${magicLink}`;
       }
 
       // Delete from Supabase Storage
-      await deletePhoto(photo.storagePath);
+      if (!(await deletePhoto(photo.storagePath))) {
+        return res.status(500).json({ message: "Failed to delete photo from storage" });
+      }
 
       // Delete from database
       const deleted = await storage.deleteSpecialistPhoto(photoId);

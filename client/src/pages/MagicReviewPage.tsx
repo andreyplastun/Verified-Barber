@@ -8,6 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { TipPulse, TipBadge, SlideUp, InteractiveStarRating, TipConfirmPulse, TipIconFloat } from "@/components/ui/animations";
+import PhotoThumbnail from "@/components/PhotoThumbnail";
 
 type Lang = "ru" | "kz";
 
@@ -622,7 +623,7 @@ export default function MagicReviewPage() {
       <div className="mb-8 text-center">
         {linkData.specialistImageUrl && (
           <div className="flex justify-center mb-4">
-            <img 
+            <PhotoThumbnail
               src={linkData.specialistImageUrl} 
               alt={linkData.specialistName}
               className="w-16 h-16 rounded-full object-cover border-2 border-background shadow-md"

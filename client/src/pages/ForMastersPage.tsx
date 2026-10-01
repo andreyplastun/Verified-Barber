@@ -5,6 +5,7 @@ import { Star, MessageCircle, Users, ShieldCheck, ArrowRight, CheckCircle } from
 import { useSpecialists } from "@/hooks/use-specialists";
 import { trackEvent } from "@/lib/analytics";
 import { LegalFooter } from "@/components/LegalFooter";
+import PhotoThumbnail from "@/components/PhotoThumbnail";
 
 export default function ForMastersPage() {
   const searchString = useSearch();
@@ -102,7 +103,7 @@ export default function ForMastersPage() {
                 className="flex items-center gap-3 bg-card border border-border rounded-xl p-3 hover:bg-muted/50 transition-colors"
                 data-testid={`card-master-proof-${s.id}`}
               >
-                <img src={s.imageUrl} alt={s.name} className="w-11 h-11 rounded-full object-cover" />
+                <PhotoThumbnail src={s.imageUrl} alt={s.name} loading="lazy" className="w-11 h-11 rounded-full object-cover" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold truncate">{s.name}</p>
                   <p className="text-xs text-muted-foreground truncate">{s.city || ""}</p>

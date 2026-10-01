@@ -8,3 +8,9 @@ Keep NODE_ENV evaluated at runtime; do not fix production bundling by globally r
 **Why:** The same runtime production gates protect real provider provisioning. A build-time value can silently change those protections.
 
 **How to apply:** Exclude development-only modules from production bundling instead. Before running any build verification, inspect its pre-build steps: this project historically performs schema pushes, seeding with deletion, and credential persistence during normal builds. Use a compilation-only verification path that avoids those operations.
+
+Dependency installation also needs a side-effect check: the package installer restarts workflows, and this app's startup launches database work and background jobs.
+
+**Why:** Adding an image-processing library would have triggered an unwanted restart during a production-traffic investigation. Browser-native image processing avoided that dependency and restart.
+
+**How to apply:** Before adding dependencies, establish that a workflow restart is safe; don't bypass the managed installer to conceal the risk.

@@ -6,6 +6,7 @@ import { signOut } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { CheckCircle2, AlertCircle, Loader2, UserCheck } from "lucide-react";
+import PhotoThumbnail from "@/components/PhotoThumbnail";
 
 export default function ClaimProfilePage() {
   const [, params] = useRoute("/claim/:token");
@@ -130,7 +131,7 @@ export default function ClaimProfilePage() {
       <Card className="max-w-sm w-full">
         <CardContent className="pt-6 flex flex-col items-center gap-4 text-center">
           {claimData.specialistImageUrl && (
-            <img
+            <PhotoThumbnail
               src={claimData.specialistImageUrl}
               alt={claimData.specialistName}
               className="w-20 h-20 rounded-full object-cover border-2 border-muted"

@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { PHOTO_BUCKET_NAME, storePhoto, removePhoto, type PhotoDerivative, type PhotoUploadResult } from './photo-storage';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || '';
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
@@ -26,7 +27,7 @@ if (hasCredentials) {
 
 export { supabaseAdmin };
 
-export const BUCKET_NAME = 'specialist-photos';
+export const BUCKET_NAME = PHOTO_BUCKET_NAME;
 
 export function isStorageEnabled(): boolean {
   return hasCredentials && supabaseAdmin !== null;
@@ -66,35 +67,22 @@ export async function ensureBucketExists(): Promise<boolean> {
 export async function uploadPhoto(
   file: Buffer,
   fileName: string,
-  contentType: string
-): Promise<{ url: string; path: string } | null> {
+  contentType: string,
+  derivative?: PhotoDerivative
+): Promise<PhotoUploadResult | null> {
   if (!supabaseAdmin) {
     console.error('[SUPABASE STORAGE] Storage not configured - cannot upload');
     return null;
   }
   
-  const path = `photos/${Date.now()}_${fileName}`;
-  
-  const { data, error } = await supabaseAdmin.storage
-    .from(BUCKET_NAME)
-    .upload(path, file, {
-      contentType,
-      upsert: false
-    });
-
-  if (error) {
-    console.error('[SUPABASE STORAGE] Upload error:', error.message);
+  try {
+    const result = await storePhoto(supabaseAdmin.storage.from(BUCKET_NAME), file, fileName, contentType, derivative);
+    if (result.warning) console.warn('[SUPABASE STORAGE]', result.warning);
+    return result;
+  } catch (error) {
+    console.error('[SUPABASE STORAGE] Upload error:', error instanceof Error ? error.message : error);
     return null;
   }
-
-  const { data: urlData } = supabaseAdmin.storage
-    .from(BUCKET_NAME)
-    .getPublicUrl(path);
-
-  return {
-    url: urlData.publicUrl,
-    path: path
-  };
 }
 
 export async function deletePhoto(path: string): Promise<boolean> {
@@ -103,14 +91,11 @@ export async function deletePhoto(path: string): Promise<boolean> {
     return false;
   }
   
-  const { error } = await supabaseAdmin.storage
-    .from(BUCKET_NAME)
-    .remove([path]);
-
-  if (error) {
-    console.error('[SUPABASE STORAGE] Delete error:', error.message);
+  try {
+    await removePhoto(supabaseAdmin.storage.from(BUCKET_NAME), path);
+    return true;
+  } catch (error) {
+    console.error('[SUPABASE STORAGE] Delete error:', error instanceof Error ? error.message : error);
     return false;
   }
-
-  return true;
 }

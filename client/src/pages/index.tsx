@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import PhotoThumbnail from "@/components/PhotoThumbnail";
 import {
   Popover,
   PopoverContent,
@@ -462,9 +463,10 @@ export default function SpecialistList() {
                 <div className="flex gap-3">
                   {/* Avatar */}
                   <div className="relative w-16 h-16 flex-shrink-0 rounded-lg overflow-hidden bg-muted">
-                    <img 
+                    <PhotoThumbnail
                       src={specialist.imageUrl} 
                       alt={specialist.name}
+                      loading="lazy"
                       className="w-full h-full object-cover"
                     />
                   </div>

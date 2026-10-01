@@ -27,6 +27,8 @@ import OnboardingPathModal from '@/components/OnboardingPathModal';
 import AddressPicker from '@/components/AddressPicker';
 import { BarberCelebrationOverlay, type CelebrationEvent } from '@/components/celebrations/BarberCelebration';
 import { useMemo } from 'react';
+import { createPhotoUploadForm } from '@/lib/photo-thumbnail';
+import PhotoThumbnail from '@/components/PhotoThumbnail';
 
 type AchievementBadge = { id: string; emoji: string; title: string; desc: string };
 type SpecialistAchievements = {
@@ -362,9 +364,7 @@ export default function SpecialistDashboard() {
   const uploadPhoto = async (file: File, photoType: 'avatar' | 'work') => {
     if (!specialistId || !currentUser?.id) return;
 
-    const formData = new FormData();
-    formData.append('photo', file);
-    formData.append('photoType', photoType);
+    const { formData, warning: thumbnailWarning } = await createPhotoUploadForm(file, photoType);
 
     const res = await fetch(`/api/specialists/${specialistId}/photos`, {
       method: 'POST',
@@ -379,7 +379,8 @@ export default function SpecialistDashboard() {
       throw new Error(error.message || 'Upload failed');
     }
 
-    return res.json();
+    const photo = await res.json();
+    return { ...photo, warning: photo.warning || thumbnailWarning };
   };
 
   const deletePhotoMutation = useMutation({
@@ -426,10 +427,17 @@ export default function SpecialistDashboard() {
 
     setUploading(photoType);
     try {
-      await uploadPhoto(file, photoType);
+      const photo = await uploadPhoto(file, photoType);
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId, 'photos'] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
       toast({ title: photoType === 'avatar' ? 'Аватар обновлён' : 'Фото добавлено' });
+      if (photo?.warning) {
+        toast({
+          title: 'Загружен оригинал без оптимизации',
+          description: photo.warning,
+          duration: 10000,
+        });
+      }
     } catch (err: any) {
       toast({ title: 'Ошибка загрузки', description: err.message, variant: 'destructive' });
     } finally {
@@ -1104,7 +1112,7 @@ export default function SpecialistDashboard() {
       ) : specialist ? (
         <Card>
           <CardHeader className="flex flex-row items-center gap-4">
-            <img 
+            <PhotoThumbnail
               src={specialist.imageUrl} 
               alt={specialist.name}
               className="w-20 h-20 rounded-full object-cover"
@@ -1664,9 +1672,10 @@ export default function SpecialistDashboard() {
             </h3>
             <div className="flex items-center gap-4">
               {specialist && (
-                <img 
+                <PhotoThumbnail
                   src={specialist.imageUrl} 
                   alt="Avatar"
+                  loading="lazy"
                   className="w-24 h-24 rounded-full object-cover border-2 border-muted"
                   data-testid="img-avatar-preview"
                 />
@@ -1710,11 +1719,14 @@ export default function SpecialistDashboard() {
               <div className="grid grid-cols-3 sm:grid-cols-5 gap-3">
                 {workPhotos.map((photo) => (
                   <div key={photo.id} className="relative group" data-testid={`work-photo-${photo.id}`}>
-                    <img
-                      src={photo.photoUrl}
-                      alt="Work"
-                      className="aspect-square object-cover rounded-md border"
-                    />
+                    <a href={photo.photoUrl} target="_blank" rel="noopener noreferrer" aria-label="Открыть оригинал фото работы">
+                      <PhotoThumbnail
+                        src={photo.photoUrl}
+                        alt="Work"
+                        loading="lazy"
+                        className="aspect-square object-cover rounded-md border"
+                      />
+                    </a>
                     <Button
                       size="icon"
                       variant="destructive"

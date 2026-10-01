@@ -10,6 +10,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { InteractiveStarRating } from "@/components/ui/animations";
+import PhotoThumbnail from "@/components/PhotoThumbnail";
 
 export default function ReviewPage() {
   const [, params] = useRoute("/review/:bookingId");
@@ -333,7 +334,7 @@ export default function ReviewPage() {
       <div className="mb-8 text-center">
         {specialist?.imageUrl && (
           <div className="flex justify-center mb-4">
-            <img 
+            <PhotoThumbnail
               src={specialist.imageUrl} 
               alt={specialist.name}
               className="w-16 h-16 rounded-full object-cover border-2 border-background shadow-md"
