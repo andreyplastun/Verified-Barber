@@ -24,6 +24,15 @@ import { confirmVisitFromSpecialistChat } from "./visit-confirmations";
 import { hashPhoneToLockId } from "./wa-phone-lock";
 import { appConfig, waMessages, magicLinks, bookings, specialistReminders } from "@shared/schema";
 import { canSendClaimApprovalNotification } from "./claim-notification-policy";
+import {
+  assertReviewDispatchAllowed,
+  dispatchWithReviewPolicy,
+  expiredReviewRequestsSweepSql,
+  isReviewRequestPaused,
+  reviewRequestCandidateSql,
+  ReviewRequestsPausedError,
+  type WaSendMessageType,
+} from "./review-request-pause-policy";
 
 const IS_PRODUCTION = process.env.REPL_SLUG === 'rateus' || process.env.RAILWAY_ENVIRONMENT === 'production' || process.env.NODE_ENV === 'production';
 
@@ -435,9 +444,11 @@ async function sendViaAssistBot(
   phone: string,
   text: string,
   bookingId: number,
+  messageType: WaSendMessageType,
   source: string = "unknown",
   idempotencyTimestamp: number = Date.now(),
 ): Promise<string | null> {
+  assertReviewDispatchAllowed(messageType);
   if (!IS_PRODUCTION) {
     console.log(`[WA_ENV_GUARD] BLOCKED send in non-production env. source=${source} phone=${phone} booking=${bookingId}`);
     throw new Error(`[ENV_GUARD] WA sending blocked in non-production environment`);
@@ -492,7 +503,7 @@ async function sendViaAssistBot(
     console.log(`[WA_LINK] source=${source} booking=${bookingId} link=${text.match(/https?:\/\/[^\s]+/)?.[0] || 'NO_LINK_FOUND'}`);
   }
 
-  const response = await fetch("https://lk.assistbot.ru/api/web/index.php/sms/", {
+  const response = await dispatchWithReviewPolicy(messageType, () => fetch("https://lk.assistbot.ru/api/web/index.php/sms/", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${token}`,
@@ -500,7 +511,7 @@ async function sendViaAssistBot(
     },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(60_000),
-  });
+  }));
 
   const respBody = await response.text();
 
@@ -551,9 +562,9 @@ async function sendViaAssistBot(
   return assistbotMessageId;
 }
 
-export async function sendDirectWaMessage(phone: string, text: string, bookingId: number): Promise<{ success: boolean; assistbotMessageId?: string | null; error?: string }> {
+export async function sendDirectWaMessage(phone: string, text: string, bookingId: number, messageType: WaSendMessageType): Promise<{ success: boolean; assistbotMessageId?: string | null; error?: string }> {
   try {
-    const assistbotMessageId = await sendViaAssistBot(phone, text, bookingId, "direct_api");
+    const assistbotMessageId = await sendViaAssistBot(phone, text, bookingId, messageType, "direct_api");
     return { success: true, assistbotMessageId };
   } catch (err: any) {
     console.error(`[WA_DIRECT] Failed to send to phone=${phone} booking=${bookingId}: ${err.message}`);
@@ -727,7 +738,7 @@ export async function enqueueReviewMessage(params: {
     }
   }
 
-  if (params.messageType === "primary" && !params.isSpecialistAction) {
+  if (params.messageType === "primary" && !params.isSpecialistAction && !isReviewRequestPaused(params.messageType)) {
     const existingQueued = await db.execute(sql`
       SELECT wm.id, wm.booking_id, wm.priority, b.appointment_time
       FROM wa_messages wm
@@ -940,6 +951,8 @@ async function createFollowup(msg: typeof waMessages.$inferSelect, opts?: { base
 }
 
 export async function upgradeFollowupOnLinkOpen(bookingId: number, openedAt: Date): Promise<void> {
+  // Opening a link during the pause must not extend a queued review's lifetime.
+  if (isReviewRequestPaused("reminder")) return;
   const [existingFollowup] = await db.select().from(waMessages)
     .where(and(
       eq(waMessages.bookingId, bookingId),
@@ -948,6 +961,7 @@ export async function upgradeFollowupOnLinkOpen(bookingId: number, openedAt: Dat
     ));
 
   if (!existingFollowup) return;
+  if (existingFollowup.deadline && new Date(existingFollowup.deadline).getTime() <= Date.now()) return;
 
   const delayMs = randomMinutes(2 * 60, 4 * 60);
   const newScheduledAt = new Date(openedAt.getTime() + delayMs);
@@ -1061,6 +1075,13 @@ async function refreshLinkIfExpired(msg: typeof waMessages.$inferSelect): Promis
 }
 
 async function doSend(msg: typeof waMessages.$inferSelect, source: string = "queue"): Promise<boolean> {
+  // Defense in depth for any row already claimed before dispatch. Do not fail,
+  // consume retries, refresh links or mark delivered while paused.
+  if (isReviewRequestPaused(msg.messageType)) return false;
+  if (msg.deadline && new Date(msg.deadline).getTime() <= Date.now()) {
+    await storage.markWaMessageSkipped(msg.id, "expired_at_send");
+    return false;
+  }
   const phoneLockClient = await acquirePhoneLock(msg.customerPhone);
   if (!phoneLockClient) {
     console.log(`[WA_LOCK] Could not acquire lock for phone=${msg.customerPhone} msg=${msg.id} booking=${msg.bookingId} — will retry next cycle`);
@@ -1124,10 +1145,15 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
       return false;
     }
     msg = await refreshLinkIfExpired(msg);
+    if (msg.deadline && new Date(msg.deadline).getTime() <= Date.now()) {
+      await storage.markWaMessageSkipped(msg.id, "expired_at_send");
+      return false;
+    }
     const assistbotMessageId = await sendViaAssistBot(
       msg.customerPhone,
       msg.messageText,
       msg.bookingId,
+      msg.messageType,
       `${source}_${msg.messageType}`,
       msg.createdAt ? new Date(msg.createdAt).getTime() : 946684800000 + msg.id,
     );
@@ -1158,6 +1184,7 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
     }
     return true;
   } catch (err: any) {
+    if (err instanceof ReviewRequestsPausedError) return false;
     const newAttempts = (msg.attempts || 0) + 1;
     if (newAttempts >= msg.maxAttempts) {
       await storage.markWaMessageFailed(msg.id, err.message);
@@ -1181,13 +1208,17 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
     .set({ scheduledAt: new Date(), sendingStartedAt: null } as any)
     .where(and(
       eq(waMessages.id, messageId),
-      eq(waMessages.status, "queued")
+      eq(waMessages.status, "queued"),
+      reviewRequestCandidateSql(waMessages.messageType),
     ))
     .returning();
 
   if (queued.length === 0) {
     const [existing] = await db.select().from(waMessages).where(eq(waMessages.id, messageId));
     if (!existing) return { success: false, error: "Сообщение не найдено" };
+    if (isReviewRequestPaused(existing.messageType)) {
+      return { success: false, queued: existing.status === "queued", error: "Запросы отзывов временно приостановлены" };
+    }
     return { success: false, error: `Статус "${existing.status}" — можно отправить только из очереди` };
   }
   console.log(`[WA_SEND_NOW] msg=${messageId} moved to the front of the safe dispatcher; no direct-send bypass`);
@@ -1268,6 +1299,7 @@ async function deduplicateQueueByPhone(): Promise<number> {
       JOIN bookings b ON b.id = wm.booking_id
       WHERE wm.status = 'queued'
         AND wm.message_type <> 'visit_confirmation'
+        AND ${reviewRequestCandidateSql(sql`wm.message_type`)}
     )
     SELECT id, booking_id, customer_phone, message_type FROM ranked WHERE rn > 1
   `);
@@ -1310,6 +1342,8 @@ async function claimWaMessageForDispatch(
     SET status = 'sending', sending_started_at = NOW()
     WHERE wm.id = ${messageId}
       AND wm.status = 'queued'
+      AND ${reviewRequestCandidateSql(sql`wm.message_type`)}
+      AND (wm.deadline IS NULL OR wm.deadline > NOW())
       AND EXISTS (
         SELECT 1
         FROM bookings b
@@ -1395,6 +1429,7 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       const settings = await getWaSettings();
+      await db.execute(expiredReviewRequestsSweepSql());
       // Even a closed send window or exhausted budget must not leave timed-out links queued.
       const expiredConfirmations = await db.execute(expiredManualConfirmationSweepSql());
       if (expiredConfirmations.rows.length > 0) {
@@ -1504,6 +1539,7 @@ export async function startWaWorkerLoop(): Promise<void> {
         .where(
           and(
             eq(waMessages.status, "queued"),
+            reviewRequestCandidateSql(waMessages.messageType),
             sql`${waMessages.scheduledAt} <= ${currentNow}`,
             budgetPredicate,
           )
@@ -1519,6 +1555,7 @@ export async function startWaWorkerLoop(): Promise<void> {
         .limit(200);
 
       const msg = await findFirstEligibleCandidate(candidates, async (candidate) => {
+        if (isReviewRequestPaused(candidate.messageType)) return false;
         const msgDeadline = candidate.deadline ? new Date(candidate.deadline) : null;
         let firstVisitStatus = candidate.firstVisitStatus as FirstVisitStatus;
         let isPriorityNewClient = candidate.messageType === "primary"
@@ -1711,6 +1748,7 @@ export async function startWaWorkerLoop(): Promise<void> {
           const totalQueued = Number(queuedCount[0]?.count || 0);
           const nextScheduled = await db.execute(sql`
             SELECT MIN(scheduled_at) as next_at FROM wa_messages WHERE status = 'queued' AND scheduled_at > NOW()
+              AND ${reviewRequestCandidateSql(sql`message_type`)}
           `);
           const nextAt = (nextScheduled.rows[0] as any)?.next_at;
           console.log(`[WA_HEARTBEAT] No eligible candidates. readyScanned=${candidates.length} queued=${totalQueued} usage=${usage.ordinarySent}+${usage.prioritySent}/${effectiveLimit}+${effectivePriorityLimit} hard=${effectiveHardLimit} nextScheduledAt=${nextAt || 'none'} time=${currentNow.toISOString()}`);
@@ -1718,6 +1756,7 @@ export async function startWaWorkerLoop(): Promise<void> {
 
         const nextReady = await db.execute(sql`
           SELECT MIN(scheduled_at) as next_at FROM wa_messages WHERE status = 'queued' AND scheduled_at > NOW()
+            AND ${reviewRequestCandidateSql(sql`message_type`)}
         `);
         const nextReadyAt = (nextReady.rows[0] as any)?.next_at;
         if (nextReadyAt) {
@@ -1797,6 +1836,7 @@ export async function startWaWorkerLoop(): Promise<void> {
             .innerJoin(bookings, eq(bookings.id, waMessages.bookingId))
             .where(and(
               eq(waMessages.status, "queued"),
+              reviewRequestCandidateSql(waMessages.messageType),
               sql`${waMessages.scheduledAt} <= NOW()`,
               eq(waMessages.messageType, "primary"),
               gte(waMessages.priority, NEW_CLIENT_PRIORITY),
@@ -1812,6 +1852,10 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
       if (rateLimitSkipped) continue;
       if (preemptedByPriority) continue;
+      if (isReviewRequestPaused(msg.messageType)) {
+        await sleep(idleSleep());
+        continue;
+      }
 
       if (msgDeadline && Date.now() > msgDeadline.getTime()) {
         await storage.markWaMessageSkipped(msg.id, "expired_after_wait");
@@ -2024,6 +2068,7 @@ async function tryDispatchSpecialistReminder(params: {
       claimed.messageText,
       claimed.specialistId,
       "specialist_reminder",
+      "specialist_reminder",
       claimed.createdAt?.getTime() || Date.now(),
     );
     await finishSpecialistReminder(claimed.id, "sent", { assistbotMessageId });
@@ -2066,6 +2111,7 @@ async function hasReadyClientMessage(): Promise<boolean> {
     .from(waMessages)
     .where(and(
       eq(waMessages.status, "queued"),
+      reviewRequestCandidateSql(waMessages.messageType),
       sql`${waMessages.scheduledAt} <= NOW()`,
     ))
     .limit(1);

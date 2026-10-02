@@ -2986,7 +2986,7 @@ ${magicLink}`;
         const specialistDative = toDativeCase(specialist.name);
         const clientGreeting = booking.customerName ? `${booking.customerName}, спасибо за визит к ${specialistDative}!` : `Спасибо за визит к ${specialistDative}!`;
         const waText = `${clientGreeting}\n\nК оплате: ${formattedPrice} ₸\n\nОплатить в Kaspi:\nНомер: ${formattedKaspiPhone}\n\nПосле оплаты мастер завершит визит и отправит ссылку для отзыва.`;
-        const waResult = await sendDirectWaMessage(customerPhone, waText, bookingId);
+        const waResult = await sendDirectWaMessage(customerPhone, waText, bookingId, "payment_request");
         waSent = waResult.success;
         if (!waSent) {
           console.error(`[KASPI_PAYMENT] WA send failed for booking=${bookingId}: ${waResult.error}`);

@@ -37,5 +37,6 @@
 - [Claim links require fresh auth](claim-fresh-auth.md) — never bind to an ambient session; require claim-scoped login, reject admins server-side, then reload the dashboard after binding.
 - [AssistBot chat origin](assistbot-chat-origin.md) — a test profile used the service number; webhook success does not prove access to a master's personal WhatsApp.
 - [Manual confirmation lifetime](manual-confirmation-lifetime.md) — allow 24h after send to answer; retain the original short geo-proof window and never revive expired links.
+- [Review request pause](review-request-pause.md) — user requested review-only pause; restored database access is not permission to resume.
 - [Photo optimization boundaries](photo-preview-policy.md) — preserve originals and old URLs; legacy backfill requires consent; fixture savings are not measured production egress savings.
 - [Merge checker false positives](merge-marker-check.md) — decorative equals-sign comment dividers can be mistaken for unresolved conflict markers.
