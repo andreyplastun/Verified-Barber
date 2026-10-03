@@ -5660,8 +5660,9 @@ ${magicLink}`;
       if (typeof emoji === "string") patch.emoji = emoji;
       if (typeof color === "string") patch.color = color;
       if (typeof label === "string") patch.label = label;
-      patch.startDate = startDate ? new Date(startDate) : null;
-      patch.endDate = endDate ? new Date(endDate) : null;
+      // A toggle-only update must preserve the existing schedule.
+      if (startDate !== undefined) patch.startDate = startDate ? new Date(startDate) : null;
+      if (endDate !== undefined) patch.endDate = endDate ? new Date(endDate) : null;
       const t = await storage.upsertRatingTheme(patch);
       console.log(`[RATING_THEME] Updated by admin ${userId}: enabled=${t.enabled} type=${t.iconType}`);
       res.json(t);

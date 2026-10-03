@@ -32,6 +32,7 @@ function toLocalInput(iso: string | null): string {
 export function RatingThemeSettings({ userId }: { userId: string }) {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
+  const initialized = useRef(false);
 
   const [enabled, setEnabled] = useState(false);
   const [iconType, setIconType] = useState<"emoji" | "image">("emoji");
@@ -41,7 +42,7 @@ export function RatingThemeSettings({ userId }: { userId: string }) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
-  const { data, isLoading } = useQuery<RatingThemeConfig | null>({
+  const { data, isLoading, isError } = useQuery<RatingThemeConfig | null>({
     queryKey: ["/api/admin/rating-theme"],
     queryFn: async () => {
       const res = await fetch("/api/admin/rating-theme", {
@@ -51,9 +52,13 @@ export function RatingThemeSettings({ userId }: { userId: string }) {
       return res.json();
     },
     enabled: !!userId,
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
+    // Refreshes must not overwrite an unsaved form or an in-flight toggle.
+    if (data === undefined || initialized.current) return;
+    initialized.current = true;
     if (data) {
       setEnabled(!!data.enabled);
       setIconType(data.iconType === "image" ? "image" : "emoji");
@@ -64,6 +69,34 @@ export function RatingThemeSettings({ userId }: { userId: string }) {
       setEndDate(toLocalInput(data.endDate));
     }
   }, [data]);
+
+  const toggleMutation = useMutation({
+    mutationFn: async (nextEnabled: boolean) => {
+      const res = await fetch("/api/admin/rating-theme", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-user-id": userId },
+        body: JSON.stringify({ enabled: nextEnabled }),
+      });
+      if (!res.ok) throw new Error("Не удалось сохранить переключатель. Попробуйте ещё раз.");
+      return res.json() as Promise<RatingThemeConfig>;
+    },
+    onMutate: async (nextEnabled) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/admin/rating-theme"] });
+      const previousEnabled = enabled;
+      setEnabled(nextEnabled);
+      return { previousEnabled };
+    },
+    onSuccess: (cfg) => {
+      setEnabled(cfg.enabled);
+      queryClient.setQueryData(["/api/admin/rating-theme"], cfg);
+      queryClient.invalidateQueries({ queryKey: ["/api/rating-theme"] });
+      toast({ title: cfg.enabled ? "Тема включена" : "Тема выключена", description: "Изменение сохранено." });
+    },
+    onError: (error: Error, _nextEnabled, context) => {
+      if (context) setEnabled(context.previousEnabled);
+      toast({ title: "Не сохранено", description: error.message, variant: "destructive" });
+    },
+  });
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -85,8 +118,8 @@ export function RatingThemeSettings({ userId }: { userId: string }) {
       }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/rating-theme"] });
+    onSuccess: (cfg: RatingThemeConfig) => {
+      queryClient.setQueryData(["/api/admin/rating-theme"], cfg);
       queryClient.invalidateQueries({ queryKey: ["/api/rating-theme"] });
       toast({ title: "Сохранено", description: "Тема значка оценки обновлена." });
     },
@@ -139,18 +172,21 @@ export function RatingThemeSettings({ userId }: { userId: string }) {
             <div className="flex items-center gap-2 text-muted-foreground text-sm">
               <Loader2 className="h-4 w-4 animate-spin" /> Загрузка…
             </div>
+          ) : isError ? (
+            <p role="alert" className="text-sm text-destructive">Не удалось загрузить настройки. Обновите страницу, чтобы повторить.</p>
           ) : (
             <>
               <div className="flex items-center justify-between rounded-lg border p-3">
                 <div>
                   <Label className="font-medium">Включить тему</Label>
                   <p className="text-xs text-muted-foreground">
-                    Если выключено — везде звёзды.
+                    {toggleMutation.isPending ? "Сохраняем…" : enabled ? "Включено. Изменение сохраняется автоматически." : "Выключено — везде звёзды. Сохранено."}
                   </p>
                 </div>
                 <Switch
                   checked={enabled}
-                  onCheckedChange={setEnabled}
+                  onCheckedChange={(value) => toggleMutation.mutate(value)}
+                  disabled={toggleMutation.isPending || saveMutation.isPending || uploadMutation.isPending}
                   data-testid="switch-rating-theme-enabled"
                 />
               </div>
@@ -305,7 +341,7 @@ export function RatingThemeSettings({ userId }: { userId: string }) {
 
               <Button
                 onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending}
+                disabled={saveMutation.isPending || toggleMutation.isPending || uploadMutation.isPending}
                 data-testid="button-save-rating-theme"
               >
                 {saveMutation.isPending && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
