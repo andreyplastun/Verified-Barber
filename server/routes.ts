@@ -8,6 +8,7 @@ import { manualPresenceReviewAllowed, manualPresenceSchedule } from "./manual-pr
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { api } from "@shared/routes";
+import { hasWorkLocationChanged } from "@shared/profile-location";
 import { z } from "zod";
 import { bookings, legalConsents, LEGAL_DOCUMENT_VERSIONS, type Booking, type MagicLink, type Review, specialistSignupSchema, claimRequestSchema, locations, specialistLocations, reviewGeodata, waMessages, altegioWebhookLog, analyticsEvents } from "@shared/schema";
 import { pool } from "./db";
@@ -3563,8 +3564,9 @@ ${magicLink}`;
       }
 
       const specialistBeforeUpdate = await storage.getSpecialist(specialistId);
-      await storage.updateSpecialistBio(specialistId, bio);
-      const updates: any = {};
+      if (!specialistBeforeUpdate) return res.status(404).json({ message: "Specialist not found" });
+      // Validate the entire form before writing anything.
+      const updates: any = { bio };
       if (city) updates.city = city;
       if (country) updates.country = country;
       if (subcategory !== undefined) updates.subcategory = subcategory || null;
@@ -3612,9 +3614,9 @@ ${magicLink}`;
         throw e;
       }
 
-      const locationChanging = workLat !== undefined || workLng !== undefined || workAddress !== undefined;
+      const locationChanging = hasWorkLocationChanged(specialistBeforeUpdate, { workLat, workLng, workAddress });
       if (locationChanging) {
-        const spec = await storage.getSpecialist(specialistId);
+        const spec = specialistBeforeUpdate;
         const hasExisting = spec?.workLat != null && spec?.workLng != null;
 
         if (hasExisting) {
@@ -3633,9 +3635,8 @@ ${magicLink}`;
         updates.workLocationUpdatedAt = new Date();
       }
 
-      if (Object.keys(updates).length > 0) {
-        await storage.updateSpecialist(specialistId, updates);
-      }
+      const savedSpecialist = await storage.updateSpecialist(specialistId, updates);
+      if (!savedSpecialist) return res.status(404).json({ message: "Specialist not found" });
       const oldAssistbotPhone = specialistBeforeUpdate
         ? getAssistbotBookingPhone(specialistBeforeUpdate)
         : null;
@@ -3650,7 +3651,7 @@ ${magicLink}`;
         );
       }
       await trackProfileEdit(specialistId, req, 'bio');
-      res.json({ success: true, assistbotConnection: null, assistbotError: null });
+      res.json({ success: true, specialist: savedSpecialist, assistbotConnection: null, assistbotError: null });
     } catch (err: any) {
       console.error("Error updating bio:", err);
       res.status(500).json({ message: err.message });

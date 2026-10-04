@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { format } from 'date-fns';
 import { useRef, useState, useEffect } from 'react';
 import { queryClient } from '@/lib/queryClient';
+import { hasWorkLocationChanged } from '@shared/profile-location';
 import { useToast } from '@/hooks/use-toast';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
@@ -791,13 +792,20 @@ export default function SpecialistDashboard() {
       setWorkLat((specialist as any).workLat ?? null);
       setWorkLng((specialist as any).workLng ?? null);
       setBookingUrl((specialist as any).bookingUrl || '');
-      setWhatsapp((specialist as any).whatsapp || '');
       setInstagram((specialist as any).instagram || '');
-      setContactPhone((specialist as any).phone || '');
-      if ((specialist as any).whatsapp) setShowAltBookingPhone(true);
       setCountry((specialist as any).country || 'KZ');
     }
   }, [specialist]);
+
+  // Unrelated profile refreshes must not erase a typed number.
+  useEffect(() => {
+    setContactPhone(specialist?.phone || '');
+  }, [specialist?.id, specialist?.phone]);
+
+  useEffect(() => {
+    setWhatsapp(specialist?.whatsapp || '');
+    setShowAltBookingPhone(!!specialist?.whatsapp);
+  }, [specialist?.id, specialist?.whatsapp]);
 
   const buildGeocodeQuery = () => {
     const countryName = country === 'UZ' ? 'Узбекистан' : 'Казахстан';
@@ -817,7 +825,7 @@ export default function SpecialistDashboard() {
       // shows up correctly in "Рядом со мной" even if they didn't press the
       // geocode button. If it can't be located, we still save the typed address
       // but flag it so we can be honest with the user instead of faking success.
-      if (workAddress.trim() && (lat == null || lng == null)) {
+      if (hasWorkLocationChanged(specialist || {}, { workAddress, workLat, workLng }) && workAddress.trim() && (lat == null || lng == null)) {
         try {
           const q = buildGeocodeQuery();
           const gr = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&accept-language=ru`);
@@ -847,9 +855,9 @@ export default function SpecialistDashboard() {
           city,
           country,
           subcategory,
-          workAddress: addr,
-          workLat: lat,
-          workLng: lng,
+          ...(hasWorkLocationChanged(specialist || {}, { workAddress: addr, workLat: lat, workLng: lng })
+            ? { workAddress: addr, workLat: lat, workLng: lng }
+            : {}),
           bookingUrl,
           whatsapp,
           instagram,
@@ -860,6 +868,18 @@ export default function SpecialistDashboard() {
         const error = await res.json();
         throw new Error(error.message || 'Failed to save');
       }
+      const result = await res.json();
+      if (!result.specialist) {
+        throw new Error('Сервер не подтвердил сохранённые данные. Обновите страницу.');
+      }
+      await queryClient.cancelQueries({ queryKey: ['/api/specialists', specialistId], exact: true });
+      queryClient.setQueryData<Specialist>(['/api/specialists', specialistId], (previous) => ({
+        ...previous,
+        ...result.specialist,
+      }));
+      setContactPhone(result.specialist.phone || '');
+      setWhatsapp(result.specialist.whatsapp || '');
+      queryClient.invalidateQueries({ queryKey: ['/api/specialists/:id', specialistId] });
       queryClient.invalidateQueries({ queryKey: ['/api/specialists', specialistId] });
       if (geocodeMissed) {
         toast({
