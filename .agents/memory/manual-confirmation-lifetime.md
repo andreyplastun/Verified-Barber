@@ -14,3 +14,9 @@ Manual visits should receive the next available send ahead of Altegio visits; th
 **Why:** The user points out that a master may choose an arbitrary appointment time when creating a manual visit, so the calculated ending is not reliable evidence of the actual ending.
 
 **How to apply:** Distinguish queue priority from the event that makes a message eligible. Do not treat a two-hour geo validity window as an intentional send delay, or a link-open rate as evidence of immediate responses.
+
+Do not require the master to press Complete to start manual-visit messaging. The user specifies whichever comes first, but never before the start time plus the recorded service duration.
+
+**Why:** The user expects the master not to press Complete on time; relying on that action would delay or prevent the request.
+
+**How to apply:** Keep automatic eligibility at the calculated service end regardless of a missing or late completion action. An early completion action must not advance sending before that boundary. Queue priority still respects channel limits and spacing.
