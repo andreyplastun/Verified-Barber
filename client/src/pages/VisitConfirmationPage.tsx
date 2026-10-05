@@ -1,5 +1,5 @@
-import { useMemo, useRef, useState } from "react";
-import { useLocation, useRoute } from "wouter";
+import { useMemo, useState } from "react";
+import { useRoute } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -13,8 +13,9 @@ import {
   ShieldCheck,
   X,
 } from "lucide-react";
-import { getFreshBrowserLocation, type BrowserLocation, type GeoStatus } from "./manualPresenceLocation";
+import { type BrowserLocation, type GeoStatus } from "./manualPresenceLocation";
 import PhotoThumbnail from "@/components/PhotoThumbnail";
+import ManualVisitReview from "@/components/ManualVisitReview";
 
 type ConfirmationStatus = "pending" | "confirmed" | "declined" | "expired" | "superseded" | "postponed" | "still_in_service";
 type ConfirmationAnswer =
@@ -63,20 +64,6 @@ async function respondToConfirmation(token: string, answer: ConfirmationAnswer):
     throw error;
   }
   return body;
-}
-
-async function startLocationAttempt(token: string): Promise<string> {
-  const response = await fetch(`/api/visit-confirmations/${encodeURIComponent(token)}/attempt`, {
-    method: "POST",
-  });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(body?.message || "Не удалось начать подтверждение. Обновите страницу и попробуйте снова.");
-  }
-  if (typeof body?.id !== "string" || !body.id) {
-    throw new Error("Сервер не вернул данные подтверждения. Попробуйте снова.");
-  }
-  return body.id;
 }
 
 function formatAppointmentTime(value: string | null, dateOnly = false) {
@@ -192,16 +179,15 @@ function TerminalScreen({
 
 export default function VisitConfirmationPage() {
   const [, params] = useRoute("/visit-confirm/:token");
-  const [, setLocation] = useLocation();
   const token = params?.token || "";
   const [submitted, setSubmitted] = useState<Confirmation | null>(null);
   const [showPostpone, setShowPostpone] = useState(false);
   const [appointmentDate, setAppointmentDate] = useState("");
   const [appointmentClock, setAppointmentClock] = useState("");
-  const [locationPending, setLocationPending] = useState(false);
   const [locationError, setLocationError] = useState("");
-  const [attemptId, setAttemptId] = useState<string | null>(null);
-  const geoRequestRef = useRef(0);
+  const [reviewBusy, setReviewBusy] = useState(false);
+  const [reviewSuccess, setReviewSuccess] = useState(false);
+  const [reviewConfirmed, setReviewConfirmed] = useState(false);
 
   const confirmationQuery = useQuery<Confirmation, ApiError>({
     queryKey: ["/api/visit-confirmations", token],
@@ -213,7 +199,7 @@ export default function VisitConfirmationPage() {
   const respondMutation = useMutation<Confirmation, ApiError, ConfirmationAnswer>({
     mutationFn: (answer) => respondToConfirmation(token, answer),
     onSuccess: (result, answer) => {
-      if (answer.answer === "yes" && result.reviewUrl) {
+      if (answer.answer === "yes" && !result.manualPresence && result.reviewUrl) {
         window.location.assign(result.reviewUrl);
         return;
       }
@@ -222,40 +208,6 @@ export default function VisitConfirmationPage() {
   });
 
   const confirmation = submitted || confirmationQuery.data;
-  const confirmYes = async () => {
-    if (!confirmation?.manualPresence || confirmation.geoAllowed === false) {
-      respondMutation.mutate({ answer: "yes" });
-      return;
-    }
-    // Prepare server-bound timestamp first. The subsequent location request gets its
-    // own explicit tap: no browser activation depends on this network round trip.
-    setLocationPending(true);
-    setLocationError("");
-    try {
-      setAttemptId(await startLocationAttempt(token));
-    } catch (error) {
-      setLocationError(error instanceof Error ? error.message : "Не удалось подтвердить визит. Попробуйте снова.");
-    } finally {
-      setLocationPending(false);
-    }
-  };
-  const confirmWithLocation = () => {
-    if (!attemptId || locationPending || respondMutation.isPending) return;
-    const request = ++geoRequestRef.current;
-    setLocationPending(true);
-    // No await before getCurrentPosition: this call runs directly in the click handler.
-    void getFreshBrowserLocation(window.isSecureContext, navigator.geolocation).then(({ status, location }) => {
-      if (request !== geoRequestRef.current) return; // User continued without location.
-      setLocationPending(false);
-      respondMutation.mutate({ answer: "yes", attemptId, geoStatus: status, ...(location ? { location } : {}) });
-    });
-  };
-  const confirmWithoutLocation = () => {
-    if (!attemptId || respondMutation.isPending) return;
-    ++geoRequestRef.current;
-    setLocationPending(false);
-    respondMutation.mutate({ answer: "yes", attemptId, geoStatus: "skipped" });
-  };
   const displayTime = useMemo(
     () => (
       confirmation
@@ -324,7 +276,7 @@ export default function VisitConfirmationPage() {
     );
   }
 
-  if (confirmation.status === "confirmed" || (submitted && submitted.status === "confirmed")) {
+  if (!confirmation.manualPresence && (confirmation.status === "confirmed" || (submitted && submitted.status === "confirmed"))) {
     return (
       <TerminalScreen
         tone="success"
@@ -385,19 +337,19 @@ export default function VisitConfirmationPage() {
     );
   }
 
-  const isResponding = respondMutation.isPending || locationPending;
+  const isResponding = respondMutation.isPending || reviewBusy;
   const tomorrow = addAlmatyCalendarDays(formatAlmatyDateOnly(new Date()), 1);
   return (
     <ScreenShell>
       <div>
         <BrandMark />
         <div className="mt-12 text-center">
-          <p className="text-sm font-medium text-muted-foreground">Подтверждение визита</p>
+          <p className="text-sm font-medium text-muted-foreground">{confirmation.manualPresence ? "Отзыв о визите" : "Подтверждение визита"}</p>
           <h1 className="mt-3 font-display text-[30px] font-bold leading-[1.08] tracking-[-0.05em]">
-            Вы были на приёме?
+            {confirmation.manualPresence ? "Как прошёл визит?" : "Вы были на приёме?"}
           </h1>
           <p className="mx-auto mt-4 max-w-[330px] text-[15px] leading-6 text-muted-foreground">
-            Подтвердите информацию о визите, чтобы Rateus показывал только реальные отзывы.
+            {confirmation.manualPresence ? "Выберите оценку. Комментарий и остальные детали можно добавить по желанию." : "Подтвердите информацию о визите, чтобы Rateus показывал только реальные отзывы."}
           </p>
         </div>
 
@@ -431,11 +383,7 @@ export default function VisitConfirmationPage() {
           </div>
         </section>
 
-        {confirmation.manualPresence && confirmation.geoAllowed !== false && (
-          <p className="mt-4 text-sm leading-6 text-muted-foreground" data-testid="text-location-purpose">
-            Если вы были на услуге, можно отдельно разрешить браузеру проверить местоположение. Это необязательно — отзыв можно оставить и без геолокации.
-          </p>
-        )}
+        {confirmation.manualPresence && <ManualVisitReview key={token} token={token} geoAllowed={!reviewConfirmed && confirmation.geoAllowed} expectedEnd={confirmation.expectedEnd} disabled={respondMutation.isPending} onBusyChange={setReviewBusy} onConfirmed={() => setReviewConfirmed(true)} onSuccess={() => setReviewSuccess(true)} />}
         {locationError && (
           <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/8 p-4 text-sm text-amber-800 dark:text-amber-300" role="alert">
             {locationError}
@@ -448,39 +396,16 @@ export default function VisitConfirmationPage() {
           </div>
         )}
 
+        {!reviewSuccess && !reviewConfirmed && confirmation.status !== "confirmed" && <SecondaryActions manual={Boolean(confirmation.manualPresence)}>
         <div className="mt-6 grid gap-3">
-          {attemptId && confirmation.manualPresence ? (
-            <div className="rounded-2xl border border-border bg-card p-4" data-testid="location-choice">
-              <p className="text-sm font-semibold">Подтвердить визит</p>
-              <p className="mt-1 text-sm leading-5 text-muted-foreground">Разрешите местоположение по желанию или продолжите без него. Если браузер не сможет определить место, ответ всё равно сохранится.</p>
-              <button
-                type="button"
-                onClick={confirmWithLocation}
-                disabled={isResponding}
-                className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-65"
-                data-testid="button-confirm-with-location"
-              >
-                {locationPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ShieldCheck className="h-4 w-4" />}
-                Разрешить местоположение
-              </button>
-              <button
-                type="button"
-                onClick={confirmWithoutLocation}
-                disabled={respondMutation.isPending}
-                className="mt-2 flex h-12 w-full items-center justify-center rounded-xl border border-border text-sm font-semibold disabled:opacity-65"
-                data-testid="button-confirm-without-location"
-              >
-                Продолжить без геолокации
-              </button>
-            </div>
-          ) : <button
+          {!confirmation.manualPresence && <button
             type="button"
-            onClick={() => { void confirmYes(); }}
+            onClick={() => respondMutation.mutate({ answer: "yes" })}
             disabled={isResponding}
             className="group flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-primary text-[15px] font-semibold text-primary-foreground shadow-[0_8px_20px_hsl(var(--primary)/0.16)] transition-transform hover:opacity-90 active:scale-[0.985] disabled:cursor-wait disabled:opacity-65"
             data-testid="button-confirm-yes"
           >
-            {(locationPending || (respondMutation.isPending && respondMutation.variables?.answer === "yes")) ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
+            {respondMutation.isPending && respondMutation.variables?.answer === "yes" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" strokeWidth={2.5} />}
             Да, я был(а)
           </button>}
           {confirmation.manualPresence && (
@@ -566,11 +491,22 @@ export default function VisitConfirmationPage() {
             </div>
           ))}
         </div>
+        </SecondaryActions>}
         <div className="mt-7 flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <ShieldCheck className="h-4 w-4 text-accent-foreground" />
           <span>Ваш ответ защищён и нужен для точности отзывов</span>
         </div>
       </div>
     </ScreenShell>
+  );
+}
+
+function SecondaryActions({ manual, children }: { manual: boolean; children: React.ReactNode }) {
+  if (!manual) return <>{children}</>;
+  return (
+    <details className="mt-6 rounded-2xl border border-border bg-card p-4">
+      <summary className="cursor-pointer text-sm font-semibold text-muted-foreground">Визит не состоялся или ещё продолжается?</summary>
+      {children}
+    </details>
   );
 }

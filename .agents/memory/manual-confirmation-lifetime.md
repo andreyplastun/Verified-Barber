@@ -20,3 +20,9 @@ Do not require the master to press Complete to start manual-visit messaging. The
 **Why:** The user expects the master not to press Complete on time; relying on that action would delay or prevent the request.
 
 **How to apply:** Keep automatic eligibility at the calculated service end regardless of a missing or late completion action. An early completion action must not advance sending before that boundary. Queue priority still respects channel limits and spacing.
+
+Manual clients should land directly on a rating form, with optional geolocation on that same screen; submitting the rating is their explicit confirmation of attendance.
+
+**Why:** The user approved removing separate confirmation/location screens because they add friction before the actual review. GPS must remain optional and never block leaving a review.
+
+**How to apply:** Do not confirm attendance on page load or on granting GPS permission. Preserve the confirmation/trust checks behind the final submit action and allow retries without losing the typed review.
