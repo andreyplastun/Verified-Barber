@@ -8,3 +8,9 @@ Give newly sent manual-visit confirmation links 24 hours from actual send to ans
 **Why:** A client opened a confirmation about two hours after delivery and it had already expired because the deadline ran from expected service end. The user approved a longer response window, not stronger trust for late responses.
 
 **How to apply:** Preserve the distinction in future messaging and trust changes. Do not revive expired historical links or resend old confirmations when changing lifetime rules.
+
+Manual visits should receive the next available send ahead of Altegio visits; the user considers prompt post-visit delivery essential to making the geo step useful.
+
+**Why:** The user points out that a master may choose an arbitrary appointment time when creating a manual visit, so the calculated ending is not reliable evidence of the actual ending.
+
+**How to apply:** Distinguish queue priority from the event that makes a message eligible. Do not treat a two-hour geo validity window as an intentional send delay, or a link-open rate as evidence of immediate responses.
