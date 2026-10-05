@@ -1,10 +1,10 @@
 ---
 name: Review request pause
-description: User-requested review-only pause during unavailable admin access.
+description: Approved resumption of primary review requests; repeat reminders remain disabled.
 ---
 
-Keep review requests and repeat review reminders paused until the user explicitly asks to resume. Do not treat restoration of Supabase access or a new billing cycle as permission to resume.
+On 2026-10-05 the user explicitly approved resuming primary review requests. Keep repeat review reminders disabled unless separately authorized. Preserve the daily cap and send intervals; never revive expired messages.
 
-**Why:** The user requested a pause while unable to sign in to the admin dashboard.
+**Why:** The earlier pause was requested during unavailable admin/Supabase access. The user later approved the specific option to resume primary requests while leaving follow-ups off.
 
-**How to apply:** Preserve visit confirmations, payment requests and master notifications. Do not revive expired review requests when eventually resuming. Explain that a code-level pause affects production only after successful deployment.
+**How to apply:** Do not reinstate the old pause based on stale context. Do not enable follow-ups as part of the primary resume. Preserve confirmations, payments and master notifications. Code-level changes affect production only after successful deployment.

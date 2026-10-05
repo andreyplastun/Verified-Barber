@@ -5,7 +5,6 @@ import { sql } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import {
   REVIEW_REQUESTS_PAUSED,
-  ReviewRequestsPausedError,
   dispatchWithReviewPolicy,
   expiredReviewRequestsSweepSql,
   isReviewRequestPaused,
@@ -17,20 +16,25 @@ const dialect = new PgDialect();
 const worker = readFileSync(new URL("./whatsapp.ts", import.meta.url), "utf8");
 const routes = readFileSync(new URL("./routes.ts", import.meta.url), "utf8");
 
-test("default operational pause covers primary and reminder, regardless of priority/strategy", async () => {
-  assert.equal(REVIEW_REQUESTS_PAUSED, true);
+test("approved resume allows reviews through the operational gate; explicit pause still covers both types", async () => {
+  assert.equal(REVIEW_REQUESTS_PAUSED, false);
   let providerCalls = 0;
   for (const type of ["primary", "reminder"] as const) {
-    assert.equal(isReviewRequestPaused(type), true);
-    await assert.rejects(
-      dispatchWithReviewPolicy(type, async () => {
-        providerCalls++;
-        return "must-not-send";
-      }),
-      ReviewRequestsPausedError,
-    );
+    assert.equal(isReviewRequestPaused(type), false);
+    assert.equal(isReviewRequestPaused(type, true), true);
+    const result = await dispatchWithReviewPolicy(type, async () => {
+      providerCalls++;
+      return "sent";
+    });
+    assert.equal(result, "sent");
   }
-  assert.equal(providerCalls, 0);
+  assert.equal(providerCalls, 2);
+});
+
+test("resume preserves the separate follow-up disable gate", () => {
+  assert.match(worker, /candidate\.messageType === "reminder" && !settings\.followupEnabled/);
+  assert.match(worker, /markWaMessageSkipped\(candidate\.id, "followup_disabled"\)/);
+  assert.match(worker, /if \(!waSettings\.followupEnabled\)/);
 });
 
 test("confirmation, payment and master reminders still reach the provider callback", async () => {
@@ -47,9 +51,10 @@ test("confirmation, payment and master reminders still reach the provider callba
 });
 
 test("candidate SQL excludes only review requests before LIMIT; resume removes only that predicate", () => {
-  const query = dialect.sqlToQuery(reviewRequestCandidateSql(sql`wm.message_type`));
+  const query = dialect.sqlToQuery(reviewRequestCandidateSql(sql`wm.message_type`, true));
   assert.equal(query.sql, "wm.message_type NOT IN ('primary', 'reminder')");
   assert.deepEqual(query.params, []);
+  assert.equal(dialect.sqlToQuery(reviewRequestCandidateSql(sql`wm.message_type`)).sql, "TRUE");
   assert.equal(isReviewRequestPaused("primary", false), false);
   assert.equal(isReviewRequestPaused("reminder", false), false);
   assert.equal(dialect.sqlToQuery(reviewRequestCandidateSql(sql`wm.message_type`, false)).sql, "TRUE");

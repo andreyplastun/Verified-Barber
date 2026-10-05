@@ -1,9 +1,9 @@
 import { sql, type SQLWrapper } from "drizzle-orm";
 
-// Temporary operations pause requested while admin/Supabase access is unavailable.
-// Deploys paused by default; resume only by an explicit code change. This is NOT
-// the shared WhatsApp worker switch: confirmations, payments and master reminders stay on.
-export const REVIEW_REQUESTS_PAUSED = true;
+// Operations pause lifted with explicit approval on 2026-10-05.
+// Follow-ups still obey WA_FOLLOWUP_ENABLED; shared limits and deadlines are unchanged.
+// This is separate from the global WhatsApp worker switch.
+export const REVIEW_REQUESTS_PAUSED = false;
 
 export type WaSendMessageType =
   | "primary"
