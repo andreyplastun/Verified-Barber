@@ -195,9 +195,12 @@ export function AssistBotConnection({ specialists }: { specialists: Specialist[]
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       </div>
 
-      <div className="rounded-lg border p-3 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-medium">Статусы последних тестов</h3>
+      <details className="rounded-lg border" data-testid="wa-test-history">
+        <summary className="min-h-14 cursor-pointer px-3 py-4 text-sm font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+          Статусы последних тестов ({tests.length})
+        </summary>
+        <div className="space-y-3 border-t p-3">
+        <div className="flex justify-end">
           <Button type="button" size="sm" variant="outline" onClick={() => loadTests().catch((e) => setError(e.message))}>
             Обновить
           </Button>
@@ -240,7 +243,8 @@ export function AssistBotConnection({ specialists }: { specialists: Specialist[]
             )}
           </div>
         ))}
-      </div>
+        </div>
+      </details>
     </div>
   );
 }
