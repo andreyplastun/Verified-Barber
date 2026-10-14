@@ -1199,6 +1199,21 @@ export default function SpecialistDashboard() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-2" id="contacts-section">
+            <Label htmlFor="contact-phone">Ваш номер WhatsApp</Label>
+            <Input
+              id="contact-phone"
+              type="tel"
+              autoComplete="tel"
+              value={contactPhone}
+              onChange={(e) => setContactPhone(e.target.value)}
+              placeholder="+7 777 123 45 67"
+              data-testid="input-contact-phone"
+            />
+            <p className="text-xs text-muted-foreground">
+              Основной номер мастера для уведомлений сервиса и записи клиентов, если не указан другой способ записи.
+            </p>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="subcategory">Специализация</Label>
             <Input
@@ -1268,19 +1283,7 @@ export default function SpecialistDashboard() {
               );
             })()}
           </div>
-          <div className="space-y-2" id="contacts-section">
-            <Label htmlFor="contact-phone">Ваш WhatsApp</Label>
-            <Input
-              id="contact-phone"
-              type="tel"
-              value={contactPhone}
-              onChange={(e) => setContactPhone(e.target.value)}
-              placeholder="+7 777 123 45 67"
-              data-testid="input-contact-phone"
-            />
-            <p className="text-xs text-muted-foreground">
-              Сюда пишут клиенты для записи и приходят уведомления сервиса.
-            </p>
+          <div className="space-y-2">
             {isAltegioConnected ? (
               <div
                 className="rounded-lg border border-emerald-200 dark:border-emerald-900 bg-emerald-50/60 dark:bg-emerald-950/30 p-4 space-y-3"

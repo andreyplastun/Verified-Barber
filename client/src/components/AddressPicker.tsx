@@ -221,7 +221,7 @@ export default function AddressPicker({ address, lat, lng, city, country, onChan
         )}
         {open && suggestions.length > 0 && (
           <div
-            className="absolute z-[1000] mt-1 w-full max-h-60 overflow-y-auto rounded-md border border-border bg-popover shadow-md"
+            className="mt-1 w-full max-h-60 overflow-y-auto rounded-md border border-border bg-popover shadow-md"
             data-testid="list-address-suggestions"
           >
             {suggestions.map((s, i) => (
