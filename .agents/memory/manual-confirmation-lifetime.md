@@ -26,3 +26,9 @@ Manual clients should land directly on a rating form, with optional geolocation 
 **Why:** The user approved removing separate confirmation/location screens because they add friction before the actual review. GPS must remain optional and never block leaving a review.
 
 **How to apply:** Do not confirm attendance on page load or on granting GPS permission. Preserve the confirmation/trust checks behind the final submit action and allow retries without losing the typed review.
+
+For new manual visits ending outside the 10:00–20:00 Almaty sending window, defer to the next opening and disable geolocation entirely.
+
+**Why:** The user approved next-morning requests without geo instead of extending evening sending hours. The prior short expiry made evening test visits impossible to send.
+
+**How to apply:** Keep deferred requests and their unsent links alive through the next sending window (until 20:00), still respecting global priority, spacing and daily caps. Grant 24 hours to answer only after actual send. Do not revive historical expired messages.

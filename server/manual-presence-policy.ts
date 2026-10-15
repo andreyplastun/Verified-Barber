@@ -1,3 +1,5 @@
+import { getVisitConfirmationSendAt } from "./visit-confirmation-policy";
+
 /**
  * Policy for NEW, explicitly enrolled manual bookings only. Do not use this
  * policy for Altegio, historical bookings, or unknown-time chat enquiries.
@@ -26,14 +28,22 @@ export function manualPresenceSchedule(
   }
   if (!Number.isFinite(start.getTime())) throw new Error("Неверное время записи");
   const expectedEnd = new Date(start.getTime() + duration * 60_000);
+  const dueAt = getVisitConfirmationSendAt(expectedEnd);
+  const deferred = dueAt.getTime() > expectedEnd.getTime();
+  // Deferred requests compete for the next day's existing channel budget.
+  // Give them that day's 10:00–20:00 window, not 30 minutes during quiet hours.
+  const deadline = new Date(deferred
+    ? dueAt.getTime() + 10 * 60 * 60_000
+    : expectedEnd.getTime() + MANUAL_PRESENCE.sendDeadlineMs);
   return {
     durationMinutes: duration,
     expectedEnd,
-    dueAt: expectedEnd,
-    deadline: new Date(expectedEnd.getTime() + MANUAL_PRESENCE.sendDeadlineMs),
-    geoExpiresAt: new Date(expectedEnd.getTime() + MANUAL_PRESENCE.geoLifetimeMs),
+    dueAt,
+    deadline,
+    // A deferred invitation never proves presence, even if opened early.
+    geoExpiresAt: new Date(expectedEnd.getTime() + (deferred ? 0 : MANUAL_PRESENCE.geoLifetimeMs)),
     // Provisional unsent bound. Only a successful send grants 24h from send time.
-    expiresAt: new Date(expectedEnd.getTime() + MANUAL_PRESENCE.geoLifetimeMs),
+    expiresAt: deferred ? new Date(deadline) : new Date(expectedEnd.getTime() + MANUAL_PRESENCE.geoLifetimeMs),
   };
 }
 

@@ -98,6 +98,50 @@ test("dispatch due/deadline are exclusive boundaries and old token never dispatc
   assert.equal(manualPresenceDispatchAllowed({ ...base, status: "confirmed" }, 150), false);
 });
 
+test("evening manual visits move to next 10:00 Almaty without geo, including date rollover", () => {
+  for (const [start, due] of [
+    ["2026-10-14T16:45:00Z", "2026-10-15T05:00:00Z"],
+    ["2026-10-14T16:56:00Z", "2026-10-15T05:00:00Z"],
+    ["2026-12-31T16:45:00Z", "2027-01-01T05:00:00Z"],
+    ["2026-10-14T14:50:00Z", "2026-10-15T05:00:00Z"],
+  ]) {
+    const schedule = manualPresenceSchedule(new Date(start), 10, null);
+    assert.equal(schedule.dueAt.getTime(), new Date(due).getTime());
+    assert.equal(schedule.deadline.getTime(), schedule.dueAt.getTime() + 10 * 3600_000);
+    assert.equal(schedule.expiresAt.getTime(), schedule.deadline.getTime());
+    assert.equal(schedule.geoExpiresAt.getTime(), schedule.expectedEnd.getTime());
+    const gate = {
+      status: "pending", bookingToken: "a", messageToken: "a",
+      dueAt: schedule.dueAt.getTime(), deadline: schedule.deadline.getTime(),
+      expiresAt: schedule.expiresAt.getTime(),
+    };
+    assert.equal(manualPresenceDispatchAllowed(gate, gate.dueAt - 1), false);
+    assert.equal(manualPresenceDispatchAllowed(gate, gate.dueAt), true);
+    assert.equal(manualPresenceDispatchAllowed(gate, gate.deadline), false);
+  }
+});
+
+test("deferred manual session survives the night and allows review without a geo bonus", async () => {
+  const h = harness();
+  const start = new Date("2026-10-14T16:45:00Z");
+  const schedule = manualPresenceSchedule(start, 10, null);
+  Object.assign(h.sessions.get("first")!, schedule, { start });
+  h.setNow(schedule.dueAt.getTime());
+  assert.equal((await h.engine.get("first")).status, "pending");
+  assert.equal(await h.engine.beginAttempt("first"), null);
+  assert.equal((await h.engine.answer("first", "yes")).status, "confirmed");
+  assert.deepEqual(h.weights, [0.6]);
+});
+
+test("daytime requests keep immediate timing; pre-10:00 requests wait until 10:00 without geo", () => {
+  const daytime = manualPresenceSchedule(new Date("2026-10-14T04:50:00Z"), 10, null);
+  assert.equal(daytime.dueAt.getTime(), daytime.expectedEnd.getTime());
+  assert.equal(daytime.geoExpiresAt.getTime(), daytime.expectedEnd.getTime() + 2 * 3600_000);
+  const morning = manualPresenceSchedule(new Date("2026-10-14T03:00:00Z"), 10, null);
+  assert.equal(morning.dueAt.toISOString(), "2026-10-14T05:00:00.000Z");
+  assert.equal(morning.geoExpiresAt.getTime(), morning.expectedEnd.getTime());
+});
+
 test("expiry anchored to expected end cannot be revived by yes, geo or reschedule", async () => {
   const h = harness();
   h.setNow(h.now() + 120 * 60_000);
