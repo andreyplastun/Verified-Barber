@@ -36,6 +36,7 @@ type Confirmation = {
   expiresAt?: string;
   geoAllowed?: boolean;
   canReschedule?: boolean;
+  reviewSubmitted?: boolean;
 };
 
 type ApiError = Error & { status?: number };
@@ -107,16 +108,6 @@ function addAlmatyCalendarDays(value: string, days: number) {
   return shifted.toISOString().slice(0, 10);
 }
 
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-}
-
 function BrandMark() {
   return (
     <div className="flex items-center gap-2 text-foreground" aria-label="Rateus">
@@ -158,7 +149,7 @@ function TerminalScreen({
   icon: React.ReactNode;
   tone?: "success" | "quiet" | "error";
   title: string;
-  text: string;
+  text?: string;
   action?: React.ReactNode;
 }) {
   return (
@@ -168,7 +159,7 @@ function TerminalScreen({
         <div className="mt-16">
           <StatusIcon tone={tone}>{icon}</StatusIcon>
           <h1 className="mt-7 font-display text-[29px] font-bold leading-[1.08] tracking-[-0.045em]">{title}</h1>
-          <p className="mx-auto mt-4 max-w-[320px] text-[15px] leading-6 text-muted-foreground">{text}</p>
+          {text && <p className="mx-auto mt-4 max-w-[320px] text-[15px] leading-6 text-muted-foreground">{text}</p>}
           {action && <div className="mt-8">{action}</div>}
         </div>
         <p className="mt-20 text-xs text-muted-foreground/70">Сервис подтверждения визитов Rateus</p>
@@ -186,7 +177,7 @@ export default function VisitConfirmationPage() {
   const [appointmentClock, setAppointmentClock] = useState("");
   const [locationError, setLocationError] = useState("");
   const [reviewBusy, setReviewBusy] = useState(false);
-  const [reviewSuccess, setReviewSuccess] = useState(false);
+  const [reviewSuccess, setReviewSuccess] = useState<"saved" | "already" | null>(null);
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
 
   const confirmationQuery = useQuery<Confirmation, ApiError>({
@@ -260,6 +251,18 @@ export default function VisitConfirmationPage() {
   }
 
   if (!confirmation) return null;
+
+  if (confirmation.manualPresence && (reviewSuccess || confirmation.reviewSubmitted)) {
+    // One review per visit: a reopened link shows the final state, never the form again.
+    const already = reviewSuccess === "already" || (!reviewSuccess && confirmation.reviewSubmitted);
+    return (
+      <TerminalScreen
+        tone="success"
+        icon={<CheckCircle2 className="h-7 w-7" />}
+        title={already ? "Отзыв уже оставлен" : "Спасибо за отзыв!"}
+      />
+    );
+  }
 
   if (confirmation.status === "expired" || confirmation.status === "superseded") {
     return (
@@ -362,11 +365,7 @@ export default function VisitConfirmationPage() {
                 className="h-14 w-14 rounded-[18px] object-cover"
                 data-testid="img-specialist"
               />
-            ) : (
-              <div className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-secondary font-display text-lg font-bold text-secondary-foreground">
-                {initials(confirmation.specialistName)}
-              </div>
-            )}
+            ) : null}
             <div className="min-w-0">
               <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Специалист</p>
               <h2 className="mt-1 truncate font-display text-lg font-semibold">{confirmation.specialistName}</h2>
@@ -383,7 +382,7 @@ export default function VisitConfirmationPage() {
           </div>
         </section>
 
-        {confirmation.manualPresence && <ManualVisitReview key={token} token={token} geoAllowed={!reviewConfirmed && confirmation.geoAllowed} expectedEnd={confirmation.expectedEnd} disabled={respondMutation.isPending} onBusyChange={setReviewBusy} onConfirmed={() => setReviewConfirmed(true)} onSuccess={() => setReviewSuccess(true)} />}
+        {confirmation.manualPresence && <ManualVisitReview key={token} token={token} geoAllowed={!reviewConfirmed && confirmation.geoAllowed} expectedEnd={confirmation.expectedEnd} disabled={respondMutation.isPending} onBusyChange={setReviewBusy} onConfirmed={() => setReviewConfirmed(true)} onSuccess={(already) => setReviewSuccess(already ? "already" : "saved")} />}
         {locationError && (
           <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/8 p-4 text-sm text-amber-800 dark:text-amber-300" role="alert">
             {locationError}

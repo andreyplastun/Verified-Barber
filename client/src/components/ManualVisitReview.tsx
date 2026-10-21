@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { AlertCircle, CheckCircle2, MapPin } from "lucide-react";
+import { AlertCircle, MapPin } from "lucide-react";
 import { InteractiveStarRating } from "@/components/ui/animations";
 import { submitManualVisitReview } from "@/lib/manualVisitReview";
 import { getFreshBrowserLocation, type BrowserLocation, type GeoStatus } from "@/pages/manualPresenceLocation";
@@ -10,7 +10,7 @@ type Props = {
   expectedEnd?: string;
   disabled?: boolean;
   onBusyChange: (busy: boolean) => void;
-  onSuccess: () => void;
+  onSuccess: (alreadySubmitted: boolean) => void;
   onConfirmed: () => void;
 };
 
@@ -31,8 +31,6 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
   const [rating, setRating] = useState(0);
   const [hoveredStar, setHoveredStar] = useState(0);
   const [comment, setComment] = useState("");
-  const [showName, setShowName] = useState(true);
-  const [isPrivate, setIsPrivate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -179,12 +177,12 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
       setGeoStatus("skipped");
     }
     try {
-      await submitManualVisitReview({
-        token, rating, comment, showName: isPrivate ? false : showName, isPrivate, onConfirmed,
+      const result = await submitManualVisitReview({
+        token, rating, comment, showName: true, isPrivate: false, onConfirmed,
         ...(usableAttempt ? { attemptId: usableAttempt.id, geoStatus, ...(location ? { location } : {}) } : { geoStatus: "skipped" as const }),
       });
       setSuccess(true);
-      onSuccess();
+      onSuccess(result?.alreadySubmitted === true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Отзыв не сохранился. Попробуйте ещё раз.");
     } finally {
@@ -194,15 +192,8 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
     }
   };
 
-  if (success) return (
-    <section className="mt-6 rounded-[24px] border border-border bg-card p-6 text-center" role="status" data-testid="manual-review-success">
-      <CheckCircle2 className="mx-auto h-9 w-9 text-primary" />
-      <h2 className="mt-4 font-display text-xl font-semibold">Спасибо за отзыв!</h2>
-      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-        {isPrivate ? "Ваш отзыв сохранён. Он доступен только сервису Rateus." : "Ваш отзыв сохранён. Спасибо, что поделились впечатлениями."}
-      </p>
-    </section>
-  );
+  // The page replaces the whole screen with the thank-you state.
+  if (success) return null;
 
   return (
     <form onSubmit={submit} className="mt-6 space-y-5" data-testid="manual-visit-review">
@@ -210,19 +201,11 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
         <div className="rounded-[24px] border border-border bg-card px-4 py-6">
           <p className="mb-4 text-center text-sm font-semibold">Ваша оценка</p>
           <InteractiveStarRating rating={rating} hoveredStar={hoveredStar} onRate={setRating} onHover={setHoveredStar} onLeave={() => setHoveredStar(0)} size={40} />
-          <p className="mt-3 text-center text-xs text-muted-foreground" aria-live="polite">{rating ? `Оценка: ${rating} из 5` : "Выберите от 1 до 5"}</p>
         </div>
         <div>
           <label htmlFor="manual-review-comment" className="text-sm font-semibold">Комментарий <span className="font-normal text-muted-foreground">— необязательно</span></label>
           <textarea id="manual-review-comment" value={comment} onChange={(event) => setComment(event.target.value)} rows={3} placeholder="Что вам запомнилось?" className="mt-2 w-full resize-y rounded-2xl border border-border bg-card p-4 text-sm focus-visible:outline-primary" data-testid="input-manual-review-comment" />
         </div>
-        <details className="rounded-2xl border border-border bg-card p-4">
-          <summary className="cursor-pointer text-sm font-semibold">Имя и видимость отзыва</summary>
-          <div className="mt-4 space-y-4 text-sm">
-            <label className="flex items-start gap-3"><input type="checkbox" checked={isPrivate} onChange={(event) => setIsPrivate(event.target.checked)} className="mt-1 accent-primary" /><span>Только сервису Rateus<span className="mt-1 block text-xs leading-5 text-muted-foreground">Отзыв не увидят специалисты и другие клиенты.</span></span></label>
-            <label className={`flex items-center gap-3 ${isPrivate ? "opacity-50" : ""}`}><input type="checkbox" checked={showName} disabled={isPrivate} onChange={(event) => setShowName(event.target.checked)} className="accent-primary" />Показывать моё имя</label>
-          </div>
-        </details>
         {canLocate && (
           <section className="rounded-2xl border border-border bg-card p-4" data-testid="manual-review-location">
             <p className="flex items-center gap-2 text-sm font-semibold"><MapPin className="h-4 w-4 text-primary" />Местоположение — по желанию</p>
@@ -238,7 +221,6 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
       </fieldset>
       {error && <div className="flex gap-2 rounded-2xl border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive" role="alert" data-testid="manual-review-error"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
       <button type="submit" disabled={!rating || busy || disabled || geoPending} className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-primary px-4 text-[15px] font-semibold text-primary-foreground transition-transform active:scale-[0.985] disabled:opacity-50" data-testid="button-submit-manual-review">{busy ? "Сохраняем отзыв…" : "Подтвердить визит и оставить отзыв"}</button>
-      <p className="text-center text-xs leading-5 text-muted-foreground">Отправляя оценку, вы подтверждаете, что визит состоялся.</p>
     </form>
   );
 }

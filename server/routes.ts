@@ -597,6 +597,8 @@ export async function registerRoutes(
     }
     return {
       manualPresence: true, status: session.status, reviewUrl,
+      // A link can be reopened; once the review exists, the form must not render again.
+      reviewSubmitted: booking?.hasReview === true,
       specialistName: specialist?.name || "", specialistImageUrl: specialist?.imageUrl || null,
       appointmentTime: session.start.toISOString(), appointmentTimeKnown: true, appointmentTimeIsDateOnly: false,
       expectedEnd: session.expectedEnd.toISOString(), expiresAt: session.expiresAt.toISOString(),
