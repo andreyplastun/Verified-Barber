@@ -1662,9 +1662,13 @@ export async function registerRoutes(
     }
   });
 
+  // Was public and returned every booking (~50 MB, client names and phones),
+  // which alone could exhaust the Supabase egress quota. Admin-only and bounded.
   app.get(api.bookings.list.path, async (req, res) => {
-    const bookings = await storage.getBookings();
-    res.json(bookings);
+    const userId = req.headers["x-user-id"] as string;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    if (!(await checkAdminRole(req, res, userId))) return;
+    res.json(await storage.getBookings(200));
   });
 
   app.get("/api/specialists/:id/bookings", async (req, res) => {
@@ -1673,7 +1677,16 @@ export async function registerRoutes(
     if (isNaN(id)) {
       return res.status(400).json({ message: "Invalid specialist ID" });
     }
-    const bookingsList = await storage.getBookingsForSpecialist(id);
+    // Client names and phones: only the owning specialist or an admin.
+    if (!viewerUserId) return res.status(401).json({ message: "Unauthorized" });
+    const owner = await storage.getSpecialist(id);
+    if (!owner) return res.status(404).json({ message: "Specialist not found" });
+    if (String(owner.ownerUserId ?? "") !== String(viewerUserId)) {
+      const viewer = await storage.getUser(viewerUserId);
+      if (viewer?.role !== "admin") return res.status(403).json({ message: "Forbidden" });
+    }
+    const { bookings: bookingsList, completedTotal } = await storage.getBookingsForSpecialist(id);
+    res.setHeader("X-Completed-Total", String(completedTotal));
 
     const enriched = bookingsList.map(b => {
       const isNotCompleted = !!(b as any).notCompletedAt;

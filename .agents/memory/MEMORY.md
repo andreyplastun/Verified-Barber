@@ -40,3 +40,4 @@
 - [Review request pause](review-request-pause.md) — primary requests explicitly resumed 2026-10-05; follow-ups stay off, expired messages stay expired.
 - [Photo optimization boundaries](photo-preview-policy.md) — preserve originals and old URLs; legacy backfill requires consent; fixture savings are not measured production egress savings.
 - [Merge checker false positives](merge-marker-check.md) — decorative equals-sign comment dividers can be mistaken for unresolved conflict markers.
+- [Supabase egress sources](supabase-egress-sources.md) — free 5 GB was burned by unbounded booking dumps (50 MB public list, 2 MB dashboard on focus); bound + gate PII.

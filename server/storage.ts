@@ -79,8 +79,8 @@ export interface IStorage {
   getAntifraudFlagsToday(): Promise<AntifraudFlag[]>;
   getRecentMagicLinkByPhone(specialistId: number, normalizedPhone: string, withinDays: number): Promise<boolean>;
   getClientAttemptStats(phone: string, specialistId: number): Promise<{ attemptCount: number; lastAttemptAt: Date | null; lastReviewAt: Date | null }>;
-  getBookings(): Promise<Booking[]>; // Admin/Debug
-  getBookingsForSpecialist(specialistId: number): Promise<Booking[]>;
+  getBookings(limit?: number): Promise<Booking[]>; // Admin only, bounded
+  getBookingsForSpecialist(specialistId: number, recentLimit?: number): Promise<{ bookings: Booking[]; completedTotal: number }>;
   getBookingsForClient(clientId: string): Promise<Booking[]>;
   updateBookingStatus(id: number, status: any): Promise<Booking | undefined>;
   updateBooking(id: number, data: Partial<Booking>): Promise<Booking | undefined>;
@@ -1269,18 +1269,31 @@ export class DatabaseStorage implements IStorage {
     };
   }
 
-  async getBookings(): Promise<Booking[]> {
-    return await db.select().from(bookings).orderBy(desc(bookings.createdAt));
+  async getBookings(limit = 200): Promise<Booking[]> {
+    return await db.select().from(bookings).orderBy(desc(bookings.createdAt)).limit(limit);
   }
 
-  async getBookingsForSpecialist(specialistId: number): Promise<Booking[]> {
-    // Return ALL bookings for the specialist - frontend handles filtering by status
+  async getBookingsForSpecialist(specialistId: number, recentLimit = 100): Promise<{ bookings: Booking[]; completedTotal: number }> {
+    // Bounded on purpose: busy Altegio masters have thousands of rows (~2 MB per
+    // load), which exhausted Supabase egress. All active visits + the most recent
+    // finished ones + one Altegio-sourced row (the "Altegio works" signal).
+    // Visits flagged "not completed" (>24h unfinished) pile up by the thousand for
+    // Altegio masters, so they count as history and are bounded like it.
+    const active = sql`(${bookings.status} IN ('scheduled', 'payment_pending', 'payment_requested') OR (${bookings.status} = 'ready_to_complete' AND ${bookings.notCompletedAt} IS NULL))`;
+    const recent = db.select({ id: bookings.id }).from(bookings)
+      .where(and(eq(bookings.specialistId, specialistId), sql`NOT (${active})`))
+      .orderBy(desc(bookings.appointmentTime)).limit(recentLimit);
+    const altegio = db.select({ id: bookings.id }).from(bookings)
+      .where(and(eq(bookings.specialistId, specialistId), eq(bookings.bookingSource, "altegio")))
+      .orderBy(desc(bookings.appointmentTime)).limit(1);
     const result = await db.select().from(bookings)
-      .where(eq(bookings.specialistId, specialistId))
+      .where(and(eq(bookings.specialistId, specialistId), or(active, inArray(bookings.id, recent), inArray(bookings.id, altegio))))
       .orderBy(desc(bookings.appointmentTime));
-    console.log(`[STORAGE] getBookingsForSpecialist(${specialistId}) - Found ${result.length} bookings (all statuses)`);
-    return result;
+    const [count] = await db.select({ n: sql<number>`count(*)` }).from(bookings)
+      .where(and(eq(bookings.specialistId, specialistId), eq(bookings.status, "completed")));
+    return { bookings: result, completedTotal: Number(count?.n || 0) };
   }
+
 
   async getBookingsForClient(clientId: string): Promise<Booking[]> {
     return await db.select().from(bookings)

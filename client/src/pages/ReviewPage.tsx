@@ -49,29 +49,6 @@ export default function ReviewPage() {
         }
       }
 
-      if (params?.bookingId === "auto" && specialistIdFromQuery) {
-        const res = await fetch(api.bookings.list.path, { credentials: "include" });
-        if (!res.ok) throw new Error("Failed to fetch bookings");
-        const allBookings = await res.json();
-        const autoBooking = allBookings.find((b: any) => 
-          b.specialistId === parseInt(specialistIdFromQuery) && 
-          b.status === "completed"
-        );
-        if (!autoBooking) throw new Error("No completed visits found to review");
-        
-        if (autoBooking.hasReview) {
-          // Use dedicated endpoint to get review by bookingId
-          const rRes = await fetch(`/api/reviews/by-booking/${autoBooking.id}`, {
-            credentials: "include",
-            headers: authHeaders
-          });
-          if (rRes.ok) {
-            const review = await rRes.json();
-            return { ...autoBooking, review };
-          }
-        }
-        return autoBooking;
-      }
 
       return null;
     },

@@ -60,17 +60,6 @@ export function useCreateBooking() {
   });
 }
 
-export function useBookings() {
-  return useQuery({
-    queryKey: [api.bookings.list.path],
-    queryFn: async () => {
-      const res = await fetch(api.bookings.list.path);
-      if (!res.ok) throw new Error("Failed to fetch bookings");
-      return api.bookings.list.responses[200].parse(await res.json());
-    },
-  });
-}
-
 export function useCompleteBooking() {
   const queryClient = useQueryClient();
   return useMutation({

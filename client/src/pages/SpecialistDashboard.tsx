@@ -184,15 +184,21 @@ export default function SpecialistDashboard() {
       .catch((err) => console.error('Failed to sync celebration state:', err));
   };
 
-  const { data: bookings, isLoading: loadingBookings, isError: bookingsLoadFailed, refetch: refetchBookings } = useQuery<Booking[]>({
+  const { data: bookingsData, isLoading: loadingBookings, isError: bookingsLoadFailed, refetch: refetchBookings } = useQuery<{ list: Booking[]; completedTotal: number | null }>({
     queryKey: ['/api/specialists', specialistId, 'bookings'],
     queryFn: async () => {
       const res = await fetch(`/api/specialists/${specialistId}/bookings`);
       if (!res.ok) throw new Error('Failed to fetch bookings');
-      return res.json();
+      const total = Number(res.headers.get('X-Completed-Total'));
+      return { list: await res.json(), completedTotal: Number.isFinite(total) && res.headers.has('X-Completed-Total') ? total : null };
     },
     enabled: !!specialistId,
+    // Mutations invalidate this explicitly; refetching on every return from
+    // WhatsApp re-downloaded the whole list and burned database traffic.
+    refetchOnWindowFocus: false,
+    staleTime: 60_000,
   });
+  const bookings = bookingsData?.list;
 
   const { data: reviews, isLoading: loadingReviews } = useQuery<Review[]>({
     queryKey: ['/api/reviews', specialistId, currentUser?.id],
@@ -2425,7 +2431,7 @@ export default function SpecialistDashboard() {
           <CardTitle>Завершённые визиты</CardTitle>
           {completedBookings.length > 0 && (
             <Badge variant="secondary" data-testid="badge-completed-count">
-              {completedBookings.length}
+              {bookingsData?.completedTotal ?? completedBookings.length}
             </Badge>
           )}
         </CardHeader>
