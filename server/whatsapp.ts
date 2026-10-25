@@ -989,7 +989,7 @@ export async function upgradeFollowupOnLinkOpen(bookingId: number, openedAt: Dat
   console.log(`[FOLLOWUP_UPGRADED] booking=${bookingId} msg=${existingFollowup.id} upgraded to OPENED segment, newScheduledAt=${newScheduledAt.toISOString()} deadline=${newDeadline.toISOString()} priority=10`);
 }
 
-async function checkPrimaryBeforeFollowup(msg: typeof waMessages.$inferSelect): Promise<"ok" | "wait" | "orphan"> {
+async function checkPrimaryBeforeFollowup(msg: Pick<typeof waMessages.$inferSelect, "bookingId">): Promise<"ok" | "wait" | "orphan"> {
   const [primary] = await db.select().from(waMessages)
     .where(and(
       eq(waMessages.bookingId, msg.bookingId),
@@ -1390,8 +1390,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// Idle polling re-reads the whole ready queue on every tick. At 5-10s this was
+// thousands of queue scans per day and a likely main source of Supabase egress;
+// near-future messages are still caught by the nextReady wait below.
 function idleSleep(): number {
-  return 5000 + Math.floor(Math.random() * 5000);
+  return 30000 + Math.floor(Math.random() * 30000);
 }
 
 function tickSleep(): number {
@@ -1529,8 +1532,11 @@ export async function startWaWorkerLoop(): Promise<void> {
           : ordinaryBudgetOpen
             ? sql`NOT (${confirmedPrioritySql})`
             : sql`FALSE`;
+      // Message bodies and delivery payloads are not needed to pick a candidate;
+      // the claim below re-reads the full row before sending.
+      const { messageText: _messageText, deliveryRaw: _deliveryRaw, ...candidateColumns } = getTableColumns(waMessages);
       const candidates = await db.select({
-        ...getTableColumns(waMessages),
+        ...candidateColumns,
         firstVisitStatus: bookings.firstVisitStatus,
         manualPresenceVersion: bookings.manualPresenceVersion,
       })
@@ -1947,11 +1953,15 @@ async function tryDispatchSpecialistReminder(params: {
   if (!channelBudget.allowed) return "none";
 
   let reminderUsage = await getSpecialistReminderDailyUsage();
-  const candidates = await db.select()
+  // Capped reminders can sit queued for days and are rescanned on every idle
+  // tick, so pick by metadata only and load the message body for the winner.
+  const { messageText: _reminderText, ...reminderColumns } = getTableColumns(specialistReminders);
+  const candidates = await db.select(reminderColumns)
     .from(specialistReminders)
     .where(and(
       eq(specialistReminders.status, "queued"),
       sql`${specialistReminders.scheduledAt} <= NOW()`,
+      sql`${specialistReminders.messageText} ~ '\\S'`,
     ))
     // Cold claim outreach is deliberately last behind reminders for specialists
     // who already own and actively use their profiles.
@@ -1962,14 +1972,16 @@ async function tryDispatchSpecialistReminder(params: {
     )
     .limit(100);
 
-  const reminder = candidates.find((candidate) =>
-    isDispatchableSpecialistReminderText(candidate.messageText)
-    && canDispatchSpecialistReminder(
-        candidate.reminderType as SpecialistReminderType,
-        reminderUsage,
-      ).allowed,
+  const picked = candidates.find((candidate) =>
+    canDispatchSpecialistReminder(
+      candidate.reminderType as SpecialistReminderType,
+      reminderUsage,
+    ).allowed,
   );
-  if (!reminder) return "none";
+  if (!picked) return "none";
+  const [reminder] = await db.select().from(specialistReminders)
+    .where(and(eq(specialistReminders.id, picked.id), eq(specialistReminders.status, "queued")));
+  if (!reminder || !isDispatchableSpecialistReminderText(reminder.messageText)) return "none";
 
   if (reminder.reminderType === "claim_approved") {
     const claimState = await db.execute(sql`
