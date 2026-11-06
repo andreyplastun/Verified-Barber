@@ -28,6 +28,7 @@ import { trackEvent } from "@/lib/analytics";
 import { LegalFooter } from "@/components/LegalFooter";
 import { ArrowLeft, CheckCircle } from "lucide-react";
 import { getAttribution } from "@/lib/attribution";
+import { clarityEvent } from "@/lib/clarity";
 
 const signupSchema = z.object({
   name: z.string().min(2, "Имя должно быть не менее 2 символов"),
@@ -76,6 +77,7 @@ export default function SpecialistSignup() {
       return response.json();
     },
     onSuccess: () => {
+      clarityEvent("specialist_signup_complete");
       signupEvent("signup_completed");
       setIsSuccess(true);
     },

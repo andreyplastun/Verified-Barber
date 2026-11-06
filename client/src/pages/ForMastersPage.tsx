@@ -8,6 +8,7 @@ import { LegalFooter } from "@/components/LegalFooter";
 import PhotoThumbnail from "@/components/PhotoThumbnail";
 import { getAttribution, registrationUrl } from "@/lib/attribution";
 import { useLandingAnalytics } from "@/hooks/use-landing-analytics";
+import { clarityEvent } from "@/lib/clarity";
 
 export default function ForMastersPage() {
   const searchString = useSearch();
@@ -30,6 +31,8 @@ export default function ForMastersPage() {
   }, [specialists]);
 
   const handleCtaClick = (placement: string) => {
+    if (placement === "catalog") clarityEvent("find_in_catalog_click");
+    else if (placement === "hero" || placement === "bottom") clarityEvent("create_profile_click");
     const event = placement === "catalog" ? "find_in_catalog_click" : placement === "login" ? "login_click" : "create_profile_click";
     trackEvent(event, { source: utm.source || "direct", metadata: { utm, placement, page: "/specialists" } });
   };

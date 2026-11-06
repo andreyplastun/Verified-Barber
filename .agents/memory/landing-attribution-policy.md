@@ -10,3 +10,7 @@ Use the latest explicitly UTM-tagged visit within the browser session; untagged 
 Exit events are cumulative snapshots per visit, not independent time intervals. Aggregate maximum visible time and scroll depth per visit before computing daily totals.
 **Why:** mobile tab hiding is often the last reliable lifecycle signal, but visitors may resume the same page afterward.
 **How to apply:** never sum raw exit snapshots; background-tab time is excluded. Historical events without this metadata cannot supply time-on-page.
+
+Clarity is now site-wide, initialized once only in production on Rateus domains, not limited to the landing and registration routes.
+**Why:** the user explicitly replaced the earlier route-limited setup with an npm-based application-start integration.
+**How to apply:** retain standard input masking and registration masking; never initialize in Replit previews.

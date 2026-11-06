@@ -19,11 +19,12 @@ MAX(scrollDepth), never SUM. The visible bottom edge determines depth.
 Browsers can terminate processes without sending any exit event; no web tracker
 can guarantee exit delivery in that case.
 
-Clarity: configure public build variable VITE_CLARITY_PROJECT_ID and rebuild.
-Without an ID no script is loaded. Only /specialists and /create-profile load it.
-Registration DOM is explicitly masked. Leaving these routes after loading the
-script uses a full reload before rendering other pages, preventing Clarity from
-following SPA navigation into private screens.
+Clarity uses @microsoft/clarity, initialized once from main.tsx for production
+builds on rateus.kz or its subdomains only. Dev/Replit previews never initialize
+the tracking script. The project ID is public and configured in lib/clarity.ts.
+UTM tags refresh on SPA navigation and survive via sessionStorage. Tracking now
+covers the production site, without forced reloads. Standard input masking and
+the explicit registration DOM mask are retained. No identify or unmask calls.
 
 Startup adds nullable analytics_events.metadata and users.acquisition separately
 from legacy migrations. No data is deleted. These columns must exist before
