@@ -4,6 +4,7 @@ type AnalyticsPayload = {
   magicLinkId?: number;
   value?: string;
   source?: string;
+  metadata?: Record<string, unknown>;
 };
 
 // Persistent anonymous browser id — lets us count unique visitors without accounts.

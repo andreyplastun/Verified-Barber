@@ -135,6 +135,12 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Independent of legacy migrations: an unrelated duplicate-index failure
+  // must not skip columns required by analytics and account creation.
+  await pool.query(`
+    ALTER TABLE analytics_events ADD COLUMN IF NOT EXISTS metadata jsonb;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS acquisition jsonb;
+  `);
   // Auto-migrate: ensure all new columns exist BEFORE any queries
   try {
     console.log("[STARTUP] Running auto-migrations...");

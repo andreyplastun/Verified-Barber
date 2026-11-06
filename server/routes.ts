@@ -1,3 +1,4 @@
+import { landingMetadataSchema } from "../shared/landing-analytics";
 import type { Express, Response } from "express";
 import { reviewAttemptSuppression, reviewClientEligibility } from "./review-invitation-policy";
 import { recoverManualPresenceReview } from "./manual-presence-review-recovery";
@@ -1289,6 +1290,7 @@ export async function registerRoutes(
         email,
         password,
         email_confirm: true,
+        app_metadata: { acquisition: result.data.attribution ?? {} },
       });
 
       if (authError || !authData.user) {
@@ -1332,6 +1334,7 @@ export async function registerRoutes(
 
         await storage.createUser({
           id: authUserId,
+          acquisition: result.data.attribution ?? {},
           email: email.toLowerCase(),
           role: "specialist",
           specialistId: specialist.id,
@@ -2523,6 +2526,10 @@ export async function registerRoutes(
         // Master landing funnel
         'master_landing_view',
         'master_landing_cta_click',
+        'create_profile_click',
+        'find_in_catalog_click',
+        'login_click',
+        'master_landing_exit',
         'signup_submit_attempt',
         'signup_completed',
         // Soft activation events (v117)
@@ -2551,6 +2558,7 @@ export async function registerRoutes(
       
       await storage.trackAnalyticsEvent({
         eventType,
+        metadata: req.body.metadata === undefined ? undefined : landingMetadataSchema.parse(req.body.metadata),
         magicLinkId,
         bookingId,
         specialistId,

@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { claimPhoneSchema } from "@shared/claim-phone";
+import { getAttribution } from "@/lib/attribution";
+import { trackEvent } from "@/lib/analytics";
 
 export function Navigation() {
   const [location, setLocation] = useLocation();
@@ -164,6 +166,11 @@ export function Navigation() {
           ) : (
             <Link
               href="/login"
+              onClick={() => {
+                if (location !== "/specialists") return;
+                const utm = getAttribution();
+                trackEvent("login_click", { source: utm.source || "direct", metadata: { utm, page: "/specialists", placement: "login" } });
+              }}
               className="flex flex-col items-center justify-center space-y-1 w-16 h-full cursor-pointer transition-colors duration-200 text-muted-foreground hover:text-foreground"
               data-testid="button-login"
             >

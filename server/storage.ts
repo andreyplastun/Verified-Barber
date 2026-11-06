@@ -11,7 +11,7 @@ const NEW_CLIENT_PRIORITY_SQL = 100;
 
 export interface IStorage {
   // Users
-  createUser(user: { id: string; email: string; role?: string; specialistId?: number }): Promise<User>;
+  createUser(user: { id: string; email: string; role?: string; specialistId?: number; acquisition?: User["acquisition"] }): Promise<User>;
   getUser(id: string): Promise<User | undefined>;
   getUserByEmail(email: string): Promise<User | undefined>;
   getOrCreateUserByEmail(email: string): Promise<User>;
@@ -122,6 +122,7 @@ export interface IStorage {
   
   // Analytics
   trackAnalyticsEvent(event: {
+    metadata?: Record<string, unknown>;
     eventType: string;
     magicLinkId?: number;
     bookingId?: number;
@@ -286,7 +287,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Users
-  async createUser(user: { id: string; email: string; role?: string; specialistId?: number }): Promise<User> {
+  async createUser(user: { id: string; email: string; role?: string; specialistId?: number; acquisition?: User["acquisition"] }): Promise<User> {
     let specialistId = user.specialistId || null;
     
     // Auto-map specialist if role is 'specialist' and no specialistId provided
@@ -301,6 +302,7 @@ export class DatabaseStorage implements IStorage {
     }
     
     const [newUser] = await db.insert(users).values({
+      acquisition: user.acquisition,
       id: user.id,
       email: user.email,
       role: (user.role as "client" | "specialist") || "client",
@@ -1823,6 +1825,7 @@ export class DatabaseStorage implements IStorage {
 
   // Analytics
   async trackAnalyticsEvent(event: {
+    metadata?: Record<string, unknown>;
     eventType: string;
     magicLinkId?: number;
     bookingId?: number;
@@ -1834,6 +1837,7 @@ export class DatabaseStorage implements IStorage {
     anonId?: string;
   }): Promise<void> {
     await db.insert(analyticsEvents).values({
+      metadata: event.metadata,
       eventType: event.eventType,
       magicLinkId: event.magicLinkId,
       bookingId: event.bookingId,

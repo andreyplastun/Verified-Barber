@@ -6,20 +6,19 @@ import { useSpecialists } from "@/hooks/use-specialists";
 import { trackEvent } from "@/lib/analytics";
 import { LegalFooter } from "@/components/LegalFooter";
 import PhotoThumbnail from "@/components/PhotoThumbnail";
+import { getAttribution, registrationUrl } from "@/lib/attribution";
+import { useLandingAnalytics } from "@/hooks/use-landing-analytics";
 
 export default function ForMastersPage() {
   const searchString = useSearch();
   const { data: specialists } = useSpecialists();
 
-  const utmSource = useMemo(() => {
-    const params = new URLSearchParams(searchString);
-    return params.get("utm_source") || params.get("utm") || undefined;
-  }, [searchString]);
+  const utm = useMemo(() => getAttribution(searchString), [searchString]);
+  useLandingAnalytics(utm);
 
   useEffect(() => {
-    trackEvent("master_landing_view", { source: utmSource || "direct" });
     window.scrollTo(0, 0);
-  }, [utmSource]);
+  }, []);
 
   // Social proof: top specialists with the most reviews
   const topSpecialists = useMemo(() => {
@@ -30,8 +29,9 @@ export default function ForMastersPage() {
       .slice(0, 3);
   }, [specialists]);
 
-  const handleCtaClick = (_place: string) => {
-    trackEvent("master_landing_cta_click", { source: utmSource || "direct" });
+  const handleCtaClick = (placement: string) => {
+    const event = placement === "catalog" ? "find_in_catalog_click" : placement === "login" ? "login_click" : "create_profile_click";
+    trackEvent(event, { source: utm.source || "direct", metadata: { utm, placement, page: "/specialists" } });
   };
 
   const benefits = [
@@ -77,7 +77,7 @@ export default function ForMastersPage() {
             Уходишь из салона — репутация уходит с тобой. Профиль, рейтинг и каждый отзыв принадлежат вам, а не месту работы.
           </p>
           <Link
-            href="/create-profile"
+            href={registrationUrl(utm)}
             onClick={() => handleCtaClick("hero")}
             className="inline-flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground font-semibold rounded-xl px-6 py-4 hover:opacity-90 transition-opacity"
             data-testid="button-master-cta-hero"
@@ -161,7 +161,7 @@ export default function ForMastersPage() {
           </p>
           <Link
             href="/"
-            onClick={() => handleCtaClick("find_self")}
+            onClick={() => handleCtaClick("catalog")}
             className="text-sm font-semibold text-primary inline-flex items-center gap-1"
             data-testid="link-master-find-self"
           >
@@ -173,7 +173,7 @@ export default function ForMastersPage() {
       {/* Final CTA */}
       <section className="px-5 pb-10 max-w-lg mx-auto text-center">
         <Link
-          href="/create-profile"
+          href={registrationUrl(utm)}
           onClick={() => handleCtaClick("bottom")}
           className="inline-flex items-center justify-center gap-2 w-full bg-primary text-primary-foreground font-semibold rounded-xl px-6 py-4 hover:opacity-90 transition-opacity"
           data-testid="button-master-cta-bottom"

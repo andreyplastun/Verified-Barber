@@ -27,6 +27,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { trackEvent } from "@/lib/analytics";
 import { LegalFooter } from "@/components/LegalFooter";
 import { ArrowLeft, CheckCircle } from "lucide-react";
+import { getAttribution } from "@/lib/attribution";
 
 const signupSchema = z.object({
   name: z.string().min(2, "Имя должно быть не менее 2 символов"),
@@ -46,9 +47,11 @@ type SignupFormData = z.infer<typeof signupSchema>;
 export default function SpecialistSignup() {
   const [, setLocation] = useLocation();
   const [isSuccess, setIsSuccess] = useState(false);
+  const [utm] = useState(() => getAttribution());
+  const signupEvent = (name: string) => trackEvent(name, { source: utm.source || "direct", metadata: { utm, page: "/create-profile" } });
 
   useEffect(() => {
-    trackEvent("signup_page_view");
+    signupEvent("signup_page_view");
   }, []);
 
   const form = useForm<SignupFormData>({
@@ -69,11 +72,11 @@ export default function SpecialistSignup() {
 
   const signupMutation = useMutation({
     mutationFn: async (data: SignupFormData) => {
-      const response = await apiRequest("POST", "/api/specialist-signup", data);
+      const response = await apiRequest("POST", "/api/specialist-signup", { ...data, attribution: utm });
       return response.json();
     },
     onSuccess: () => {
-      trackEvent("signup_completed");
+      signupEvent("signup_completed");
       setIsSuccess(true);
     },
     onError: (error: Error) => {
@@ -121,7 +124,7 @@ export default function SpecialistSignup() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background" data-clarity-mask="true">
       <div className="max-w-lg mx-auto p-4 pb-24">
         <div className="flex items-center gap-3 mb-6">
           <Button
@@ -369,7 +372,7 @@ export default function SpecialistSignup() {
               type="submit"
               className="w-full"
               disabled={signupMutation.isPending}
-              onClick={() => trackEvent("signup_submit_attempt")}
+              onClick={() => signupEvent("signup_submit_attempt")}
               data-testid="button-submit"
             >
               {signupMutation.isPending ? "Отправка..." : "Отправить заявку"}

@@ -42,6 +42,7 @@ export const categoryLabels: Record<string, string> = {
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   email: text("email").notNull().unique(),
+  acquisition: jsonb("acquisition").$type<{ source?: string; medium?: string; campaign?: string; content?: string }>(),
   role: text("role", { enum: ["client", "specialist", "admin"] }).default("client").notNull(),
   specialistId: integer("specialist_id"),
   onboardingCompleted: boolean("onboarding_completed").default(false).notNull(),
@@ -263,6 +264,7 @@ export const magicLinks = pgTable("magic_links", {
 // Analytics events for magic links tracking
 export const analyticsEvents = pgTable("analytics_events", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   eventType: text("event_type").notNull(), // 'magic_link_opened', 'review_screen_loaded'
   magicLinkId: integer("magic_link_id"), // References magic_links.id
   bookingId: integer("booking_id"), // References bookings.id
@@ -409,6 +411,12 @@ export type CreateSpecialistRequest = z.infer<typeof insertSpecialistSchema>;
 
 // Schema for specialist self-signup (minimal required fields)
 export const specialistSignupSchema = z.object({
+  attribution: z.object({
+    source: z.string().max(200).optional(),
+    medium: z.string().max(200).optional(),
+    campaign: z.string().max(200).optional(),
+    content: z.string().max(200).optional(),
+  }).optional(),
   name: z.string().min(2, "Имя должно быть не менее 2 символов"),
   email: z.string().email("Введите корректный email"),
   password: z.string().min(6, "Пароль должен быть не менее 6 символов"),

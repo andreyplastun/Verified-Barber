@@ -1,3 +1,4 @@
+import { LandingClarity } from "@/components/LandingClarity";
 import { useEffect } from "react";
 import { Switch, Route, Redirect, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
@@ -230,7 +231,7 @@ function App() {
       <ThemeProvider>
         <AuthProvider>
           <TooltipProvider>
-            <AppContent />
+            <LandingClarity><AppContent /></LandingClarity>
             <Toaster />
           </TooltipProvider>
         </AuthProvider>
