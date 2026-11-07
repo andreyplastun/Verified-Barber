@@ -21,13 +21,14 @@ export default function ForMastersPage() {
     window.scrollTo(0, 0);
   }, []);
 
-  // Social proof: top specialists with the most reviews
+  // Keep the strongest eligible Almaty example first, then rank by reviews.
   const topSpecialists = useMemo(() => {
     if (!specialists) return [];
-    return [...specialists]
+    const ranked = [...specialists]
       .filter((s: any) => (s.reviewCount ?? 0) > 0 && s.imageUrl && (s.trustedRating ?? 0) >= 4)
-      .sort((a: any, b: any) => (b.reviewCount ?? 0) - (a.reviewCount ?? 0))
-      .slice(0, 3);
+      .sort((a: any, b: any) => (b.reviewCount ?? 0) - (a.reviewCount ?? 0));
+    const local = ranked.find(s => ["алматы", "almaty"].includes((s.city || "").trim().toLowerCase()));
+    return (local ? [local, ...ranked.filter(s => s.id !== local.id)] : ranked).slice(0, 3);
   }, [specialists]);
 
   const handleCtaClick = (placement: string) => {
@@ -40,30 +41,30 @@ export default function ForMastersPage() {
   const benefits = [
     {
       icon: MessageCircle,
-      title: "Отзывы собираются сами",
-      text: "После каждого визита клиент получает ссылку в WhatsApp. Вам ничего не нужно просить — отзывы копятся автоматически.",
+      title: "Rateus отправляет запрос на отзыв",
+      text: "Подключи Altegio или добавь визит вручную. Rateus отправит клиенту ссылку в WhatsApp — тебе не нужно писать ему самому.",
     },
     {
       icon: Star,
-      title: "Рейтинг, который остаётся с вами",
-      text: "Смените салон, город или уйдёте на себя — профиль, отзывы и рейтинг никуда не денутся. Это ваша репутация, а не салона.",
+      title: "Рейтинг, который остаётся с тобой",
+      text: "Твой профиль объединяет отзывы о твоей работе. Где бы ты ни работал, клиентам доступен твой рейтинг и опыт.",
     },
     {
       icon: Users,
-      title: "Клиенты находят вас в каталоге",
-      text: "Люди выбирают мастера по реальным отзывам. Высокий рейтинг — вас видят первым.",
+      title: "Клиенты находят тебя в каталоге",
+      text: "Люди выбирают мастера по реальным отзывам. Твой профиль помогает им узнать о твоей работе ещё до записи.",
     },
     {
       icon: ShieldCheck,
       title: "Отзывы, которым верят",
-      text: "Оставить отзыв может только реальный клиент после визита. Накрутить нельзя — поэтому вашему рейтингу доверяют.",
+      text: "Отзывы привязаны к визитам клиентов. Это помогает новым клиентам выбрать тебя по реальному опыту других.",
     },
   ];
 
   const steps = [
-    "Создайте профиль — 2 минуты",
-    "Подключите свою запись (Altegio) или добавляйте визиты вручную",
-    "Клиенты оценивают визиты — рейтинг растёт сам",
+    "Создай профиль — 2 минуты",
+    "Подключи Altegio, если есть доступ, или добавь визит и номер клиента вручную",
+    "Rateus отправит запрос, а клиент сможет оставить тебе отзыв",
   ];
 
   return (
@@ -73,11 +74,11 @@ export default function ForMastersPage() {
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-xs font-semibold tracking-widest uppercase text-primary mb-3">Rateus — для мастеров</p>
           <h1 className="text-3xl font-bold leading-tight mb-3">
-            Ты растишь базу клиентов.<br />
-            Теперь отзывы — твои.
+            Отзывы твоих клиентов — твои.<br />
+            Не барбершопа.
           </h1>
           <p className="text-muted-foreground text-sm mb-6">
-            Уходишь из салона — репутация уходит с тобой. Профиль, рейтинг и каждый отзыв принадлежат вам, а не месту работы.
+            Клиент после визита оставляет отзыв тебе. Твой профиль, рейтинг и отзывы остаются с тобой, где бы ты ни работал.
           </p>
           <Link
             href={registrationUrl(utm)}
@@ -124,6 +125,23 @@ export default function ForMastersPage() {
         </section>
       )}
 
+      <section className="px-5 pb-8 max-w-lg mx-auto" aria-label="Частые вопросы">
+        <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold mb-1">Нет доступа к записи барбершопа?</h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">Добавь визит и номер клиента вручную — Rateus отправит запрос на отзыв.</p>
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold mb-1">Что получит клиент?</h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">Сообщение в WhatsApp со ссылкой на отзыв.</p>
+          </div>
+          <div>
+            <h2 className="text-sm font-semibold mb-1">Это бесплатно?</h2>
+            <p className="text-xs text-muted-foreground leading-relaxed">Да, без оплаты и карты.</p>
+          </div>
+        </div>
+      </section>
+
       {/* Benefits */}
       <section className="px-5 pb-8 max-w-lg mx-auto space-y-3">
         {benefits.map((b) => (
@@ -157,10 +175,10 @@ export default function ForMastersPage() {
         <div className="bg-primary/5 border border-primary/20 rounded-xl p-4">
           <p className="text-sm font-semibold mb-1 flex items-center gap-2">
             <CheckCircle size={16} className="text-primary" />
-            Возможно, вы уже на Rateus
+            Возможно, ты уже на Rateus
           </p>
           <p className="text-xs text-muted-foreground mb-3">
-            Если ваш салон подключён к Rateus, ваш профиль с отзывами уже существует. Найдите себя в каталоге и заберите его.
+            Если твой барбершоп подключён к Rateus, твой профиль с отзывами уже может быть в каталоге. Найди себя и забери профиль.
           </p>
           <Link
             href="/"
