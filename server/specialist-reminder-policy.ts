@@ -34,11 +34,11 @@ export async function claimSpecialistReminderSlot(
 ): Promise<ReminderClaimDecision> {
   return repository.runSerialized(async (store) => {
     const usage = await store.getUsage();
-    if (usage.totalReserved >= SPECIALIST_REMINDER_DAILY_LIMIT) {
+    if (reminderType !== "claim_approved" && usage.totalReserved >= SPECIALIST_REMINDER_DAILY_LIMIT) {
       return { id: null, blockedBy: "daily_cap" };
     }
     if (
-      (reminderType === "claim_ownership" || reminderType === "claim_approved")
+      reminderType === "claim_ownership"
       && usage.claimReserved >= CLAIM_REMINDER_DAILY_LIMIT
     ) {
       return { id: null, blockedBy: "claim_cap" };
@@ -60,11 +60,13 @@ export function canDispatchSpecialistReminder(
   reminderType: SpecialistReminderType,
   usage: SpecialistDispatchUsage,
 ): { allowed: true } | { allowed: false; reason: "daily_cap" | "claim_cap" } {
+  // Requested approval replies consume only the shared channel budget.
+  if (reminderType === "claim_approved") return { allowed: true };
   if (usage.specialistSent >= SPECIALIST_REMINDER_DAILY_LIMIT) {
     return { allowed: false, reason: "daily_cap" };
   }
   if (
-    (reminderType === "claim_ownership" || reminderType === "claim_approved")
+    reminderType === "claim_ownership"
     && usage.claimSent >= CLAIM_REMINDER_DAILY_LIMIT
   ) {
     return { allowed: false, reason: "claim_cap" };

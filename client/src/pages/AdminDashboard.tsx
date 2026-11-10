@@ -1370,7 +1370,7 @@ export default function AdminDashboard() {
                           }`} data-testid={`claim-notification-status-${claim.id}`}>
                             {claim.notificationStatus === "sent" && "WhatsApp отправлен"}
                             {claim.notificationStatus === "sending" && "WhatsApp отправляется"}
-                            {claim.notificationStatus === "queued" && "WhatsApp в очереди (ещё не доставлен)"}
+                            {claim.notificationStatus === "queued" && "WhatsApp: приоритетная отправка, ожидает лимита или интервала"}
                             {claim.notificationStatus === "failed" && "Автоотправка WhatsApp не удалась"}
                             {claim.notificationStatus === "skipped" && "Автоотправка WhatsApp отменена"}
                             {!claim.notificationStatus && "Автоотправка не запускалась"}
@@ -1408,7 +1408,7 @@ export default function AdminDashboard() {
                                 if (!normalizedPhone) return;
                                 const baseUrl = window.location.origin;
                                 const link = `${baseUrl}/claim/${claim.claimToken}`;
-                                const text = `Здравствуйте! Ваш запрос на профиль «${claim.specialistName}» на WHO одобрен. Перейдите по ссылке для привязки: ${link}`;
+                                const text = `Здравствуйте! Ваш запрос на профиль «${claim.specialistName}» на Rateus одобрен. Перейдите по ссылке для привязки: ${link}`;
                                 window.open(`https://wa.me/${normalizedPhone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, "_blank");
                               }}
                               data-testid={`button-whatsapp-claim-${claim.id}`}

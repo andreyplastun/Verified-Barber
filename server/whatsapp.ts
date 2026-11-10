@@ -1390,6 +1390,22 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const approvalWakeListeners = new Set<() => void>();
+export function wakeClaimApprovalDispatcher(): void {
+  for (const wake of approvalWakeListeners) wake();
+}
+function dispatcherSleep(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    const finish = () => {
+      clearTimeout(timer);
+      approvalWakeListeners.delete(finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    approvalWakeListeners.add(finish);
+  });
+}
+
 // Idle polling re-reads the whole ready queue on every tick. At 5-10s this was
 // thousands of queue scans per day and a likely main source of Supabase egress;
 // near-future messages are still caught by the nextReady wait below.
@@ -1516,6 +1532,15 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       const currentNow = new Date();
+      const approvalDispatch = await tryDispatchSpecialistReminder({
+        ordinaryLimit: effectiveLimit,
+        priorityLimit: effectivePriorityLimit,
+        hardLimit: effectiveHardLimit,
+      }, true);
+      if (approvalDispatch === "sent") {
+        workerConsecutiveFailures = 0;
+        continue;
+      }
       let usage = await getWaDailyUsage();
       const hardBudgetOpen = usage.totalSent < effectiveHardLimit;
       const priorityBudgetOpen = hardBudgetOpen && usage.prioritySent < effectivePriorityLimit;
@@ -1740,7 +1765,7 @@ export async function startWaWorkerLoop(): Promise<void> {
         });
         if (specialistDispatch === "sent") {
           workerConsecutiveFailures = 0;
-          await sleep(Math.min(getMinIntervalMs(), tickSleep()));
+          await dispatcherSleep(Math.min(getMinIntervalMs(), tickSleep()));
           continue;
         }
         if (specialistDispatch === "preempted") continue;
@@ -1768,11 +1793,11 @@ export async function startWaWorkerLoop(): Promise<void> {
         if (nextReadyAt) {
           const waitUntil = new Date(nextReadyAt).getTime() - Date.now();
           if (waitUntil > 0 && waitUntil < 60000) {
-            await sleep(waitUntil + 500);
+            await dispatcherSleep(waitUntil + 500);
             continue;
           }
         }
-        await sleep(idleSleep());
+        await dispatcherSleep(idleSleep());
         continue;
       }
 
@@ -1816,6 +1841,10 @@ export async function startWaWorkerLoop(): Promise<void> {
       let rateLimitSkipped = false;
       let preemptedByPriority = false;
       while (true) {
+        if (await hasReadyClaimApproval()) {
+          preemptedByPriority = true;
+          break;
+        }
         const lastSentMs = await getLastSentAt();
         const now = Date.now();
 
@@ -1835,7 +1864,7 @@ export async function startWaWorkerLoop(): Promise<void> {
 
         const chunkMs = Math.min(waitTime, tickSleep());
         console.log(`[WA_RATE_LIMIT] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} — sleeping ${Math.round(chunkMs / 1000)}s chunk (remaining=${Math.round(waitTime / 1000)}s, minInterval=${Math.round(minInterval / 60000)}min)`);
-        await sleep(chunkMs);
+        await dispatcherSleep(chunkMs);
         if (!isPriorityNewClient) {
           const [higherPriority] = await db.select({ id: waMessages.id })
             .from(waMessages)
@@ -1910,7 +1939,7 @@ export async function startWaWorkerLoop(): Promise<void> {
         // Re-check the queue frequently so a newly-arrived priority client is
         // not hidden behind a long normal-message sleep. The last-sent guard
         // above still enforces the selected message's interval.
-        await sleep(Math.min(minInterval, tickSleep()));
+          await dispatcherSleep(Math.min(minInterval, tickSleep()));
       } else {
         const [refreshed] = await db.select().from(waMessages).where(eq(waMessages.id, msg.id));
         if (refreshed?.status === "sending") {
@@ -1940,7 +1969,7 @@ async function tryDispatchSpecialistReminder(params: {
   ordinaryLimit: number;
   priorityLimit: number;
   hardLimit: number;
-}): Promise<"sent" | "none" | "preempted"> {
+}, approvalsOnly = false): Promise<"sent" | "none" | "preempted"> {
   if (!isSpecialistReminderWindowOpen()) return "none";
 
   let channelUsage = await getWaDailyUsage();
@@ -1960,13 +1989,16 @@ async function tryDispatchSpecialistReminder(params: {
     .from(specialistReminders)
     .where(and(
       eq(specialistReminders.status, "queued"),
+      approvalsOnly
+        ? eq(specialistReminders.reminderType, "claim_approved")
+        : sql`${specialistReminders.reminderType} <> 'claim_approved'`,
       sql`${specialistReminders.scheduledAt} <= NOW()`,
       sql`${specialistReminders.messageText} ~ '\\S'`,
     ))
-    // Cold claim outreach is deliberately last behind reminders for specialists
-    // who already own and actively use their profiles.
+    // Approval replies are dispatched in a separate pass before client messages.
+    // Cold outreach remains last among ordinary specialist reminders.
     .orderBy(
-      sql`CASE WHEN ${specialistReminders.reminderType} IN ('claim_ownership', 'claim_approved') THEN 1 ELSE 0 END`,
+      sql`CASE WHEN ${specialistReminders.reminderType} = 'claim_ownership' THEN 1 ELSE 0 END`,
       asc(specialistReminders.scheduledAt),
       asc(specialistReminders.id),
     )
@@ -2011,6 +2043,7 @@ async function tryDispatchSpecialistReminder(params: {
 
   const minInterval = getMinIntervalMs();
   while (true) {
+    if (!approvalsOnly && await hasReadyClaimApproval()) return "preempted";
     const lastSentMs = await getLastSentAt();
     const now = Date.now();
     if (lastSentMs <= 0 || now >= lastSentMs + minInterval) break;
@@ -2018,9 +2051,9 @@ async function tryDispatchSpecialistReminder(params: {
     const waitTime = getChannelRateLimitWaitMs(lastSentMs, now, minInterval);
     const chunkMs = Math.min(waitTime, tickSleep());
     console.log(`[WA_RATE_LIMIT] specialist_reminder=${reminder.id} specialist=${reminder.specialistId} — sleeping ${Math.round(chunkMs / 1000)}s chunk (remaining=${Math.round(waitTime / 1000)}s, minInterval=${Math.round(minInterval / 60000)}min)`);
-    await sleep(chunkMs);
+    await dispatcherSleep(chunkMs);
 
-    if (await hasReadyClientMessage()) {
+    if (!approvalsOnly && (await hasReadyClaimApproval() || await hasReadyClientMessage())) {
       console.log(`[WA_PREEMPT] specialist_reminder=${reminder.id} yielding rate-limit wait to ready client message`);
       return "preempted";
     }
@@ -2130,6 +2163,21 @@ async function hasReadyClientMessage(): Promise<boolean> {
   return !!clientMessage;
 }
 
+async function hasReadyClaimApproval(): Promise<boolean> {
+  if (!isSpecialistReminderWindowOpen()) return false;
+  const result = await db.execute(sql`
+    SELECT 1 FROM specialist_reminders r
+    JOIN claim_requests c ON c.id = r.claim_request_id
+    JOIN specialists s ON s.id = c.specialist_id
+    WHERE r.reminder_type = 'claim_approved' AND r.status = 'queued'
+      AND r.scheduled_at <= NOW() AND NULLIF(BTRIM(r.message_text), '') IS NOT NULL
+      AND c.status = 'approved' AND c.token_used_at IS NULL
+      AND c.token_expires_at > NOW() AND s.owner_user_id IS NULL
+    LIMIT 1
+  `);
+  return result.rows.length > 0;
+}
+
 async function finishSpecialistReminder(
   reminderId: number,
   status: "sent" | "failed" | "skipped",
@@ -2157,8 +2205,8 @@ async function getSpecialistReminderDailyUsage(): Promise<{
 }> {
   const result = await db.execute(sql`
     SELECT
-      COUNT(*)::int AS specialist_sent,
-      COUNT(*) FILTER (WHERE reminder_type IN ('claim_ownership', 'claim_approved'))::int AS claim_sent
+      COUNT(*) FILTER (WHERE reminder_type <> 'claim_approved')::int AS specialist_sent,
+      COUNT(*) FILTER (WHERE reminder_type = 'claim_ownership')::int AS claim_sent
     FROM specialist_reminders
     WHERE status = 'sent'
       AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'

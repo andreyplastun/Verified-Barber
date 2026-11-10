@@ -24,7 +24,7 @@ import { getAltegioInvalidatedBookingStatus } from "./altegio-attendance-policy"
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
 import { appConfig } from "@shared/schema";
-import { enqueueReviewMessage, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage } from "./whatsapp";
+import { enqueueReviewMessage, getWaSettings, setWaSetting, testAssistBotConnection, sendWaMessageNow, backfillMissingReminders, sendDirectWaMessage, upgradeFollowupOnLinkOpen, handleIncomingMessage, isOptOutMessage, wakeClaimApprovalDispatcher } from "./whatsapp";
 import { getSpecialistAchievements } from "./achievements";
 import { authenticateRequest } from "./auth";
 import {
@@ -4070,7 +4070,7 @@ ${magicLink}`;
           return res.json({
             claim: existing,
             claimLink,
-            whatsappText: `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на WHO одобрен. Перейдите по ссылке для привязки: ${claimLink}`,
+            whatsappText: `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на Rateus одобрен. Перейдите по ссылке для привязки: ${claimLink}`,
              notificationStatus: (await storage.getClaimRequests())
                .find((claim) => claim.id === existing.id)?.notificationStatus || null,
              newlyApproved: false,
@@ -4097,13 +4097,14 @@ ${magicLink}`;
           phone: existing.phone,
           buildMessage: (approvedToken) => {
             const link = `${baseUrl}/claim/${approvedToken}`;
-            return `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на WHO одобрен. Перейдите по ссылке для привязки: ${link}`;
+            return `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на Rateus одобрен. Перейдите по ссылке для привязки: ${link}`;
           },
         },
       );
       const claimLink = `${baseUrl}/claim/${token}`;
+      if (notificationStatus === "queued") wakeClaimApprovalDispatcher();
 
-      const whatsappText = `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на WHO одобрен. Перейдите по ссылке для привязки: ${claimLink}`;
+      const whatsappText = `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на Rateus одобрен. Перейдите по ссылке для привязки: ${claimLink}`;
 
       res.json({ 
         claim, 

@@ -178,8 +178,8 @@ async function claimReminder(
         getUsage: async () => {
           const usage = await tx.execute(sql`
             SELECT
-              COUNT(*)::int AS total_reserved,
-              COUNT(*) FILTER (WHERE reminder_type IN ('claim_ownership', 'claim_approved'))::int AS claim_reserved
+              COUNT(*) FILTER (WHERE reminder_type <> 'claim_approved')::int AS total_reserved,
+              COUNT(*) FILTER (WHERE reminder_type = 'claim_ownership')::int AS claim_reserved
             FROM specialist_reminders
             WHERE (
               status = 'sent'

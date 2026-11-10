@@ -71,7 +71,11 @@ test("cold claim reminders have a stricter daily cap", () => {
   assert.deepEqual(canDispatchSpecialistReminder("claim_approved", {
     specialistSent: CLAIM_REMINDER_DAILY_LIMIT,
     claimSent: CLAIM_REMINDER_DAILY_LIMIT,
-  }), { allowed: false, reason: "claim_cap" });
+  }), { allowed: true });
+  assert.deepEqual(canDispatchSpecialistReminder("claim_approved", {
+    specialistSent: SPECIALIST_REMINDER_DAILY_LIMIT,
+    claimSent: CLAIM_REMINDER_DAILY_LIMIT,
+  }), { allowed: true });
 });
 
 test("parallel scans reserve a dedupe key only once", async () => {

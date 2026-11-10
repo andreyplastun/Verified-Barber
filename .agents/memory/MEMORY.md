@@ -34,6 +34,7 @@
 - [Advisory locks with small pools](advisory-lock-pool-safety.md) — never hold a session lock on one pooled connection while dependent work borrows others; serialize inside one transaction/connection.
 - [WA specialist reminder dispatch](wa-specialist-reminder-dispatch.md) — specialist nudges must use the global channel dispatcher; cold claims keep a stricter cap and lowest priority.
 - [WA visible daily limit](wa-visible-daily-limit.md) — admin “Лимит / день” is the absolute total; priority changes order only and must never add hidden sends.
+- [Approval reply priority](claim-approval-priority.md) — requested approval replies precede all other WA traffic, within shared cap and spacing; not cold outreach.
 - [Railway startup index timeout](railway-startup-index-timeout.md) — awaited concurrent indexes can miss Railway health timeout; bound index waits and gate only required columns.
 - [Claim links require fresh auth](claim-fresh-auth.md) — never bind to an ambient session; require claim-scoped login, reject admins server-side, then reload the dashboard after binding.
 - [AssistBot chat origin](assistbot-chat-origin.md) — a test profile used the service number; webhook success does not prove access to a master's personal WhatsApp.
