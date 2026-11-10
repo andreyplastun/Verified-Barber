@@ -27,6 +27,12 @@ Manual clients should land directly on a rating form, with optional geolocation 
 
 **How to apply:** Do not confirm attendance on page load or on granting GPS permission. Preserve the confirmation/trust checks behind the final submit action and allow retries without losing the typed review.
 
+Make the one-time geolocation action prominent, without small-print paragraphs. If the client submits without having chosen, ask explicitly to share once or continue without location. A refusal must still allow the review.
+
+**Why:** The user found the previous low-emphasis optional-location section effectively invisible and explicitly requested a decision prompt for people who skipped it.
+
+**How to apply:** Distinguish an untouched choice from a refusal or attempted request. Never auto-request GPS or imply that the app controls how long the browser remembers permission. Retain typed review data while choosing.
+
 For new manual visits ending outside the 10:00–20:00 Almaty sending window, defer to the next opening and disable geolocation entirely.
 
 **Why:** The user approved next-morning requests without geo instead of extending evening sending hours. The prior short expiry made evening test visits impossible to send.

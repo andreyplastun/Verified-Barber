@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { AlertCircle, MapPin } from "lucide-react";
 import { InteractiveStarRating } from "@/components/ui/animations";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { submitManualVisitReview } from "@/lib/manualVisitReview";
 import { getFreshBrowserLocation, type BrowserLocation, type GeoStatus } from "@/pages/manualPresenceLocation";
 
@@ -18,7 +19,7 @@ type LocationAttempt = { id: string; expiresAt: number; receivedAt: number };
 const expiredLocationMessage = "Время проверки местоположения истекло. Отзыв можно отправить без геолокации.";
 
 const geoMessages: Record<GeoStatus, string> = {
-  success: "Местоположение получено. Данные будут отправлены вместе с отзывом; результат проверки определит сервис.",
+  success: "Геопозиция получена",
   unsupported: "Браузер не поддерживает геолокацию. Отзыв можно отправить без неё.",
   insecure: "На этом соединении геолокация недоступна. Отзыв можно отправить без неё.",
   denied: "Доступ к местоположению не разрешён. Можно повторить попытку или оставить отзыв без него.",
@@ -39,7 +40,11 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
   const [geoError, setGeoError] = useState("");
   const [geoPending, setGeoPending] = useState(false);
   const [geoStatus, setGeoStatus] = useState<GeoStatus>("skipped");
+  const [geoDecided, setGeoDecided] = useState(false);
+  const [geoDialogOpen, setGeoDialogOpen] = useState(false);
   const [location, setLocation] = useState<BrowserLocation>();
+  const geoDialogAllowRef = useRef<HTMLButtonElement>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
   const requestRef = useRef(0);
   const submitLock = useRef(false);
   const attemptRequest = useRef<Promise<LocationAttempt> | null>(null);
@@ -108,6 +113,7 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
       return;
     }
     const request = ++requestRef.current;
+    setGeoDecided(true);
     const current = () => alive.current && request === requestRef.current;
     const windowOpen = () => geoAllowed === true && (!Number.isFinite(deadline) || Date.now() < deadline);
     setGeoPending(true);
@@ -156,6 +162,7 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
   };
 
   const skipLocation = () => {
+    setGeoDecided(true);
     ++requestRef.current;
     setGeoPending(false);
     setLocation(undefined);
@@ -167,6 +174,13 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
     event.preventDefault();
     if (submitLock.current || disabled || geoPending) return;
     if (!rating) { setError("Выберите оценку от 1 до 5."); return; }
+    const locationChoiceAvailable = geoAllowed === true
+      && (!Number.isFinite(deadline) || Date.now() < deadline)
+      && !(savedAttempt.current && Date.now() >= savedAttempt.current.expiresAt);
+    if (!geoDecided && locationChoiceAvailable) {
+      setGeoDialogOpen(true);
+      return;
+    }
     submitLock.current = true;
     setBusy(true);
     onBusyChange(true);
@@ -209,18 +223,52 @@ export default function ManualVisitReview({ token, geoAllowed, expectedEnd, disa
         {canLocate && (
           <section className="rounded-2xl border border-border bg-card p-4" data-testid="manual-review-location">
             <p className="flex items-center gap-2 text-sm font-semibold"><MapPin className="h-4 w-4 text-primary" />Местоположение — по желанию</p>
-            <p className="mt-2 text-xs leading-5 text-muted-foreground">Данные помогут сервису проверить место визита. Разрешение браузера необязательно: отзыв можно отправить без геолокации.</p>
-            <button type="button" onClick={collectLocation} disabled={geoPending || attemptExpired} className="mt-3 min-h-11 w-full rounded-xl border border-border px-3 text-sm font-semibold disabled:opacity-50" data-testid="button-manual-review-location">
-              {attemptExpired ? "Геолокация больше недоступна" : geoPending ? "Определяем местоположение…" : location ? "Определить ещё раз" : "Разрешить местоположение"}
-            </button>
+            {!location && <button type="button" onClick={collectLocation} disabled={geoPending || attemptExpired} className="mt-3 min-h-14 w-full rounded-xl bg-primary px-4 py-3 text-[15px] font-semibold text-primary-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50" data-testid="button-manual-review-location">
+              {attemptExpired ? "Геолокация больше недоступна" : geoPending ? "Определяем местоположение…" : "Поделиться геопозицией один раз"}
+            </button>}
             {(geoPending || location || geoStatus !== "skipped" || geoError) && <button type="button" onClick={skipLocation} className="mt-2 min-h-11 w-full rounded-xl px-3 text-sm text-muted-foreground" data-testid="button-manual-review-skip-location">{geoPending ? "Отменить и продолжить без геолокации" : "Продолжить без геолокации"}</button>}
             {geoError && <p className="mt-3 text-sm text-destructive" role="alert">{geoError}</p>}
-            {!geoPending && !geoError && <p className="mt-3 text-xs leading-5 text-muted-foreground" role="status">{geoMessages[geoStatus]}</p>}
+            {!geoPending && !geoError && geoDecided && <p className="mt-3 text-sm leading-5 text-muted-foreground" role="status">{geoMessages[geoStatus]}</p>}
           </section>
         )}
       </fieldset>
       {error && <div className="flex gap-2 rounded-2xl border border-destructive/25 bg-destructive/5 p-4 text-sm text-destructive" role="alert" data-testid="manual-review-error"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{error}</span></div>}
-      <button type="submit" disabled={!rating || busy || disabled || geoPending} className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-primary px-4 text-[15px] font-semibold text-primary-foreground transition-transform active:scale-[0.985] disabled:opacity-50" data-testid="button-submit-manual-review">{busy ? "Сохраняем отзыв…" : "Подтвердить визит и оставить отзыв"}</button>
+      <button ref={submitButtonRef} type="submit" disabled={!rating || busy || disabled || geoPending} className="flex min-h-14 w-full items-center justify-center rounded-2xl bg-primary px-4 text-[15px] font-semibold text-primary-foreground transition-transform active:scale-[0.985] disabled:opacity-50" data-testid="button-submit-manual-review">{busy ? "Сохраняем отзыв…" : "Подтвердить визит и оставить отзыв"}</button>
+      <Dialog open={geoDialogOpen} onOpenChange={setGeoDialogOpen}>
+        <DialogContent
+          className="rounded-2xl"
+          onOpenAutoFocus={() => geoDialogAllowRef.current?.focus()}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            submitButtonRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle className="pr-6 leading-snug">Поделиться геопозицией?</DialogTitle>
+            <DialogDescription className="text-sm leading-6">Это поможет проверить место визита. Вы можете оставить отзыв и без геолокации.</DialogDescription>
+          </DialogHeader>
+          <button
+            ref={geoDialogAllowRef}
+            type="button"
+            disabled={busy || disabled || geoPending || !canLocate || attemptExpired}
+            onClick={() => {
+              collectLocation();
+              setGeoDialogOpen(false);
+            }}
+            className="min-h-14 w-full rounded-xl bg-primary px-4 py-3 text-[15px] font-semibold text-primary-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50"
+            data-testid="button-manual-review-dialog-location"
+          >Поделиться геопозицией один раз</button>
+          <button
+            type="button"
+            onClick={() => {
+              skipLocation();
+              setGeoDialogOpen(false);
+            }}
+            className="min-h-12 w-full rounded-xl border border-border px-4 py-3 text-[15px] font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            data-testid="button-manual-review-dialog-skip-location"
+          >Продолжить без геолокации</button>
+        </DialogContent>
+      </Dialog>
     </form>
   );
 }
