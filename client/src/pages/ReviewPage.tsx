@@ -387,7 +387,7 @@ export default function ReviewPage() {
                 </button>
               </PopoverTrigger>
               <PopoverContent side="top" className="max-w-xs text-sm p-3">
-                <p>Если включено — отзыв будет анонимным. Мастер и другие клиенты не увидят ваше имя.</p>
+                <p>Можно оставить отзыв анонимно.</p>
               </PopoverContent>
             </Popover>
           </div>

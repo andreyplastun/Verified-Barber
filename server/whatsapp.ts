@@ -1,4 +1,5 @@
 import { storage } from "./storage";
+import { simplifyAnonymousReviewCopy } from "./review-message-copy";
 import { manualPresenceDispatchAllowed } from "./manual-presence-policy";
 import { markManualPresenceMessageSent } from "./manual-presence-store";
 import { db, pool } from "./db";
@@ -180,17 +181,17 @@ function isFollowupPastQuiet(): boolean {
 }
 
 const PRIMARY_TEMPLATES = [
-  "{clientName}, спасибо за визит к вашему барберу {specialistNameDative}.\nОставьте, пожалуйста, отзыв — можно анонимно, мастер не узнает, кто оценил:\n{reviewLink}",
-  "{clientName}, благодарим за визит к вашему барберу {specialistNameDative}.\nБудем признательны за отзыв. Можно анонимно — имя не показывается:\n{reviewLink}",
-  "{clientName}, как прошёл визит к вашему барберу {specialistNameDative}?\nОставьте, пожалуйста, отзыв:\n{reviewLink}\nМожно анонимно — мастер не узнает, от кого оценка.",
-  "{clientName}, спасибо, что выбрали барбера {specialistNameGenitive}.\nПоделитесь, пожалуйста, впечатлением по ссылке:\n{reviewLink}\nМожно анонимно, ваше имя мастеру не покажем.",
-  "{clientName}, визит к вашему барберу {specialistNameDative} завершён.\nОцените, пожалуйста, специалиста — можно анонимно, мастер не узнает, кто оценил:\n{reviewLink}",
+  "{clientName}, спасибо за визит к вашему барберу {specialistNameDative}.\nОставьте, пожалуйста, отзыв — можно анонимно:\n{reviewLink}",
+  "{clientName}, благодарим за визит к вашему барберу {specialistNameDative}.\nБудем признательны за отзыв. Можно анонимно:\n{reviewLink}",
+  "{clientName}, как прошёл визит к вашему барберу {specialistNameDative}?\nОставьте, пожалуйста, отзыв:\n{reviewLink}\nМожно анонимно.",
+  "{clientName}, спасибо, что выбрали барбера {specialistNameGenitive}.\nПоделитесь, пожалуйста, впечатлением по ссылке:\n{reviewLink}\nМожно анонимно.",
+  "{clientName}, визит к вашему барберу {specialistNameDative} завершён.\nОцените, пожалуйста, специалиста — можно анонимно:\n{reviewLink}",
 ];
 
 const REMINDER_TEMPLATES = [
   "{clientName}, отзыв о визите к барберу {specialistNameDative} ещё не оставлен. Можно анонимно:\n{reviewLink}",
   "{clientName}, напоминаем об отзыве для барбера {specialistNameGenitive}.\nЭто займёт всего несколько секунд, можно анонимно:\n{reviewLink}",
-  "{clientName}, если удобно — оставьте, пожалуйста, отзыв о визите к барберу {specialistNameDative}. Мастер не узнает, кто оценил:\n{reviewLink}",
+  "{clientName}, если удобно — оставьте, пожалуйста, отзыв о визите к барберу {specialistNameDative}. Можно анонимно:\n{reviewLink}",
   "{clientName}, оценка визита к барберу {specialistNameDative} ещё не завершена. Завершить, можно анонимно, или пропустить: {reviewLink}",
   "{clientName}, последняя возможность оценить визит к барберу {specialistNameDative}. Можно анонимно:\n{reviewLink}",
 ];
@@ -1151,7 +1152,7 @@ async function doSend(msg: typeof waMessages.$inferSelect, source: string = "que
     }
     const assistbotMessageId = await sendViaAssistBot(
       msg.customerPhone,
-      msg.messageText,
+      simplifyAnonymousReviewCopy(msg.messageText),
       msg.bookingId,
       msg.messageType,
       `${source}_${msg.messageType}`,
