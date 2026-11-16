@@ -14,3 +14,7 @@ Exit events are cumulative snapshots per visit, not independent time intervals. 
 Clarity is now site-wide, initialized once only in production on Rateus domains, not limited to the landing and registration routes.
 **Why:** the user explicitly replaced the earlier route-limited setup with an npm-based application-start integration.
 **How to apply:** retain standard input masking and registration masking; never initialize in Replit previews.
+
+Clarity entry segmentation records the first page in a tab session, not every page subsequently visited.
+**Why:** the user wants review-link arrivals separated from ordinary visitors, even when they browse the catalog afterward.
+**How to apply:** keep this first-entry classification stable across navigation and reload; it does not prove the link originated from WhatsApp.

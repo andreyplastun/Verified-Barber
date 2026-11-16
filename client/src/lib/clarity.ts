@@ -1,7 +1,9 @@
 import Clarity from "@microsoft/clarity";
 import { getAttribution } from "./attribution";
+import { createEntryTracker } from "./clarity-entry";
 
 let initialized = false;
+const getEntryType = createEntryTracker();
 
 export function initializeClarity() {
   if (initialized || !import.meta.env.PROD || typeof window === "undefined") return;
@@ -10,6 +12,7 @@ export function initializeClarity() {
   try {
     Clarity.init("z9alyos1az");
     initialized = true;
+    Clarity.setTag("entry_type", getEntryType(window.location.pathname, () => window.sessionStorage));
     updateClarityTags();
   } catch (error) {
     console.warn("[Clarity] Initialization failed", error);
