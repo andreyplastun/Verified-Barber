@@ -1,4 +1,5 @@
 - [Landing attribution](landing-attribution-policy.md) — session UTM attribution; exit reports use per-visit maxima, not summed snapshots.
+- [Clarity internal traffic](clarity-internal-traffic.md) — exclude admins on every route; unresolved auth must fail closed; specialists identify by account ID only.
 - [Review anonymity wording](review-anonymity-copy.md) — say «Можно анонимно», without explanations about what the master cannot see.
 - [Production build safety](production-build-boundary.md) — keep production gates runtime-evaluated; inspect build side effects before verification.
 - [WA delivery webhook correlation](wa-delivery-correlation.md) — parse `rateus_<source>_<bookingId>_<ts>` by tail-anchoring on 13-digit timestamp; constrain UPDATE by message_type; show sent vs delivered both.

@@ -1,4 +1,4 @@
-import { updateClarityTags } from "@/lib/clarity";
+import { updateClarityTags, syncClarityAuth } from "@/lib/clarity";
 import { useEffect } from "react";
 import { Switch, Route, Redirect, useLocation, useSearch } from "wouter";
 import { queryClient } from "./lib/queryClient";
@@ -198,7 +198,12 @@ function Router() {
 function AppContent() {
   const [location] = useLocation();
   const search = useSearch();
-  const { user } = useAuth();
+  const { user, authUser, loading, analyticsAuthReady } = useAuth();
+  useEffect(() => {
+    const resolved = analyticsAuthReady && !loading &&
+      (!authUser || (user !== null && user.id === authUser.id));
+    syncClarityAuth(resolved, user);
+  }, [analyticsAuthReady, loading, authUser, user]);
   useEffect(() => { updateClarityTags(); }, [location, search]);
 
   useEffect(() => {

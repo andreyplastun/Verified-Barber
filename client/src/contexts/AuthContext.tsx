@@ -13,6 +13,7 @@ import {
   forceLogout,
 } from "@/lib/auth";
 import { type AppUser, type UserRole } from "@/lib/users";
+import { syncClarityAuth } from "@/lib/clarity";
 
 interface CurrentUser {
   id: string;
@@ -27,6 +28,7 @@ interface AuthContextType {
   authUser: any;
   loading: boolean;
   isLoading: boolean;
+  analyticsAuthReady: boolean;
   isSpecialist: boolean;
   role: UserRole;
   refreshUser: () => Promise<AppUser | null>;
@@ -39,6 +41,7 @@ const AuthContext = createContext<AuthContextType>({
   authUser: null,
   loading: true,
   isLoading: true,
+  analyticsAuthReady: false,
   isSpecialist: false,
   role: "client",
   refreshUser: async () => null,
@@ -49,6 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authUser, setAuthUser] = useState<any>(null);
   const [user, setUser] = useState<AppUser | null>(null);
   const [isLoadingState, setIsLoading] = useState(true);
+  const [analyticsAuthReady, setAnalyticsAuthReady] = useState(false);
   const AUTH_LOAD_TIMEOUT_MS = 5000;
 
   const withAuthTimeout = async <T,>(promise: Promise<T>): Promise<T | null> => {
@@ -63,6 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchUserWithRole = async () => {
     const userWithRole = await getCurrentUserWithRole();
     if (userWithRole) {
+      if (userWithRole.role === "admin") syncClarityAuth(false, null);
+      setAnalyticsAuthReady(true);
       setUser({
         id: userWithRole.id,
         email: userWithRole.email,
@@ -85,6 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refetchUser = useCallback(async () => {
     const userWithRole = await getCurrentUserWithRole();
     if (userWithRole) {
+      if (userWithRole.role === "admin") syncClarityAuth(false, null);
+      setAnalyticsAuthReady(true);
       const userData = {
         id: userWithRole.id,
         email: userWithRole.email,
@@ -106,7 +114,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void (async () => {
       try {
-        const u = await withAuthTimeout(getCurrentUser());
+        const u = await withAuthTimeout(getCurrentUser().then((resolved) => {
+          // A UI timeout must never classify an unresolved admin as a visitor.
+          setAnalyticsAuthReady(!resolved);
+          return resolved;
+        }));
         setAuthUser(u);
         if (u) {
           await withAuthTimeout(fetchUserWithRole());
@@ -125,6 +137,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = onAuthStateChange((u) => {
+      // Stop synchronously, before the new account's UI can render.
+      syncClarityAuth(false, null);
+      setAnalyticsAuthReady(!u);
       setAuthUser(u);
       if (u) {
         setIsLoading(true);
@@ -169,6 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         authUser,
         loading,
         isLoading,
+        analyticsAuthReady,
         isSpecialist,
         role,
         refreshUser: refetchUser,
