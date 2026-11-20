@@ -2524,6 +2524,8 @@ export async function registerRoutes(
         // Specialist signup funnel
         'signup_page_view',
         // Master landing funnel
+        'master_landing_html_view',
+        'master_landing_early_exit',
         'master_landing_view',
         'master_landing_cta_click',
         'create_profile_click',

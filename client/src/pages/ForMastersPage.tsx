@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from "react";
-import { Link, useSearch } from "wouter";
+import { MastersHero, heroHref } from "@shared/masters-hero";
+import { Link, useLocation, useSearch } from "wouter";
 import { motion } from "framer-motion";
 import { Star, MessageCircle, Users, ShieldCheck, ArrowRight, CheckCircle } from "lucide-react";
 import { useSpecialists } from "@/hooks/use-specialists";
@@ -11,6 +12,7 @@ import { useLandingAnalytics } from "@/hooks/use-landing-analytics";
 import { clarityEvent } from "@/lib/clarity";
 
 export default function ForMastersPage() {
+  const [location, navigate] = useLocation();
   const searchString = useSearch();
   const { data: specialists } = useSpecialists();
 
@@ -69,7 +71,11 @@ export default function ForMastersPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Hero */}
+      {/^\/specialists\/?$/.test(location) ? <MastersHero href={heroHref(searchString, utm)} onClick={e => {
+        handleCtaClick("hero");
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault(); navigate(e.currentTarget.getAttribute("href")!);
+      }}/> : (
       <section className="px-5 pt-12 pb-8 max-w-lg mx-auto text-center">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-xs font-semibold tracking-widest uppercase text-primary mb-3">Rateus — для мастеров</p>
@@ -92,6 +98,8 @@ export default function ForMastersPage() {
           <p className="text-xs text-muted-foreground mt-2">Без оплаты и карты. 2 минуты.</p>
         </motion.div>
       </section>
+
+      )}
 
       {/* Social proof */}
       {topSpecialists.length > 0 && (

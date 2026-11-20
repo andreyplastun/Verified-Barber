@@ -1,3 +1,4 @@
+import { mastersLandingHtml } from "./masters-landing-html";
 import { type Express } from "express";
 import { createServer as createViteServer, createLogger } from "vite";
 import { type Server } from "http";
@@ -49,7 +50,7 @@ export async function setupVite(server: Server, app: Express) {
         `src="/src/main.tsx?v=${nanoid()}"`,
       );
       const page = await vite.transformIndexHtml(url, template);
-      res.status(200).set({ "Content-Type": "text/html" }).end(page);
+      res.status(200).set({ "Content-Type": "text/html" }).end(mastersLandingHtml(page, url));
     } catch (e) {
       vite.ssrFixStacktrace(e as Error);
       next(e);

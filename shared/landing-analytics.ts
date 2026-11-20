@@ -11,6 +11,7 @@ export const landingMetadataSchema = z.object({
   placement: z.enum(["hero", "bottom", "catalog", "login"]).optional(),
   page: z.enum(["/specialists", "/create-profile"]).optional(),
   visitId: z.string().max(64).optional(),
+  elapsedMs: z.number().finite().nonnegative().optional(),
   activeSeconds: z.number().finite().min(0).max(604800).optional(),
   scrollDepth: z.union([z.literal(0), z.literal(25), z.literal(50), z.literal(75), z.literal(100)]).optional(),
   exitReason: z.enum(["hidden", "pagehide", "navigation"]).optional(),

@@ -18,3 +18,7 @@ Clarity is now site-wide, initialized once only in production on Rateus domains,
 Clarity entry segmentation records the first page in a tab session, not every page subsequently visited.
 **Why:** the user wants review-link arrivals separated from ordinary visitors, even when they browse the catalog afterward.
 **How to apply:** keep this first-entry classification stable across navigation and reload; it does not prove the link originated from WhatsApp.
+
+Count a pre-app abandonment as an early exit without a subsequent mounted landing view for the same visit ID. A hidden tab can resume, and an early click through to registration is a successful navigation, not a rejected offer.
+**Why:** The user needs to distinguish visitors who never reached the application from short visits after React loaded. HTML received is not proof of a human seeing the screen.
+**How to apply:** Keep HTML and mounted views separate; do not add them together or reinterpret the existing visible-time metric as navigation timing.

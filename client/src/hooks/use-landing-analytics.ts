@@ -1,10 +1,16 @@
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { trackEvent } from "@/lib/analytics";
 import type { Attribution } from "@/lib/attribution";
 
 export function useLandingAnalytics(utm: Attribution) {
+  const initialVisit = useRef<string>();
+  useLayoutEffect(() => {
+    const boot = window as Window & { __mastersLandingReady?: () => string };
+    initialVisit.current = boot.__mastersLandingReady?.();
+  }, []);
   useEffect(() => {
-    const visitId = crypto.randomUUID();
+    const visitId = initialVisit.current ?? crypto.randomUUID();
+    initialVisit.current = undefined;
     let elapsed = 0;
     let started: number | null = document.hidden ? null : performance.now();
     let depth = 0;
