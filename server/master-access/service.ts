@@ -60,7 +60,14 @@ export class MasterAccess {
       [e, sid, anon, JSON.stringify(meta)],
     );
   }
-  private async target(t: PoolClient, phone: string):Promise<{sid:number;claim:Record<string,any>|null;userId?:string}|null> {
+  private async target(
+    t: PoolClient,
+    phone: string,
+  ): Promise<{
+    sid: number;
+    claim: Record<string, any> | null;
+    userId?: string;
+  } | null> {
     const bound = await t.query(
       `SELECT i.specialist_id FROM rateus_private.master_identity i JOIN specialists s ON s.id=i.specialist_id AND s.owner_user_id::text=i.user_id JOIN users u ON u.id::text=i.user_id AND u.specialist_id=s.id AND u.role='specialist' WHERE i.phone=$1`,
       [phone],
@@ -77,7 +84,7 @@ export class MasterAccess {
       ? { sid: rows[0].specialist_id, claim: rows[0] }
       : null;
   }
-  private async free(t: PoolClient, sid: number) {
+  private async free(t: PoolClient, sid: number, allowOwned = false) {
     const {
       rows: [s],
     } = await t.query(
@@ -85,11 +92,12 @@ export class MasterAccess {
       [sid],
     );
     if (!s) fail(404, "Профиль не найден");
-    if (s.owner_user_id) fail(409, owned);
+    if (s.owner_user_id && !allowOwned) fail(409, owned);
     return s;
   }
   private async checkNew(t: PoolClient, sid: number) {
-    await this.free(t, sid);
+    const s = await this.free(t, sid, true);
+    if (s.owner_user_id) return String(s.owner_user_id);
     const { rows } = await t.query(
       `SELECT 1 FROM claim_requests WHERE specialist_id=$1 AND (status='pending' OR (status='approved' AND (token_used_at IS NOT NULL OR token_expires_at>now()))) LIMIT 1`,
       [sid],
@@ -219,7 +227,55 @@ export class MasterAccess {
         [id],
       );
       if (purpose === "claim") {
-        await this.checkNew(t, o.specialist_id);
+        const currentOwner = await this.checkNew(t, o.specialist_id);
+        if (currentOwner) {
+          const {
+            rows: [exists],
+          } = await t.query(
+            `SELECT claim_id FROM rateus_private.master_claims WHERE specialist_id=$1 AND phone=$2 AND disputed_owner IS NOT NULL AND dispute_decision IS NULL`,
+            [o.specialist_id, o.phone],
+          );
+          if (exists) return { message: "Спор уже передан администратору." };
+          const {
+            rows: [self],
+          } = await t.query(
+            "SELECT 1 FROM rateus_private.master_identity WHERE specialist_id=$1 AND phone=$2 AND user_id=$3",
+            [o.specialist_id, o.phone, currentOwner],
+          );
+          if (self)
+            return {
+              message:
+                "Этот профиль уже привязан к вашему номеру. Войдите по WhatsApp.",
+            };
+          const {
+            rows: [c],
+          } = await t.query(
+            `INSERT INTO claim_requests(specialist_id,phone,status) VALUES($1,$2,'pending') RETURNING id`,
+            [o.specialist_id, o.phone],
+          );
+          await t.query(
+            `INSERT INTO rateus_private.master_claims(claim_id,specialist_id,phone,anon_id,verified_at,disputed_owner) VALUES($1,$2,$3,$4,now(),$5)`,
+            [c.id, o.specialist_id, o.phone, o.anon_id, currentOwner],
+          );
+          await this.event(
+            t,
+            "claim_code_verified",
+            o.specialist_id,
+            o.anon_id,
+          );
+          await this.event(
+            t,
+            "claim_request_created",
+            o.specialist_id,
+            o.anon_id,
+            { dispute: true },
+          );
+          return {
+            requestId: Number(c.id),
+            message:
+              "Заявка принята как спор о профиле. Администратор проверит её. Владелец пока не изменён.",
+          };
+        }
         if (
           (
             await t.query(
@@ -302,7 +358,10 @@ export class MasterAccess {
       result.sid!,
       result.anon!,
     );
-    await this.db.query(`UPDATE rateus_private.master_claims m SET first_login_at=now() FROM specialists s WHERE m.specialist_id=$1 AND s.id=m.specialist_id AND s.owner_user_id::text=$2 AND m.bound_user=$2 AND m.phone=$3 AND m.first_login_at IS NULL AND m.legacy`,[result.sid,result.userId,result.phone]);
+    await this.db.query(
+      `UPDATE rateus_private.master_claims m SET first_login_at=now() FROM specialists s WHERE m.specialist_id=$1 AND s.id=m.specialist_id AND s.owner_user_id::text=$2 AND m.bound_user=$2 AND m.phone=$3 AND m.first_login_at IS NULL AND m.legacy`,
+      [result.sid, result.userId, result.phone],
+    );
     return { session };
   }
   private async hasPrior(t: PoolClient, sid: number) {
@@ -356,7 +415,7 @@ export class MasterAccess {
       [a.id, s.id],
     );
     await t.query(
-      "INSERT INTO rateus_private.master_identity(phone,user_id,specialist_id) VALUES($1,$2,$3)",
+      "INSERT INTO rateus_private.master_identity(phone,user_id,specialist_id,bound_at) VALUES($1,$2,$3,clock_timestamp())",
       [m.phone, a.id, s.id],
     );
     await t.query(
@@ -366,6 +425,10 @@ export class MasterAccess {
     await t.query(
       "UPDATE rateus_private.master_claims SET bound_user=$2 WHERE claim_id=$1",
       [cid, a.id],
+    );
+    await t.query(
+      "DELETE FROM rateus_private.revoked_owners WHERE specialist_id=$1 AND user_id=$2",
+      [s.id, a.id],
     );
     await this.event(t, "claim_approved", s.id, anon, { legacy: m.legacy });
     if (notify)
@@ -380,6 +443,69 @@ export class MasterAccess {
         ],
       );
   }
+  async resolveDispute(
+    cid: number,
+    admin: string,
+    decision: "keep" | "transfer",
+    expectedOwner: string,
+  ) {
+    return this.tx(async (t) => {
+      const {
+        rows: [m],
+      } = await t.query(
+        `SELECT m.*,c.status FROM rateus_private.master_claims m JOIN claim_requests c ON c.id=m.claim_id WHERE m.claim_id=$1 FOR UPDATE OF m,c`,
+        [cid],
+      );
+      if (
+        !m?.disputed_owner ||
+        !m.verified_at ||
+        m.dispute_decision ||
+        m.status !== "pending"
+      )
+        fail(409, "Спор не открыт. Обновите список.");
+      const s = await this.free(t, m.specialist_id, true);
+      if (!expectedOwner || String(s.owner_user_id) !== expectedOwner)
+        fail(409, "Владелец изменился. Обновите список и проверьте решение.");
+      if (decision === "transfer") {
+        await t.query(
+          `INSERT INTO rateus_private.revoked_owners VALUES($1,$2) ON CONFLICT DO NOTHING`,
+          [s.id, expectedOwner],
+        );
+        await t.query(
+          `DELETE FROM rateus_private.master_identity WHERE specialist_id=$1 AND user_id=$2`,
+          [s.id, expectedOwner],
+        );
+        await t.query(
+          `UPDATE users SET specialist_id=NULL,role='client' WHERE id::text=$1 AND specialist_id=$2 AND role='specialist' AND email NOT ILIKE '%@who.kz'`,
+          [expectedOwner, s.id],
+        );
+        await t.query("UPDATE specialists SET owner_user_id=NULL WHERE id=$1", [
+          s.id,
+        ]);
+        await t.query(
+          "UPDATE rateus_private.master_claims SET reviewed_by=$2 WHERE claim_id=$1",
+          [cid, admin],
+        );
+        await this.bind(t, cid, m.anon_id, true);
+        const {
+          rows: [newOwner],
+        } = await t.query("SELECT owner_user_id FROM specialists WHERE id=$1", [
+          s.id,
+        ]);
+        if (String(newOwner.owner_user_id) === expectedOwner)
+          fail(409, "Заявитель уже владелец. Выберите «Оставить владельца».");
+      } else
+        await t.query(
+          "UPDATE claim_requests SET status='rejected',resolved_at=now() WHERE id=$1",
+          [cid],
+        );
+      await t.query(
+        "UPDATE rateus_private.master_claims SET dispute_decision=$2,decision_by=$3,decision_at=now() WHERE claim_id=$1",
+        [cid, decision, admin],
+      );
+      return { decision };
+    });
+  }
   async approve(cid: number, admin: string, manual: boolean) {
     return this.tx(async (t) => {
       const {
@@ -393,6 +519,8 @@ export class MasterAccess {
           409,
           "Нет подтверждения номера. Нужна новая заявка с WhatsApp-кодом.",
         );
+      if (m.disputed_owner)
+        fail(409, "Для спора выберите решение администратора");
       if (m.bound_user)
         return { notificationStatus: m.legacy ? "not_requested" : "queued" };
       if (m.needs_review || (await this.hasPrior(t, m.specialist_id))) {

@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import express from "express";
 import { prepareMasterAccess } from "./schema";
+import { clientAccess, clientAccessRoutes } from "./client-access";
 import { MasterAccess } from "./service";
 import { masterAccessRoutes } from "./routes";
 
@@ -37,6 +38,7 @@ test("OTP → verified claim → approval → phone login; legacy access and con
   const sent = new Map<string, string>();
   let down = false;
   let sessionUnavailable = false;
+  const notices: number[] = [];
   const service = new MasterAccess(
     db,
     {
@@ -62,10 +64,15 @@ test("OTP → verified claim → approval → phone login; legacy access and con
       },
     },
     "fixture-only-secret",
+    async (id) => {
+      notices.push(id);
+    },
   );
   const app = express();
   app.use(express.json());
   masterAccessRoutes(app, service);
+  clientAccessRoutes(app, db);
+  app.get("/api/bookings/:id", (_req, res) => res.json({ fixture: "allowed" }));
   const server = app.listen(0, "127.0.0.1");
   try {
     await db.query(
@@ -129,7 +136,47 @@ test("OTP → verified claim → approval → phone login; legacy access and con
     await db.query(
       "UPDATE rateus_private.master_codes SET created_at=now()-interval '61 seconds'",
     );
-    assert.equal((await ask("7070000055")).status, 409);
+    const original = bound.owner_user_id;
+    assert.equal((await clientAccess(db, 101, original)).reason, "waiting");
+    await db.query(
+      "CREATE TABLE bookings(id int PRIMARY KEY,specialist_id int,client_id uuid); INSERT INTO bookings VALUES(500,101,NULL)",
+    );
+    const details = async (uid: string) =>
+      fetch(new URL("/api/bookings/500", endpoint), {
+        headers: { "x-user-id": uid },
+      });
+    assert.equal((await details(original)).status, 403);
+    await db.query(
+      "UPDATE rateus_private.master_identity SET bound_at=now()-interval '168 hours' WHERE specialist_id=101",
+    );
+    const challenge = await ask("7070000055");
+    assert.equal(challenge.status, 200);
+    assert.equal((await details(original)).status, 200); // requesting a code has no effect
+    assert.match((await check(challenge.challengeId, "claim")).message, /спор/);
+    assert.equal((await clientAccess(db, 101, original)).reason, "dispute");
+    assert.equal((await details(original)).status, 403);
+    const [dispute] = await q(
+      "SELECT claim_id FROM rateus_private.master_claims WHERE disputed_owner IS NOT NULL",
+    );
+    assert.ok(notices.includes(dispute.claim_id));
+    await assert.rejects(
+      service.approve(dispute.claim_id, "admin-fixture", true),
+    );
+    await service.resolveDispute(
+      dispute.claim_id,
+      "admin-fixture",
+      "keep",
+      original,
+    );
+    assert.equal((await details(original)).status, 200);
+    await assert.rejects(
+      service.resolveDispute(
+        dispute.claim_id,
+        "admin-fixture",
+        "transfer",
+        original,
+      ),
+    );
     v = await ask("77070000001", "login");
     assert.match(
       (await check(v.challengeId, "login")).session.access_token,
@@ -211,6 +258,41 @@ test("OTP → verified claim → approval → phone login; legacy access and con
       [v.challengeId],
     );
     assert.equal((await check(v.challengeId, "claim")).status, 400);
+    const d1 = await ask("7070000056"),
+      d2 = await ask("7070000057");
+    await check(d1.challengeId, "claim");
+    await check(d2.challengeId, "claim");
+    const ds = await q(
+      "SELECT claim_id FROM rateus_private.master_claims WHERE disputed_owner IS NOT NULL AND dispute_decision IS NULL ORDER BY claim_id",
+    );
+    assert.equal(ds.length, 2);
+    await service.resolveDispute(
+      ds[0].claim_id,
+      "admin-fixture",
+      "transfer",
+      original,
+    );
+    const [{ owner_user_id: replacement }] = await q(
+      "SELECT owner_user_id FROM specialists WHERE id=101",
+    );
+    assert.notEqual(replacement, original);
+    assert.equal((await details(original)).status, 403);
+    assert.equal((await clientAccess(db, 101, replacement)).reason, "dispute");
+    await assert.rejects(
+      service.resolveDispute(ds[1].claim_id, "admin-fixture", "keep", original),
+    );
+    await service.resolveDispute(
+      ds[1].claim_id,
+      "admin-fixture",
+      "keep",
+      replacement,
+    );
+    assert.equal((await clientAccess(db, 101, replacement)).reason, "waiting");
+    assert.equal(
+      (await clientAccess(db, 8, "00000000-0000-4000-8000-000000000003"))
+        .allowed,
+      true,
+    );
     assert.ok(
       (await q("SELECT * FROM analytics_events")).every(
         (e) =>

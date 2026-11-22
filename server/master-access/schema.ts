@@ -27,6 +27,10 @@ export async function prepareMasterAccess(db: Pool, prepareLegacy: boolean) {
  CREATE INDEX IF NOT EXISTS claim_invites_latest ON rateus_private.claim_invites(claim_id,reminder_id DESC);
  CREATE INDEX IF NOT EXISTS master_claim_phone ON rateus_private.master_claims(phone);
  CREATE TABLE IF NOT EXISTS rateus_private.master_identity(phone text PRIMARY KEY, user_id text UNIQUE NOT NULL,specialist_id int UNIQUE NOT NULL);
+ ALTER TABLE rateus_private.master_identity ADD COLUMN IF NOT EXISTS bound_at timestamptz;
+ ALTER TABLE rateus_private.master_claims ADD COLUMN IF NOT EXISTS disputed_owner text, ADD COLUMN IF NOT EXISTS dispute_decision text, ADD COLUMN IF NOT EXISTS decision_by text, ADD COLUMN IF NOT EXISTS decision_at timestamptz;
+ CREATE UNIQUE INDEX IF NOT EXISTS master_open_dispute_phone ON rateus_private.master_claims(specialist_id,phone) WHERE disputed_owner IS NOT NULL AND dispute_decision IS NULL;
+ CREATE TABLE IF NOT EXISTS rateus_private.revoked_owners(specialist_id int NOT NULL,user_id text NOT NULL,PRIMARY KEY(specialist_id,user_id));
  `);
   if (!prepareLegacy) return;
   for (const [cid, sid] of historical) {

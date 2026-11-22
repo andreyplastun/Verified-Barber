@@ -40,7 +40,7 @@ export function Navigation() {
   const specialistMatch = location.match(/^\/specialist\/(\d+)$/);
   const specialistId = specialistMatch ? parseInt(specialistMatch[1]) : null;
 
-  const { data: claimStatus } = useQuery<{ isClaimed: boolean }>({
+  const { data: claimStatus } = useQuery<{ isClaimed: boolean; hasOwner?:boolean }>({
     queryKey: ['/api/specialists', specialistId, 'claim-status'],
     queryFn: async () => {
       const res = await fetch(`/api/specialists/${specialistId}/claim-status`);
@@ -50,7 +50,7 @@ export function Navigation() {
     enabled: specialistId !== null && specialistId > 0,
   });
 
-  const showClaimButton = specialistId !== null && claimStatus && !claimStatus.isClaimed;
+  const showClaimButton = specialistId !== null && claimStatus && (!claimStatus.isClaimed || (claimStatus.hasOwner && currentUser?.specialistId!==specialistId));
 
   const getDashboardLink = () => {
     if (currentUser?.role === 'admin') {

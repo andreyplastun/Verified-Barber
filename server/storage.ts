@@ -313,6 +313,12 @@ export class DatabaseStorage implements IStorage {
 
   async getUser(id: string): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    // Legacy staff records are immutable; a transferred former owner must not
+    // regain authority through the old users.specialist_id mapping.
+    if(user?.role==='specialist' && user.specialistId){
+      const revoked=await db.execute(sql`SELECT 1 FROM rateus_private.revoked_owners WHERE specialist_id=${user.specialistId} AND user_id=${id}`);
+      if(revoked.rowCount)return {...user,role:'client',specialistId:null};
+    }
     return user;
   }
 

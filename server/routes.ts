@@ -1,3 +1,4 @@
+import {clientAccessRoutes} from "./master-access/client-access";
 import { enqueueInvite, inviteStates } from "./master-access/invites";
 import { MasterAccess, AccessError } from "./master-access/service";
 import { masterAccessRoutes } from "./master-access/routes";
@@ -546,16 +547,16 @@ async function checkAndAutoActivateSpecialist(specialistId: number): Promise<voi
 function maskReviewsForViewer(
   reviews: Review[],
   viewerRole: 'admin' | 'specialist' | 'client' | null
-): Review[] {
+) {
   return reviews.map(r => {
     // Admin can see all names
     if (viewerRole === 'admin') {
       return r;
     }
     // For clients and specialists: hide name if showName is false
-    const isHidden = !r.showName;
+    const isHidden = !r.showName || r.hiddenName || /@|^\+?[\d() -]{8,}$/.test(r.customerName);
     return {
-      ...r,
+      id:r.id,specialistId:r.specialistId,rating:r.rating,comment:r.comment,triggers:r.triggers,showName:r.showName,hiddenName:r.hiddenName,createdAt:r.createdAt,priceMismatch:r.priceMismatch,isFinalized:r.isFinalized,
       customerName: isHidden ? "Аноним" : r.customerName
     };
   });
@@ -569,6 +570,7 @@ export async function registerRoutes(
   // SECURITY: derive caller identity from the verified Supabase JWT only.
   // Strips any spoofed client-supplied x-user-id before route handlers run.
   app.use("/api", authenticateRequest);
+  clientAccessRoutes(app,pool);
   app.use("/api", (_req, res, next) => {
     const json = res.json.bind(res);
     res.json = body => json(sanitizeManualPresencePayload(body));
@@ -900,6 +902,7 @@ export async function registerRoutes(
       }
       
       const { id, email } = parsed.data;
+      if(req.headers['x-user-id']!==id)return res.sendStatus(403);
       
       // Check if user already exists
       let existing = await storage.getUser(id);
@@ -933,6 +936,7 @@ export async function registerRoutes(
 
   app.get("/api/users/:id", async (req, res) => {
     try {
+      if(req.headers['x-user-id']!==req.params.id)return res.sendStatus(403);
       let user = await storage.getUser(req.params.id);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
@@ -1553,6 +1557,7 @@ export async function registerRoutes(
   });
 
   app.get(api.specialists.get.path, async (req, res) => {
+    res.vary("Authorization");res.set("Cache-Control","private,no-store");
     const id = Number(req.params.id);
     const specialist = await storage.getSpecialist(id);
     if (!specialist) {
@@ -1649,6 +1654,7 @@ export async function registerRoutes(
       const normalized = normalizePhone(input.customerPhone);
       const booking = await storage.createBooking({
         ...input,
+        clientId: (req.headers["x-user-id"] as string) || null,
         status: "scheduled",
         normalizedPhone: normalized,
         isNewClient: !normalized && !input.customerPhone,
@@ -1729,7 +1735,7 @@ export async function registerRoutes(
     if (!booking) {
       return res.status(404).json({ message: "Booking not found" });
     }
-    // For MVP, we allow viewing by ID to enable the review flow.
+    // Caller access was checked before looking up the booking.
     res.json(booking);
   });
 
@@ -1939,9 +1945,7 @@ export async function registerRoutes(
     }
 
     // For others, mask the name if hidden
-    const maskedReview = !review.showName 
-      ? { ...review, customerName: "Аноним" }
-      : review;
+    const [maskedReview] = maskReviewsForViewer([review],null);
     res.json(maskedReview);
   });
 
@@ -4010,7 +4014,7 @@ ${magicLink}`;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
 
       const claims = await storage.getClaimRequests();
-      const checked = await pool.query(`SELECT m.claim_id,m.legacy,m.verified_at,m.reviewed_by,m.bound_user,
+      const checked = await pool.query(`SELECT m.disputed_owner,m.dispute_decision,(SELECT owner_user_id::text FROM specialists s WHERE s.id=m.specialist_id) current_owner,m.claim_id,m.legacy,m.verified_at,m.reviewed_by,m.bound_user,
         (m.needs_review OR EXISTS(SELECT 1 FROM users u WHERE u.specialist_id=m.specialist_id AND u.id::text IS DISTINCT FROM m.bound_user)) needs_review
         FROM rateus_private.master_claims m`);
       const details = new Map(checked.rows.map(r=>[r.claim_id,r]));
@@ -4031,6 +4035,11 @@ ${magicLink}`;
   });
 
   // Admin: Approve claim request
+  app.post('/api/admin/claim-requests/:id/resolve-dispute',async(req,res)=>{
+    const uid=req.headers['x-user-id'] as string;if(!uid)return res.sendStatus(401);if(!await checkAdminRole(req,res,uid))return;
+    const {decision,expectedOwner}=req.body??{};if(!['keep','transfer'].includes(decision)||typeof expectedOwner!=='string')return res.status(400).json({message:'Выберите решение спора'});
+    try{res.json(await masterAccess.resolveDispute(Number(req.params.id),uid,decision,expectedOwner))}catch(e:any){res.status(e.status??500).json({message:e.message})}
+  });
   app.post("/api/admin/claim-requests/:id/approve", async (req, res) => {
     try {
       const userId = req.headers["x-user-id"] as string;
@@ -4057,6 +4066,7 @@ ${magicLink}`;
         return res.status(400).json({ message: "Запрос уже обработан" });
       }
 
+      if((await pool.query('SELECT 1 FROM rateus_private.master_claims WHERE claim_id=$1 AND disputed_owner IS NOT NULL',[claimId])).rowCount)return res.status(409).json({message:'Выберите решение спора'});
       const claim = await storage.rejectClaimRequest(claimId);
       if (!claim) {
         return res.status(409).json({ message: "Запрос уже обработан" });

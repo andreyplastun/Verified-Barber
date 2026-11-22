@@ -46,7 +46,7 @@ export default function SpecialistProfile() {
 
   const [showClaimModal,setShowClaimModal]=useState(false);
   const dismissClaimModal=()=>{setShowClaimModal(false);if(id>0)localStorage.setItem(`claim_modal_seen_${id}`,"1")};
-  const showClaimButton = claimStatus && !claimStatus.isClaimed;
+  const showClaimButton = claimStatus && (!claimStatus.isClaimed || (claimStatus.hasOwner && currentUser?.specialistId!==id));
 
   // Claim modal: never for logged-in users (client or specialist); for anonymous
   // visitors only after they've opened this unclaimed profile several times.
@@ -54,7 +54,7 @@ export default function SpecialistProfile() {
 
   useEffect(() => {
     if (id <= 0 || currentUser) return;
-    if (!showClaimButton) return;
+    if (!showClaimButton || claimStatus?.hasOwner) return;
     if (localStorage.getItem(`claim_modal_seen_${id}`)) return;
     const key = `claim_profile_views_${id}`;
     const views = (parseInt(localStorage.getItem(key) || "0", 10) || 0) + 1;
@@ -65,7 +65,7 @@ export default function SpecialistProfile() {
       const t = setTimeout(() => setShowClaimModal(true), 700);
       return () => clearTimeout(t);
     }
-  }, [showClaimButton, id, currentUser, claimStatus?.suggestClaim]);
+  }, [showClaimButton, id, currentUser, claimStatus?.hasOwner, claimStatus?.suggestClaim]);
 
   // Fetch user's bookings to check if they can leave a review
   const { data: myBookings = [] } = useQuery<Booking[]>({
@@ -303,7 +303,6 @@ export default function SpecialistProfile() {
           </div>
         </div>
 
-        {claimStatus?.hasOwner && <p className="mt-4 text-xs text-muted-foreground">У профиля уже есть владелец, свяжитесь с поддержкой</p>}
         {showClaimButton && <div className="mt-4 flex items-center justify-between gap-3 bg-card rounded-2xl p-4 border" data-testid="claim-profile-banner"><span>Это ваш профиль?</span><Button onClick={()=>{trackEvent('claim_cta_click',{specialistId:id});setShowClaimModal(true)}} data-testid="button-claim-profile">Забрать</Button></div>}
         <Dialog open={showClaimModal} onOpenChange={open=>{if(!open)dismissClaimModal()}}><DialogContent data-testid="modal-claim-profile"><DialogHeader><DialogTitle>Забрать управление профилем</DialogTitle><DialogDescription>Подтвердите свой номер кодом в WhatsApp, затем администратор проверит заявку.</DialogDescription></DialogHeader><MasterPhoneForm specialistId={id}/></DialogContent></Dialog>
 

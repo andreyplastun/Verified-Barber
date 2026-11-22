@@ -46,6 +46,16 @@ type SpecialistAchievements = {
 export default function SpecialistDashboard() {
   const { currentUser } = useAuth();
   const specialistId = currentUser?.specialistId;
+  const access=useQuery<{allowed:boolean;reason:string;until:string|null}>({queryKey:['client-access',currentUser?.id,specialistId],enabled:!!specialistId,queryFn:async()=>{
+    const res=await fetch(`/api/specialists/${specialistId}/client-access`,{cache:'no-store'});if(!res.ok)throw Error('Нет доступа');return res.json();
+  },staleTime:0,gcTime:0,refetchOnMount:'always',refetchOnWindowFocus:'always',refetchInterval:15000,retry:false});
+  const allowed=!!access.data?.allowed && !access.isError;
+  if(!specialistId||access.data?.reason==='forbidden')return <p className="p-6">Нет доступа к кабинету этого профиля.</p>;
+  const note=allowed?'':access.isError?'Не удалось проверить доступ. Раздел клиентов закрыт.':access.data?.reason==='dispute'?'Раздел клиентов закрыт до решения спора администратором.':access.data?.until?`Раздел клиентов откроется ${new Date(access.data.until).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',dateStyle:'long',timeStyle:'short'})} (Алматы).`:'Проверяем доступ к разделу клиентов…';
+  return <DashboardContent key={`${currentUser?.id}:${specialistId}:${allowed}`} clientsAllowed={allowed} note={note}/>;
+}
+function DashboardContent({clientsAllowed,note}:{clientsAllowed:boolean;note:string}){
+  const {currentUser}=useAuth();const specialistId=currentUser?.specialistId;
   const { toast } = useToast();
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const workInputRef = useRef<HTMLInputElement>(null);
@@ -185,20 +195,21 @@ export default function SpecialistDashboard() {
   };
 
   const { data: bookingsData, isLoading: loadingBookings, isError: bookingsLoadFailed, refetch: refetchBookings } = useQuery<{ list: Booking[]; completedTotal: number | null }>({
-    queryKey: ['/api/specialists', specialistId, 'bookings'],
+    queryKey: ['/api/specialists', specialistId, 'bookings',currentUser?.id],
+    gcTime:0,
     queryFn: async () => {
       const res = await fetch(`/api/specialists/${specialistId}/bookings`);
       if (!res.ok) throw new Error('Failed to fetch bookings');
       const total = Number(res.headers.get('X-Completed-Total'));
       return { list: await res.json(), completedTotal: Number.isFinite(total) && res.headers.has('X-Completed-Total') ? total : null };
     },
-    enabled: !!specialistId,
+    enabled: clientsAllowed && !!specialistId,
     // Mutations invalidate this explicitly; refetching on every return from
     // WhatsApp re-downloaded the whole list and burned database traffic.
     refetchOnWindowFocus: false,
     staleTime: 60_000,
   });
-  const bookings = bookingsData?.list;
+  const bookings = clientsAllowed && !bookingsLoadFailed ? bookingsData?.list : [];
 
   const { data: reviews, isLoading: loadingReviews } = useQuery<Review[]>({
     queryKey: ['/api/reviews', specialistId, currentUser?.id],
@@ -981,6 +992,7 @@ export default function SpecialistDashboard() {
 
   return (
     <div className="p-6 space-y-6" data-testid="specialist-dashboard">
+      {!clientsAllowed && <p role="status" className="rounded-lg border p-4">{note}</p>}
       <BarberCelebrationOverlay event={activeCelebration} onClose={dismissCelebration} />
       <Dialog open={!!guideMode} onOpenChange={(o) => { if (!o) setGuideMode(null); }}>
         <DialogContent className="max-w-sm" data-testid="dialog-guide">
@@ -1820,7 +1832,7 @@ export default function SpecialistDashboard() {
       )}
 
       <div className="grid gap-6 md:grid-cols-2">
-        <Card id="bookings-section">
+        {clientsAllowed && <Card id="bookings-section">
           <CardHeader className="flex flex-row items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <CalendarIcon className="w-5 h-5" />
@@ -2338,7 +2350,7 @@ export default function SpecialistDashboard() {
               </div>
             )}
           </CardContent>
-        </Card>
+        </Card>}
 
         {reviews && reviews.length > 0 && specialist?.baseServicePrice && (() => {
           const priceReviewCount = reviews.filter((r: any) => r.priceMismatch).length;
@@ -2426,7 +2438,7 @@ export default function SpecialistDashboard() {
         </Card>
       </div>
 
-      <Card>
+      {clientsAllowed && <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2">
           <CardTitle>Завершённые визиты</CardTitle>
           {completedBookings.length > 0 && (
@@ -2526,7 +2538,7 @@ export default function SpecialistDashboard() {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       <div className="text-center pb-4">
         <a

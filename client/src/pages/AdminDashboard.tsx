@@ -460,7 +460,7 @@ export default function AdminDashboard() {
     resolvedAt: string | null;
     specialistName: string;
     notificationStatus: "queued" | "sending" | "sent" | "failed" | "skipped" | null;
-    access?: {legacy:boolean;verified_at:string|null;needs_review:boolean;reviewed_by:string|null;bound_user:string|null};
+    access?: {disputed_owner:string|null;dispute_decision:string|null;current_owner:string|null;legacy:boolean;verified_at:string|null;needs_review:boolean;reviewed_by:string|null;bound_user:string|null};
     invite?: InviteState|null;
     notificationError: string | null;
   };
@@ -488,6 +488,9 @@ export default function AdminDashboard() {
       const r=await fetch(`/api/admin/claim-requests/${id}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({manualReview})});const data=await r.json();if(!r.ok)throw Error(data.message);return data;
     },onSuccess:(d)=>{toast({title:d.notificationStatus==='queued'?'Профиль привязан. WhatsApp в очереди.':'Сверка сохранена. Привязка при входе по коду; сообщение не отправлено.'});refetchClaims()},onError:(e:Error)=>toast({title:'Не удалось одобрить',description:e.message,variant:'destructive'})
   });
+  const decideDispute=useMutation({mutationFn:async({id,decision,expectedOwner}:{id:number;decision:'keep'|'transfer';expectedOwner:string|null})=>{
+    const res=await fetch(`/api/admin/claim-requests/${id}/resolve-dispute`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision,expectedOwner})});if(!res.ok)throw Error((await res.json()).message);
+  },onSuccess:()=>{toast({title:'Решение сохранено'});refetchClaims()},onError:(e:Error)=>{toast({title:e.message,variant:'destructive'});refetchClaims()}});
   const rejectClaimMutation = useMutation({
     mutationFn: async (claimId: number) => {
       const res = await fetch(`/api/admin/claim-requests/${claimId}/reject`, {
@@ -1299,7 +1302,7 @@ export default function AdminDashboard() {
                           }
                           data-testid={`badge-claim-status-${claim.id}`}
                         >
-                          {claim.status === "pending" ? "Ожидает" :
+                          {claim.access?.disputed_owner ? (claim.access.dispute_decision ? "Спор решён" : "Спор") : claim.status === "pending" ? "Ожидает" :
                            claim.status === "approved" ? "Одобрено" : "Отклонено"}
                         </Badge>
                       </div>
@@ -1308,9 +1311,10 @@ export default function AdminDashboard() {
                       </p>
 
                       <p className="text-sm">{claim.access?.verified_at?'Номер подтверждён':'Номер не подтверждён'}{claim.access?.bound_user?' · Профиль привязан':''}</p>
-                      {claim.access?.needs_review&&!claim.access.bound_user&&<p className="text-sm">{claim.access.reviewed_by?'Ручная сверка выполнена':'Требуется ручная сверка: у профиля уже есть аккаунт с доступом.'}</p>}
-                      {claim.access && !claim.access.bound_user && ((claim.status==='pending'&&claim.access.verified_at)||(claim.access.legacy&&claim.access.needs_review&&!claim.access.reviewed_by)) && <Button disabled={approveClaimMutation.isPending} onClick={()=>{const manual=!!claim.access?.needs_review;if(manual&&!window.confirm('Вы проверили права заявителя? Старый аккаунт сохранит свой доступ.'))return;approveClaimMutation.mutate({id:claim.id,manualReview:manual})}}>{claim.access.needs_review?'Подтвердить ручную сверку':'Одобрить'}</Button>}
-                      {claim.status==='pending'&&<Button variant="outline" onClick={()=>rejectClaimMutation.mutate(claim.id)}>Отклонить</Button>}
+                      {claim.access?.disputed_owner && (claim.access.dispute_decision ? <p>{claim.access.dispute_decision==='keep'?'Владелец сохранён':'Профиль передан заявителю'}</p> : <div className="space-y-2"><p>До решения спора данные клиентов закрыты.</p>{(['keep','transfer'] as const).map(decision=><Button key={decision} variant="outline" disabled={decideDispute.isPending} onClick={()=>{if(decision==='transfer'&&!window.confirm('Передать профиль заявителю? Прежний владелец потеряет доступ.'))return;decideDispute.mutate({id:claim.id,decision,expectedOwner:claim.access!.current_owner})}}>{decision==='keep'?'Оставить владельца':'Передать профиль заявителю'}</Button>)}</div>)}
+                      {!claim.access?.disputed_owner && claim.access?.needs_review&&!claim.access.bound_user&&<p className="text-sm">{claim.access.reviewed_by?'Ручная сверка выполнена':'Требуется ручная сверка: у профиля уже есть аккаунт с доступом.'}</p>}
+                      {claim.access && !claim.access.disputed_owner && !claim.access.bound_user && ((claim.status==='pending'&&claim.access.verified_at)||(claim.access.legacy&&claim.access.needs_review&&!claim.access.reviewed_by)) && <Button disabled={approveClaimMutation.isPending} onClick={()=>{const manual=!!claim.access?.needs_review;if(manual&&!window.confirm('Вы проверили права заявителя? Старый аккаунт сохранит свой доступ.'))return;approveClaimMutation.mutate({id:claim.id,manualReview:manual})}}>{claim.access.needs_review?'Подтвердить ручную сверку':'Одобрить'}</Button>}
+                      {!claim.access?.disputed_owner && claim.status==='pending'&&<Button variant="outline" onClick={()=>rejectClaimMutation.mutate(claim.id)}>Отклонить</Button>}
                       {claim.invite && <ClaimInvitation id={claim.id} state={claim.invite} refresh={refetchClaims}/>}
                       {claim.notificationStatus&&<p className="text-xs">WhatsApp: {claim.notificationStatus}</p>}
                     </div>
