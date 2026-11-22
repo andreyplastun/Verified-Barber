@@ -8,7 +8,7 @@ type AnalyticsPayload = {
 };
 
 // Persistent anonymous browser id — lets us count unique visitors without accounts.
-function getAnonId(): string | undefined {
+export function getAnonId(): string | undefined {
   try {
     if (typeof localStorage === "undefined") return undefined;
     let id = localStorage.getItem("rateus_anon_id");

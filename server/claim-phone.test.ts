@@ -8,7 +8,7 @@ test("accepts full legacy +7-region numbers without a plus", () => {
 });
 
 test("claim phone rejects missing, empty, whitespace, and malformed values", () => {
-  const invalid = [undefined, null, "", "   ", "not-a-phone", "7011234567", "+12"];
+  const invalid = [undefined, null, "", "   ", "not-a-phone", "+44 20 7946 0958", "+12"];
 
   for (const phone of invalid) {
     assert.equal(claimPhoneSchema.safeParse(phone).success, false, String(phone));
@@ -20,11 +20,11 @@ test("claim phone rejects missing, empty, whitespace, and malformed values", () 
   }
 });
 
-test("shared client/server claim schema normalizes Kazakhstan and international phones", () => {
+test("shared client/server claim schema normalizes Kazakhstan mobile phones", () => {
   const cases = [
     ["+7 (701) 123-45-67", "+77011234567"],
     ["8 (701) 123-45-67", "+77011234567"],
-    ["+44 20 7946 0958", "+442079460958"],
+    ["7011234567", "+77011234567"],
   ] as const;
 
   for (const [input, expected] of cases) {

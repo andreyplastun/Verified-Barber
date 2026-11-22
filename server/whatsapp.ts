@@ -24,7 +24,6 @@ import { getVisitConfirmationSendAt } from "./visit-confirmation-policy";
 import { confirmVisitFromSpecialistChat } from "./visit-confirmations";
 import { hashPhoneToLockId } from "./wa-phone-lock";
 import { appConfig, waMessages, magicLinks, bookings, specialistReminders } from "@shared/schema";
-import { canSendClaimApprovalNotification } from "./claim-notification-policy";
 import {
   assertReviewDispatchAllowed,
   dispatchWithReviewPolicy,
@@ -368,6 +367,7 @@ async function getWaDailyUsage(): Promise<{
       FROM specialist_reminders
       WHERE status = 'sent'
         AND sent_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
+      UNION ALL SELECT false AS is_priority FROM rateus_private.master_codes WHERE charged AND created_at >= (now() AT TIME ZONE 'Asia/Almaty')::date AT TIME ZONE 'Asia/Almaty'
     ) sent_messages
   `);
   const totalSent = Number((result.rows[0] as any)?.total_sent || 0);
@@ -427,7 +427,28 @@ async function getLastSentAt(): Promise<number> {
   return new Date(lastSent).getTime();
 }
 
-async function getAssistBotToken(): Promise<string | null> {
+// Reserve against the same hard cap as the dispatcher. OTP is user-requested and
+// immediate, but an ambiguous provider timeout must not free a slot for a double send.
+async function reserveAuthChannelSlot(statement: ReturnType<typeof sql>) {
+  const settings=await getWaSettings();
+  const hard=getEffectiveHardLimit(settings.hardDailyLimit,getWarmupDailyLimit(settings.warmupStartDate,settings.dailyLimit),settings.priorityDailyLimit);
+  return db.transaction(async tx=>{
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(602173145)`);
+    const counts=await tx.execute(sql`WITH day AS (SELECT date_trunc('day',now() AT TIME ZONE 'Asia/Almaty') AT TIME ZONE 'Asia/Almaty' AS start)
+      SELECT (SELECT count(*) FROM wa_messages,day WHERE (status='sent' AND sent_at>=day.start) OR (status='sending' AND sending_started_at>=day.start))+
+      (SELECT count(*) FROM specialist_reminders,day WHERE (status='sent' AND sent_at>=day.start) OR (status='sending' AND sending_started_at>=day.start))+
+      (SELECT count(*) FROM rateus_private.master_codes,day WHERE charged AND created_at>=day.start) AS used`);
+    if(!settings.enabled || Number(counts.rows[0].used)>=hard)return {rows:[]};
+    return tx.execute(statement);
+  });
+}
+export async function reserveOtpSlot(id:string,phone:string){
+  if(await storage.isWaOptedOut(phone)||await storage.isWaOptedOut(phone.slice(1)))return false;
+  const r=await reserveAuthChannelSlot(sql`UPDATE rateus_private.master_codes SET charged=true WHERE id=${id} AND NOT charged AND state='sending' RETURNING id`);
+  return !!r.rows.length;
+}
+
+export async function getAssistBotToken(): Promise<string | null> {
   if (process.env.ASSISTBOT_TOKEN) return process.env.ASSISTBOT_TOKEN;
   try {
     const rows = await db.select().from(appConfig);
@@ -533,6 +554,7 @@ async function sendViaAssistBot(
   } catch {}
 
   // Even with HTTP 200, AssistBot may return an error envelope. Surface it.
+  if(source === "verified_approval" && !respJson) throw new Error("provider_response_unconfirmed");
   const explicitError =
     respJson?.error ||
     respJson?.errors ||
@@ -1338,7 +1360,7 @@ async function claimWaMessageForDispatch(
         )
       `
     : sql``;
-  const claimed = await db.execute(sql`
+  const claimed = await reserveAuthChannelSlot(sql`
     UPDATE wa_messages wm
     SET status = 'sending', sending_started_at = NOW()
     WHERE wm.id = ${messageId}
@@ -2016,25 +2038,8 @@ async function tryDispatchSpecialistReminder(params: {
     .where(and(eq(specialistReminders.id, picked.id), eq(specialistReminders.status, "queued")));
   if (!reminder || !isDispatchableSpecialistReminderText(reminder.messageText)) return "none";
 
-  if (reminder.reminderType === "claim_approved") {
-    const claimState = await db.execute(sql`
-      SELECT cr.status, cr.token_used_at, cr.token_expires_at, s.owner_user_id
-      FROM claim_requests cr
-      JOIN specialists s ON s.id = cr.specialist_id
-      WHERE cr.id = ${reminder.claimRequestId}
-        AND cr.specialist_id = ${reminder.specialistId}
-      LIMIT 1
-    `);
-    const row = claimState.rows[0] as any;
-    if (!canSendClaimApprovalNotification(row ? {
-      status: row.status,
-      tokenUsedAt: row.token_used_at,
-      tokenExpiresAt: row.token_expires_at,
-      ownerUserId: row.owner_user_id,
-    } : null)) {
-      await finishSpecialistReminder(reminder.id, "skipped", { skipReason: "obsolete_claim" });
-      return "none";
-    }
+  if (reminder.reminderType === 'claim_approved' && !await verifiedApprovalReady(reminder.id)) {
+    await finishSpecialistReminder(reminder.id,'skipped',{skipReason:'obsolete_claim'});return 'none';
   }
 
   if (await storage.isWaOptedOut(reminder.phone)) {
@@ -2089,32 +2094,15 @@ async function tryDispatchSpecialistReminder(params: {
   try {
     // Re-check after winning the queue row. This closes the ordinary race where
     // the link is consumed while this dispatcher was waiting for channel space.
-    if (claimed.reminderType === "claim_approved") {
-      const claimState = await db.execute(sql`
-        SELECT cr.status, cr.token_used_at, cr.token_expires_at, s.owner_user_id
-        FROM claim_requests cr
-        JOIN specialists s ON s.id = cr.specialist_id
-        WHERE cr.id = ${claimed.claimRequestId}
-          AND cr.specialist_id = ${claimed.specialistId}
-        LIMIT 1
-      `);
-      const row = claimState.rows[0] as any;
-      if (!canSendClaimApprovalNotification(row ? {
-        status: row.status,
-        tokenUsedAt: row.token_used_at,
-        tokenExpiresAt: row.token_expires_at,
-        ownerUserId: row.owner_user_id,
-      } : null)) {
-        await finishSpecialistReminder(claimed.id, "skipped", { skipReason: "obsolete_claim" });
-        return "none";
-      }
+    if (claimed.reminderType === 'claim_approved' && !await verifiedApprovalReady(claimed.id)) {
+      await finishSpecialistReminder(claimed.id,'skipped',{skipReason:'obsolete_claim'});return 'none';
     }
     const assistbotMessageId = await sendViaAssistBot(
       claimed.phone,
       claimed.messageText,
       claimed.specialistId,
       "specialist_reminder",
-      "specialist_reminder",
+      claimed.reminderType === "claim_approved" ? "verified_approval" : "specialist_reminder",
       claimed.createdAt?.getTime() || Date.now(),
     );
     await finishSpecialistReminder(claimed.id, "sent", { assistbotMessageId });
@@ -2137,7 +2125,7 @@ function isSpecialistReminderWindowOpen(): boolean {
 async function claimSpecialistReminderForDispatch(
   reminderId: number,
 ): Promise<SpecialistReminderRow | null> {
-  const claimed = await db.execute(sql`
+  const claimed = await reserveAuthChannelSlot(sql`
     UPDATE specialist_reminders
     SET status = 'sending', sending_started_at = NOW()
     WHERE id = ${reminderId}
@@ -2164,20 +2152,13 @@ async function hasReadyClientMessage(): Promise<boolean> {
   return !!clientMessage;
 }
 
-async function hasReadyClaimApproval(): Promise<boolean> {
-  if (!isSpecialistReminderWindowOpen()) return false;
-  const result = await db.execute(sql`
-    SELECT 1 FROM specialist_reminders r
-    JOIN claim_requests c ON c.id = r.claim_request_id
-    JOIN specialists s ON s.id = c.specialist_id
-    WHERE r.reminder_type = 'claim_approved' AND r.status = 'queued'
-      AND r.scheduled_at <= NOW() AND NULLIF(BTRIM(r.message_text), '') IS NOT NULL
-      AND c.status = 'approved' AND c.token_used_at IS NULL
-      AND c.token_expires_at > NOW() AND s.owner_user_id IS NULL
-    LIMIT 1
-  `);
-  return result.rows.length > 0;
-}
+// Bound verified claims only; never send a legacy recovery/link message.
+const verifiedApprovalQuery = sql`FROM specialist_reminders r JOIN rateus_private.master_claims m ON m.claim_id=r.claim_request_id
+ JOIN specialists s ON s.id=m.specialist_id AND s.owner_user_id::text=m.bound_user
+ WHERE r.reminder_type='claim_approved' AND NOT m.legacy AND r.specialist_id=m.specialist_id AND r.phone=substr(m.phone,2)`;
+async function verifiedApprovalReady(id:number){const result=await db.execute(sql`SELECT 1 ${verifiedApprovalQuery} AND r.id=${id}`);return !!result.rows.length;}
+async function hasReadyClaimApproval(){if(!isSpecialistReminderWindowOpen())return false;
+ const result=await db.execute(sql`SELECT 1 ${verifiedApprovalQuery} AND r.status='queued' AND r.scheduled_at<=now() LIMIT 1`);return !!result.rows.length;}
 
 async function finishSpecialistReminder(
   reminderId: number,
@@ -2198,6 +2179,10 @@ async function finishSpecialistReminder(
       assistbotMessageId: fields.assistbotMessageId ?? null,
     })
     .where(eq(specialistReminders.id, reminderId));
+  await db.execute(sql`INSERT INTO analytics_events(event_type,specialist_id,anon_id,source,metadata)
+    SELECT 'claim_message_sent',m.specialist_id,m.anon_id,'master_access',jsonb_build_object('result',${status}::text,'providerId',${fields.assistbotMessageId??null}::text,'response',${status==='sent'?'HTTP 2xx, no explicit error':status==='failed'?'provider_error':fields.skipReason??null}::text)
+    FROM specialist_reminders r JOIN rateus_private.master_claims m ON m.claim_id=r.claim_request_id WHERE r.id=${reminderId} AND NOT m.legacy`);
+
 }
 
 async function getSpecialistReminderDailyUsage(): Promise<{

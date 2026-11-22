@@ -1,3 +1,4 @@
+import {prepareMasterAccess} from "./master-access/schema";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { isSensitiveApiResponsePath } from "./admin-enquiry-security";
@@ -107,7 +108,7 @@ app.use((req, res, next) => {
   const path = req.path;
   const isVisitConfirmationPath = /^\/api\/visit-confirmations\/[^/]+/.test(path);
   const suppressResponseBodyLog =
-    isVisitConfirmationPath || isSensitiveApiResponsePath(path);
+    path.startsWith("/api/master-access/") || path.startsWith("/api/admin/claim-requests") || isVisitConfirmationPath || isSensitiveApiResponsePath(path);
   const loggedPath = isVisitConfirmationPath
     ? path.replace(/^\/api\/visit-confirmations\/[^/]+/, "/api/visit-confirmations/[redacted]")
     : path;
@@ -902,6 +903,7 @@ app.use((req, res, next) => {
     );
   }
 
+  await prepareMasterAccess(pool, process.env.NODE_ENV === "production");
   await registerRoutes(httpServer, app);
   
   // Finalize any pending reviews at startup (fixes reviews that missed lazy finalization)

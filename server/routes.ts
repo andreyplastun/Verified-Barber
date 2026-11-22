@@ -1,3 +1,6 @@
+import { MasterAccess, AccessError } from "./master-access/service";
+import { masterAccessRoutes } from "./master-access/routes";
+import { providers as masterProviders } from "./master-access/providers";
 import { landingMetadataSchema } from "../shared/landing-analytics";
 import type { Express, Response } from "express";
 import { reviewAttemptSuppression, reviewClientEligibility } from "./review-invitation-policy";
@@ -571,6 +574,11 @@ export async function registerRoutes(
     next();
   });
   app.use("/api", presenceReviewAccess(storage));
+  const masterAccess = new MasterAccess(pool,masterProviders, process.env.SESSION_SECRET || "", async id=>{
+    if(process.env.NODE_ENV!=="production")return;
+    const c=await storage.getClaimRequestById(id); if(c){const s=await storage.getSpecialist(c.specialistId);if(s)await notifyAdminNewClaim(c,s.name);}
+  });
+  masterAccessRoutes(app, masterAccess);
 
   // The new presence protocol is opt-in per booking, not a retrofit of old links.
   function sendManualPresenceFailure(res: Response, error: any) {
@@ -2528,6 +2536,7 @@ export async function registerRoutes(
         'master_landing_early_exit',
         'master_landing_view',
         'master_landing_cta_click',
+        'claim_cta_click',
         'create_profile_click',
         'find_in_catalog_click',
         'login_click',
@@ -3990,44 +3999,7 @@ ${magicLink}`;
   };
 
   app.post("/api/claim-requests", async (req, res) => {
-    try {
-      const parsed = claimRequestSchema.safeParse(req.body);
-      if (!parsed.success) {
-        return res.status(400).json({ message: parsed.error.errors[0].message });
-      }
-
-      const { specialistId, phone } = parsed.data;
-
-      const specialist = await storage.getSpecialist(specialistId);
-      if (!specialist) {
-        return res.status(404).json({ message: "Специалист не найден" });
-      }
-
-      // Already-owned profiles (e.g. self-registered specialists) cannot be
-      // claimed. Mirrors the claim-status ownership check so a direct API call
-      // can't open a claim against a profile that already has an owner.
-      if (specialist.ownerUserId) {
-        return res.status(400).json({ message: "Профиль уже привязан" });
-      }
-
-      const existingClaims = await storage.getClaimRequests();
-      const hasActiveClaim = existingClaims.some(
-        c => c.specialistId === specialistId && isClaimActive(c)
-      );
-      if (hasActiveClaim) {
-        return res.status(400).json({ message: "Запрос уже отправлен или профиль привязан" });
-      }
-
-      const claim = await storage.createClaimRequest(specialistId, phone);
-
-      // Best-effort email notification
-      notifyAdminNewClaim(claim, specialist.name).catch(() => {});
-
-      res.status(201).json({ message: "Запрос отправлен", id: claim.id });
-    } catch (err: any) {
-      console.error("Error creating claim:", err);
-      res.status(500).json({ message: err.message });
-    }
+    res.status(400).json({message:"Подтвердите номер кодом из WhatsApp перед отправкой заявки."});
   });
 
   // Admin: List all claim requests
@@ -4037,7 +4009,11 @@ ${magicLink}`;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
 
       const claims = await storage.getClaimRequests();
-      res.json(claims);
+      const checked = await pool.query(`SELECT m.claim_id,m.legacy,m.verified_at,m.reviewed_by,m.bound_user,
+        (m.needs_review OR EXISTS(SELECT 1 FROM users u WHERE u.specialist_id=m.specialist_id AND u.id::text IS DISTINCT FROM m.bound_user)) needs_review
+        FROM rateus_private.master_claims m`);
+      const details = new Map(checked.rows.map(r=>[r.claim_id,r]));
+      res.json(claims.map(c=>({...c,claimToken:null,access:details.get(c.id)??null})));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -4049,76 +4025,10 @@ ${magicLink}`;
       const userId = req.headers["x-user-id"] as string;
       if (!userId || !(await checkAdminRole(req, res, userId))) return;
 
-      const claimId = parseInt(req.params.id);
-      const existing = await storage.getClaimRequestById(claimId);
-      if (!existing) {
-        return res.status(404).json({ message: "Запрос не найден" });
-      }
-      const specialist = await storage.getSpecialist(existing.specialistId);
-      if (!specialist) {
-        return res.status(404).json({ message: "Специалист не найден" });
-      }
-      if (existing.status !== "pending") {
-        if (
-          existing.status === "approved"
-          && existing.claimToken
-          && !existing.tokenUsedAt
-          && (!existing.tokenExpiresAt || new Date(existing.tokenExpiresAt) > new Date())
-        ) {
-          const baseUrl = process.env.NODE_ENV === "production"
-            ? "https://rateus.kz"
-            : `${req.protocol}://${req.get("host")}`;
-          const claimLink = `${baseUrl}/claim/${existing.claimToken}`;
-          return res.json({
-            claim: existing,
-            claimLink,
-            whatsappText: `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на Rateus одобрен. Перейдите по ссылке для привязки: ${claimLink}`,
-             notificationStatus: (await storage.getClaimRequests())
-               .find((claim) => claim.id === existing.id)?.notificationStatus || null,
-             newlyApproved: false,
-          });
-        }
-        return res.status(400).json({ message: "Запрос уже обработан" });
-      }
-
-      const approveAllClaims = await storage.getClaimRequests();
-      const hasCompletedClaimForApprove = approveAllClaims.some(
-        c => c.specialistId === existing.specialistId && c.status === "approved" && c.tokenUsedAt
-      );
-      if (hasCompletedClaimForApprove) {
-        return res.status(400).json({ message: "Профиль уже привязан к другому пользователю" });
-      }
-
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? 'https://rateus.kz' 
-        : `${req.protocol}://${req.get('host')}`;
-      const { claim, token, notificationStatus, newlyApproved } = await storage.approveClaimRequest(
-        claimId,
-        {
-          specialistId: existing.specialistId,
-          phone: existing.phone,
-          buildMessage: (approvedToken) => {
-            const link = `${baseUrl}/claim/${approvedToken}`;
-            return `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на Rateus одобрен. Перейдите по ссылке для привязки: ${link}`;
-          },
-        },
-      );
-      const claimLink = `${baseUrl}/claim/${token}`;
-      if (notificationStatus === "queued") wakeClaimApprovalDispatcher();
-
-      const whatsappText = `Здравствуйте! Ваш запрос на профиль «${specialist.name}» на Rateus одобрен. Перейдите по ссылке для привязки: ${claimLink}`;
-
-      res.json({ 
-        claim, 
-        claimLink,
-        whatsappText,
-        notificationStatus,
-        newlyApproved,
-      });
-    } catch (err: any) {
-      console.error("Error approving claim:", err);
-      res.status(500).json({ message: err.message });
-    }
+      const result = await masterAccess.approve(Number(req.params.id),userId,req.body?.manualReview===true);
+      if(result.notificationStatus==='queued') wakeClaimApprovalDispatcher();
+      res.json(result);
+    } catch(err){res.status(err instanceof AccessError?err.status:503).json({message:err instanceof AccessError?err.message:'Не удалось привязать аккаунт. Проверьте настройки входа.'});}
   });
 
   // Admin: Reject claim request
@@ -4147,126 +4057,9 @@ ${magicLink}`;
     }
   });
 
-  // Public: Validate claim token
-  app.get("/api/claim/:token", async (req, res) => {
-    try {
-      const claim = await storage.getClaimByToken(req.params.token);
-      if (!claim) {
-        return res.status(404).json({ message: "Ссылка недействительна" });
-      }
-      if (claim.status !== "approved") {
-        return res.status(400).json({ message: "Ссылка недействительна" });
-      }
-      if (claim.tokenUsedAt) {
-        return res.status(400).json({ message: "Ссылка уже использована" });
-      }
-      if (claim.tokenExpiresAt && new Date() > new Date(claim.tokenExpiresAt)) {
-        return res.status(400).json({ message: "Срок действия ссылки истёк" });
-      }
-
-      const specialist = await storage.getSpecialist(claim.specialistId);
-      res.json({
-        claimId: claim.id,
-        specialistId: claim.specialistId,
-        specialistName: specialist?.name || "Неизвестный",
-        specialistImageUrl: specialist?.imageUrl,
-      });
-    } catch (err: any) {
-      res.status(500).json({ message: err.message });
-    }
-  });
-
-  // Authenticated: Bind specialist profile via claim token
-  app.post("/api/claim/:token/bind", async (req, res) => {
-    try {
-      const authUserId = req.headers["x-user-id"] as string;
-      if (!authUserId) {
-        return res.status(401).json({ message: "Необходимо войти в аккаунт" });
-      }
-
-      const claim = await storage.getClaimByToken(req.params.token);
-      if (!claim) {
-        return res.status(404).json({ message: "Ссылка недействительна" });
-      }
-      if (claim.status !== "approved") {
-        return res.status(400).json({ message: "Ссылка недействительна" });
-      }
-      if (claim.tokenUsedAt) {
-        return res.status(400).json({ message: "Ссылка уже использована" });
-      }
-      if (claim.tokenExpiresAt && new Date() > new Date(claim.tokenExpiresAt)) {
-        return res.status(400).json({ message: "Срок действия ссылки истёк" });
-      }
-
-      const specialist = await storage.getSpecialist(claim.specialistId);
-      if (!specialist) {
-        return res.status(404).json({ message: "Специалист не найден" });
-      }
-      const claimant = await storage.getUser(authUserId);
-      if (!claimant) {
-        return res.status(401).json({ message: "Необходимо войти в аккаунт" });
-      }
-      if (claimant.role === "admin") {
-        return res.status(403).json({
-          message: "Нельзя привязать профиль специалиста к аккаунту администратора. Войдите в отдельный аккаунт владельца профиля.",
-        });
-      }
-      if (
-        claimant.specialistId != null
-        && Number(claimant.specialistId) !== claim.specialistId
-      ) {
-        return res.status(409).json({
-          message: "К этому аккаунту уже привязан другой профиль специалиста.",
-        });
-      }
-      const bindResult = await pool.query(`
-        WITH eligible_user AS (
-          SELECT id
-          FROM users
-          WHERE id::text = $2::text
-            AND role <> 'admin'
-            AND (specialist_id IS NULL OR specialist_id = $3)
-        ),
-        token_check AS (
-          UPDATE claim_requests 
-          SET token_used_at = NOW() 
-          WHERE id = $1
-            AND token_used_at IS NULL
-            AND status = 'approved'
-            AND EXISTS (SELECT 1 FROM eligible_user)
-          RETURNING specialist_id
-        ),
-        bind_specialist AS (
-          UPDATE specialists 
-          SET owner_user_id = $2 
-          WHERE id = (SELECT specialist_id FROM token_check)
-          RETURNING id
-        ),
-        bind_user AS (
-          UPDATE users 
-          SET role = 'specialist', specialist_id = (SELECT specialist_id FROM token_check)
-          WHERE id IN (SELECT id FROM eligible_user)
-            AND (SELECT specialist_id FROM token_check) IS NOT NULL
-          RETURNING id
-        )
-        SELECT (SELECT specialist_id FROM token_check) as specialist_id
-      `, [claim.id, authUserId, claim.specialistId]);
-
-      if (!bindResult.rows[0]?.specialist_id) {
-        return res.status(400).json({ message: "Ссылка уже использована или профиль привязан" });
-      }
-
-      console.log(`[CLAIM] Bound specialist ${claim.specialistId} to user ${authUserId} (atomic)`);
-
-      res.json({ 
-        message: "Профиль успешно привязан", 
-        specialistId: claim.specialistId 
-      });
-    } catch (err: any) {
-      console.error("Error binding claim:", err);
-      res.status(500).json({ message: err.message });
-    }
-  });
+  // Retired capability links never grant ownership. Historical candidates must prove their phone.
+  app.get('/api/claim/:token',(_req,res)=>res.status(410).json({message:'Войдите на Rateus по номеру WhatsApp на странице /login.'}));
+  app.post('/api/claim/:token/bind',(_req,res)=>res.status(410).json({message:'Привязка по старой ссылке отключена. Войдите по номеру телефона.'}));
 
   // Check if specialist profile is claimed (public)
   // Per-IP visit counter for unclaimed profiles: if the same IP opens the same
@@ -4311,7 +4104,7 @@ ${magicLink}`;
           const key = `${ip}:${specialistId}`;
           if (!claimVisitCounter.has(key) && claimVisitCounter.size >= CLAIM_VISIT_COUNTER_MAX_KEYS) {
             // Map is full for today — skip counting new keys to bound memory.
-            return res.json({ isClaimed, suggestClaim: false, specialistId });
+            return res.json({ isClaimed, hasOwner: !!specialist.ownerUserId,suggestClaim: false, specialistId });
           }
           const visits = (claimVisitCounter.get(key) || 0) + 1;
           claimVisitCounter.set(key, visits);
@@ -4324,6 +4117,7 @@ ${magicLink}`;
 
       res.json({
         isClaimed,
+        hasOwner: !!specialist.ownerUserId,
         suggestClaim,
         specialistId
       });

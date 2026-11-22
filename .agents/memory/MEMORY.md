@@ -38,7 +38,7 @@
 - [WA visible daily limit](wa-visible-daily-limit.md) — admin “Лимит / день” is the absolute total; priority changes order only and must never add hidden sends.
 - [Approval reply priority](claim-approval-priority.md) — requested approval replies precede all other WA traffic, within shared cap and spacing; not cold outreach.
 - [Railway startup index timeout](railway-startup-index-timeout.md) — awaited concurrent indexes can miss Railway health timeout; bound index waits and gate only required columns.
-- [Claim links require fresh auth](claim-fresh-auth.md) — never bind to an ambient session; require claim-scoped login, reject admins server-side, then reload the dashboard after binding.
+- [Claim ownership by phone](claim-fresh-auth.md) — use applicant-supplied WhatsApp numbers only; existing staff access requires manual review. Never repurpose legacy accounts.
 - [AssistBot chat origin](assistbot-chat-origin.md) — a test profile used the service number; webhook success does not prove access to a master's personal WhatsApp.
 - [Manual confirmation lifetime](manual-confirmation-lifetime.md) — allow 24h after send to answer; retain the original short geo-proof window and never revive expired links.
 - [Review request pause](review-request-pause.md) — primary requests explicitly resumed 2026-10-05; follow-ups stay off, expired messages stay expired.

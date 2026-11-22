@@ -1,23 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 import { trackProfileView } from "@/lib/analytics";
 import { useRoute, Link } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
 import { useAuth } from "@/contexts/AuthContext";
 import { RatingStars } from "@/components/RatingStars";
-import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info, UserCheck, Phone } from "lucide-react";
+import { ChevronLeft, Share2, MapPin, Calendar, User, Star, Image, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { queryClient, apiRequest } from "@/lib/queryClient";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
 import { BookingButton } from "@/components/BookingButton";
 import { SpecialistPhoto } from "@/components/specialist-photo";
 import { AnimatedRating, AnimatedStar, reviewCardVariants, FadeIn, Confetti } from "@/components/ui/animations";
 import type { Booking, SpecialistPhoto as SpecialistPhotoRecord } from "@shared/schema";
-import { claimPhoneSchema } from "@shared/claim-phone";
+import {MasterPhoneForm} from "@/components/MasterPhoneForm";
+import {trackEvent} from "@/lib/analytics";
 
 export default function SpecialistProfile() {
   const [, params] = useRoute("/specialist/:id");
@@ -26,7 +25,7 @@ export default function SpecialistProfile() {
   const { toast } = useToast();
   const { data: specialist, isLoading } = useSpecialist(id, currentUser?.id);
 
-  const { data: claimStatus } = useQuery<{ isClaimed: boolean; suggestClaim?: boolean }>({
+  const { data: claimStatus } = useQuery<{ isClaimed: boolean; suggestClaim?: boolean; hasOwner?: boolean }>({
     queryKey: ['/api/specialists', id, 'claim-status', currentUser?.id ?? 'anon'],
     queryFn: async () => {
       // x-user-id lets the server skip counting logged-in visits toward the
@@ -45,44 +44,8 @@ export default function SpecialistProfile() {
     refetchOnReconnect: false,
   });
 
-  const [showClaimForm, setShowClaimForm] = useState(false);
-  const [showClaimModal, setShowClaimModal] = useState(false);
-  const [claimPhone, setClaimPhone] = useState("");
-  const [claimPhoneError, setClaimPhoneError] = useState("");
-
-  const dismissClaimModal = () => {
-    setShowClaimModal(false);
-    setClaimPhoneError("");
-    if (id > 0) localStorage.setItem(`claim_modal_seen_${id}`, "1");
-  };
-
-  const claimMutation = useMutation({
-    mutationFn: async (phone: string) => {
-      await apiRequest("POST", "/api/claim-requests", { specialistId: id, phone });
-    },
-    onSuccess: () => {
-      toast({ title: "Запрос отправлен", description: "Администратор рассмотрит ваш запрос." });
-      queryClient.invalidateQueries({ queryKey: ['/api/specialists', id, 'claim-status'] });
-      setShowClaimForm(false);
-      setShowClaimModal(false);
-      setClaimPhone("");
-      setClaimPhoneError("");
-    },
-    onError: (error: any) => {
-      toast({ title: "Ошибка", description: error?.message || "Ошибка при отправке запроса", variant: "destructive" });
-    },
-  });
-
-  const submitClaim = () => {
-    const parsed = claimPhoneSchema.safeParse(claimPhone);
-    if (!parsed.success) {
-      setClaimPhoneError(parsed.error.errors[0].message);
-      return;
-    }
-    setClaimPhoneError("");
-    claimMutation.mutate(parsed.data);
-  };
-
+  const [showClaimModal,setShowClaimModal]=useState(false);
+  const dismissClaimModal=()=>{setShowClaimModal(false);if(id>0)localStorage.setItem(`claim_modal_seen_${id}`,"1")};
   const showClaimButton = claimStatus && !claimStatus.isClaimed;
 
   // Claim modal: never for logged-in users (client or specialist); for anonymous
@@ -340,119 +303,9 @@ export default function SpecialistProfile() {
           </div>
         </div>
 
-        {showClaimButton && (
-          <div className="mt-4 bg-card rounded-2xl p-4 shadow-sm border border-border" data-testid="claim-profile-banner">
-            {!showClaimForm ? (
-              <div className="flex items-center gap-3">
-                <UserCheck className="w-5 h-5 text-primary flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">Это ваш профиль?</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Отправьте запрос на управление</p>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => setShowClaimForm(true)}
-                  data-testid="button-claim-profile"
-                >
-                  Забрать
-                </Button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-primary flex-shrink-0" />
-                  <p className="text-sm font-medium">Укажите ваш номер WhatsApp</p>
-                </div>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      type="tel"
-                      placeholder="+7 (___) ___-__-__"
-                      value={claimPhone}
-                      onChange={(e) => {
-                        setClaimPhone(e.target.value);
-                        if (claimPhoneError) setClaimPhoneError("");
-                      }}
-                      className="pl-9"
-                      aria-invalid={Boolean(claimPhoneError)}
-                      data-testid="input-claim-phone"
-                    />
-                  </div>
-                  <Button
-                    size="sm"
-                    onClick={submitClaim}
-                    disabled={claimMutation.isPending}
-                    data-testid="button-submit-claim"
-                  >
-                    {claimMutation.isPending ? "..." : "Отправить"}
-                  </Button>
-                </div>
-                {claimPhoneError && (
-                  <p className="text-xs text-destructive" role="alert">{claimPhoneError}</p>
-                )}
-                <button
-                  className="text-xs text-muted-foreground underline"
-                  onClick={() => { setShowClaimForm(false); setClaimPhone(""); setClaimPhoneError(""); }}
-                  data-testid="button-cancel-claim"
-                >
-                  Отмена
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        <Dialog open={showClaimModal} onOpenChange={(open) => { if (!open) dismissClaimModal(); }}>
-          <DialogContent className="sm:max-w-sm" data-testid="modal-claim-profile">
-            <DialogHeader>
-              <DialogTitle>Это ваш аккаунт?</DialogTitle>
-              <DialogDescription>
-                Заберите свой аккаунт, чтобы управлять записями, фото и отзывами. Укажите ваш номер WhatsApp — администратор подтвердит, и профиль станет вашим.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
-              <label htmlFor="claim-phone-modal" className="text-sm font-medium">
-                Номер WhatsApp
-              </label>
-              <div className="relative">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  id="claim-phone-modal"
-                  type="tel"
-                  placeholder="+7 (___) ___-__-__"
-                  value={claimPhone}
-                  onChange={(e) => {
-                    setClaimPhone(e.target.value);
-                    if (claimPhoneError) setClaimPhoneError("");
-                  }}
-                  className="pl-9"
-                  aria-invalid={Boolean(claimPhoneError)}
-                  data-testid="input-claim-phone-modal"
-                />
-              </div>
-            </div>
-            {claimPhoneError && (
-              <p className="text-sm text-destructive" role="alert">{claimPhoneError}</p>
-            )}
-            <DialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <Button
-                variant="ghost"
-                onClick={dismissClaimModal}
-                data-testid="button-claim-later"
-              >
-                Позже
-              </Button>
-              <Button
-                onClick={submitClaim}
-                disabled={claimMutation.isPending}
-                data-testid="button-claim-account-modal"
-              >
-                {claimMutation.isPending ? "..." : "Забрать аккаунт"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        {claimStatus?.hasOwner && <p className="mt-4 text-xs text-muted-foreground">У профиля уже есть владелец, свяжитесь с поддержкой</p>}
+        {showClaimButton && <div className="mt-4 flex items-center justify-between gap-3 bg-card rounded-2xl p-4 border" data-testid="claim-profile-banner"><span>Это ваш профиль?</span><Button onClick={()=>{trackEvent('claim_cta_click',{specialistId:id});setShowClaimModal(true)}} data-testid="button-claim-profile">Забрать</Button></div>}
+        <Dialog open={showClaimModal} onOpenChange={open=>{if(!open)dismissClaimModal()}}><DialogContent data-testid="modal-claim-profile"><DialogHeader><DialogTitle>Забрать управление профилем</DialogTitle><DialogDescription>Подтвердите свой номер кодом в WhatsApp, затем администратор проверит заявку.</DialogDescription></DialogHeader><MasterPhoneForm specialistId={id}/></DialogContent></Dialog>
 
         {/* Work Photos Gallery */}
         {workPhotos.length > 0 && (

@@ -459,10 +459,10 @@ export default function AdminDashboard() {
     resolvedAt: string | null;
     specialistName: string;
     notificationStatus: "queued" | "sending" | "sent" | "failed" | "skipped" | null;
+    access?: {legacy:boolean;verified_at:string|null;needs_review:boolean;reviewed_by:string|null;bound_user:string|null};
     notificationError: string | null;
   };
 
-  const [claimCopied, setClaimCopied] = useState<number | null>(null);
 
   const { data: claimRequests = [], refetch: refetchClaims, isFetching: refreshingClaims, isLoading: loadingClaims, isError: claimsFailed } = useQuery<ClaimRequestWithName[]>({
     queryKey: ["/api/admin/claim-requests"],
@@ -482,40 +482,10 @@ export default function AdminDashboard() {
   });
 
   const approveClaimMutation = useMutation({
-    mutationFn: async (claimId: number) => {
-      const res = await fetch(`/api/admin/claim-requests/${claimId}/approve`, {
-        method: "POST",
-        headers: { "x-user-id": currentUser?.id || "" },
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message);
-      }
-      return res.json();
-    },
-    onSuccess: (data) => {
-      const notificationStatus = data.notificationStatus;
-      if (notificationStatus === "sent") {
-        toast({ title: "Запрос одобрен", description: "WhatsApp отправлен" });
-      } else if (notificationStatus === "queued" || notificationStatus === "sending") {
-        toast({
-          title: "Запрос одобрен",
-          description: "WhatsApp поставлен в очередь — это ещё не означает доставку",
-        });
-      } else {
-        toast({
-          title: "Запрос одобрен",
-          description: "Автоотправка не выполнена. Используйте WhatsApp или скопируйте ссылку.",
-          variant: "destructive",
-        });
-      }
-      refetchClaims();
-    },
-    onError: (err: Error) => {
-      toast({ title: "Ошибка", description: err.message, variant: "destructive" });
-    },
+    mutationFn: async ({id,manualReview=false}:{id:number;manualReview?:boolean}) => {
+      const r=await fetch(`/api/admin/claim-requests/${id}/approve`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({manualReview})});const data=await r.json();if(!r.ok)throw Error(data.message);return data;
+    },onSuccess:(d)=>{toast({title:d.notificationStatus==='queued'?'Профиль привязан. WhatsApp в очереди.':'Сверка сохранена. Привязка при входе по коду; сообщение не отправлено.'});refetchClaims()},onError:(e:Error)=>toast({title:'Не удалось одобрить',description:e.message,variant:'destructive'})
   });
-
   const rejectClaimMutation = useMutation({
     mutationFn: async (claimId: number) => {
       const res = await fetch(`/api/admin/claim-requests/${claimId}/reject`, {
@@ -1335,100 +1305,11 @@ export default function AdminDashboard() {
                         {new Date(claim.createdAt).toLocaleString("ru-RU")}
                       </p>
 
-                      {claim.status === "pending" && (
-                        <div className="flex gap-2 pt-1">
-                          <Button
-                            size="sm"
-                            onClick={() => approveClaimMutation.mutate(claim.id)}
-                            disabled={approveClaimMutation.isPending}
-                            data-testid={`button-approve-claim-${claim.id}`}
-                          >
-                            <CheckCircle className="h-4 w-4 mr-1" />
-                            Одобрить
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => rejectClaimMutation.mutate(claim.id)}
-                            disabled={rejectClaimMutation.isPending}
-                            data-testid={`button-reject-claim-${claim.id}`}
-                          >
-                            <UserX className="h-4 w-4 mr-1" />
-                            Отклонить
-                          </Button>
-                        </div>
-                      )}
-
-                      {claim.status === "approved" && claim.claimToken && (
-                        <div className="pt-1">
-                          <p className={`text-xs mb-2 ${
-                            claim.notificationStatus === "sent"
-                              ? "text-green-600"
-                              : claim.notificationStatus === "failed" || claim.notificationStatus === "skipped"
-                                ? "text-destructive"
-                                : "text-muted-foreground"
-                          }`} data-testid={`claim-notification-status-${claim.id}`}>
-                            {claim.notificationStatus === "sent" && "WhatsApp отправлен"}
-                            {claim.notificationStatus === "sending" && "WhatsApp отправляется"}
-                            {claim.notificationStatus === "queued" && "WhatsApp: приоритетная отправка, ожидает лимита или интервала"}
-                            {claim.notificationStatus === "failed" && "Автоотправка WhatsApp не удалась"}
-                            {claim.notificationStatus === "skipped" && "Автоотправка WhatsApp отменена"}
-                            {!claim.notificationStatus && "Автоотправка не запускалась"}
-                          </p>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => {
-                                const baseUrl = window.location.origin;
-                                const link = `${baseUrl}/claim/${claim.claimToken}`;
-                                navigator.clipboard.writeText(link);
-                                setClaimCopied(claim.id);
-                                setTimeout(() => setClaimCopied(null), 2000);
-                              }}
-                              data-testid={`button-copy-claim-link-${claim.id}`}
-                            >
-                              {claimCopied === claim.id ? (
-                                <><Check className="h-4 w-4 mr-1" /> Скопировано</>
-                              ) : (
-                                <><Copy className="h-4 w-4 mr-1" /> Копировать ссылку</>
-                              )}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={Boolean(
-                                claim.tokenUsedAt
-                                || (claim.tokenExpiresAt && new Date(claim.tokenExpiresAt) <= new Date())
-                                || !normalizeClaimPhone(claim.phone)
-                              )}
-                              title={!normalizeClaimPhone(claim.phone) ? "Корректный номер WhatsApp не указан" : undefined}
-                              onClick={() => {
-                                const normalizedPhone = normalizeClaimPhone(claim.phone);
-                                if (!normalizedPhone) return;
-                                const baseUrl = window.location.origin;
-                                const link = `${baseUrl}/claim/${claim.claimToken}`;
-                                const text = `Здравствуйте! Ваш запрос на профиль «${claim.specialistName}» на Rateus одобрен. Перейдите по ссылке для привязки: ${link}`;
-                                window.open(`https://wa.me/${normalizedPhone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, "_blank");
-                              }}
-                              data-testid={`button-whatsapp-claim-${claim.id}`}
-                            >
-                              <MessageCircle className="h-4 w-4 mr-1" />
-                              WhatsApp
-                            </Button>
-                          </div>
-                          {claim.tokenUsedAt && (
-                            <p className="text-xs text-green-600 mt-1">
-                              Привязано {new Date(claim.tokenUsedAt).toLocaleString("ru-RU")}
-                            </p>
-                          )}
-                          {!claim.tokenUsedAt && claim.tokenExpiresAt && (
-                            <p className="text-xs text-muted-foreground mt-1">
-                              Срок: до {new Date(claim.tokenExpiresAt).toLocaleDateString("ru-RU")}
-                            </p>
-                          )}
-                        </div>
-                      )}
+                      <p className="text-sm">{claim.access?.verified_at?'Номер подтверждён':'Номер не подтверждён'}{claim.access?.bound_user?' · Профиль привязан':''}</p>
+                      {claim.access?.needs_review&&!claim.access.bound_user&&<p className="text-sm">{claim.access.reviewed_by?'Ручная сверка выполнена':'Требуется ручная сверка: у профиля уже есть аккаунт с доступом.'}</p>}
+                      {claim.access && !claim.access.bound_user && ((claim.status==='pending'&&claim.access.verified_at)||(claim.access.legacy&&claim.access.needs_review&&!claim.access.reviewed_by)) && <Button disabled={approveClaimMutation.isPending} onClick={()=>{const manual=!!claim.access?.needs_review;if(manual&&!window.confirm('Вы проверили права заявителя? Старый аккаунт сохранит свой доступ.'))return;approveClaimMutation.mutate({id:claim.id,manualReview:manual})}}>{claim.access.needs_review?'Подтвердить ручную сверку':'Одобрить'}</Button>}
+                      {claim.status==='pending'&&<Button variant="outline" onClick={()=>rejectClaimMutation.mutate(claim.id)}>Отклонить</Button>}
+                      {claim.notificationStatus&&<p className="text-xs">WhatsApp: {claim.notificationStatus}</p>}
                     </div>
                   ))}
                 </div>

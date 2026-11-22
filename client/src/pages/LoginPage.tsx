@@ -1,3 +1,5 @@
+import {Button} from "@/components/ui/button";
+import {MasterPhoneForm} from "@/components/MasterPhoneForm";
 import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import { LoginForm } from "@/components/auth/LoginForm";
@@ -12,38 +14,10 @@ type Mode = "login" | "choose-role" | "client-signup";
 
 export default function LoginPage() {
   const [, setLocation] = useLocation();
+  const [phoneLogin,setPhoneLogin]=useState(true);
   const [mode, setMode] = useState<Mode>("login");
-  const claimTokenFromUrl = typeof window !== "undefined"
-    ? new URLSearchParams(window.location.search).get("claim")
-    : null;
-  const isClaimFlow = typeof window !== "undefined"
-    && Boolean(claimTokenFromUrl || sessionStorage.getItem("claimReturnUrl"));
 
-  const handleSuccess = async (accessToken?: string) => {
-    const claimReturn = claimTokenFromUrl
-      ? `/claim/${claimTokenFromUrl}`
-      : sessionStorage.getItem("claimReturnUrl");
-    if (claimReturn) {
-      const claimToken = claimReturn.match(/^\/claim\/([^/]+)$/)?.[1];
-      if (!claimToken || !accessToken) {
-        throw new Error("Не удалось подтвердить вход. Попробуйте войти ещё раз.");
-      }
-      const bindResponse = await fetch(`/api/claim/${claimToken}/bind`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${accessToken}`,
-        },
-      });
-      if (!bindResponse.ok) {
-        const error = await bindResponse.json().catch(() => ({}));
-        throw new Error(error.message || "Не удалось привязать профиль");
-      }
-      sessionStorage.removeItem("claimAuthenticatedToken");
-      sessionStorage.removeItem("claimReturnUrl");
-      window.location.replace("/specialist-dashboard");
-      return;
-    }
+  const handleSuccess = async (_token?:string) => {
     const user = await getCurrentUserWithRole();
     if (user?.role === 'specialist') {
       setLocation('/specialist-dashboard');
@@ -65,27 +39,26 @@ export default function LoginPage() {
             <h1 className="text-2xl font-bold" data-testid="text-login-title">
               {mode === "login" && "Добро пожаловать"}
               {mode === "choose-role" && "Кто вы?"}
-              {mode === "client-signup" && (isClaimFlow ? "Создание входа" : "Создание аккаунта")}
+              {mode === "client-signup" && "Создание аккаунта"}
             </h1>
             <p className="text-muted-foreground">
               {mode === "login" && "Войдите, чтобы продолжить"}
               {mode === "choose-role" && "Выберите, как хотите зарегистрироваться"}
               {mode === "client-signup" && (
-                isClaimFlow
-                  ? "Имя и телефон уже сохранены в профиле"
-                  : "Регистрация клиента"
+                "Регистрация клиента"
               )}
             </p>
           </div>
 
           {mode === "login" && (
             <>
-              <LoginForm
+              <div className="flex gap-2" role="group" aria-label="Способ входа"><Button variant={phoneLogin?'default':'outline'} onClick={()=>setPhoneLogin(true)}>Мастер · WhatsApp</Button><Button variant={phoneLogin?'outline':'default'} onClick={()=>setPhoneLogin(false)}>Email и пароль</Button></div>
+              {phoneLogin?<MasterPhoneForm/>:<LoginForm
                 onSuccess={handleSuccess}
-                onSwitchToSignUp={() => setMode(isClaimFlow ? "client-signup" : "choose-role")}
-              />
+                onSwitchToSignUp={() => setMode("choose-role")}
+              />}
 
-              {!isClaimFlow && <div className="pt-6 border-t space-y-3">
+              {<div className="pt-6 border-t space-y-3">
                 <p className="text-center text-xs text-muted-foreground uppercase tracking-wide">
                   Вы специалист?
                 </p>
@@ -148,16 +121,16 @@ export default function LoginPage() {
 
           {mode === "client-signup" && (
             <>
-              {!isClaimFlow && <ClientBenefits />}
+              <ClientBenefits />
               <SignUpForm onSuccess={handleSuccess} onSwitchToLogin={() => setMode("login")} />
               <button
                 type="button"
-                onClick={() => setMode(isClaimFlow ? "login" : "choose-role")}
+                onClick={() => setMode("choose-role")}
                 className="flex items-center justify-center gap-1 w-full text-sm text-muted-foreground"
                 data-testid="link-back-to-role-choice"
               >
                 <ArrowLeft className="h-4 w-4" />
-                {isClaimFlow ? "Назад ко входу" : "Я не клиент, я специалист"}
+                Я не клиент, я специалист
               </button>
             </>
           )}
