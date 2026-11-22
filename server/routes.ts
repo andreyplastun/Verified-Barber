@@ -1,3 +1,4 @@
+import { enqueueInvite, inviteStates } from "./master-access/invites";
 import { MasterAccess, AccessError } from "./master-access/service";
 import { masterAccessRoutes } from "./master-access/routes";
 import { providers as masterProviders } from "./master-access/providers";
@@ -4013,10 +4014,20 @@ ${magicLink}`;
         (m.needs_review OR EXISTS(SELECT 1 FROM users u WHERE u.specialist_id=m.specialist_id AND u.id::text IS DISTINCT FROM m.bound_user)) needs_review
         FROM rateus_private.master_claims m`);
       const details = new Map(checked.rows.map(r=>[r.claim_id,r]));
-      res.json(claims.map(c=>({...c,claimToken:null,access:details.get(c.id)??null})));
+      const invites=await inviteStates(pool);
+      res.json(claims.map(c=>({...c,claimToken:null,invite:invites.get(c.id)??null,access:details.get(c.id)??null})));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
+  });
+
+  app.post('/api/admin/claim-requests/:id/invite',async(req,res)=>{
+    const userId=req.headers['x-user-id'] as string;
+    if(!userId)return res.status(401).json({message:'Нужен вход администратора'});
+    try{if(!await checkAdminRole(req,res,userId))return;
+      const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<=0)return res.status(400).json({message:'Некорректная заявка'});
+      res.status(202).json(await enqueueInvite(pool,id,userId));
+    }catch(e){res.status(e instanceof AccessError?e.status:503).json({message:e instanceof AccessError?e.message:'Не удалось поставить приглашение в очередь'});}
   });
 
   // Admin: Approve claim request

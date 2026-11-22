@@ -1,3 +1,4 @@
+import {dispatchInvite,finishInvite,recoverInterruptedInvites} from "./master-access/invites";
 import { storage } from "./storage";
 import { simplifyAnonymousReviewCopy } from "./review-message-copy";
 import { manualPresenceDispatchAllowed } from "./manual-presence-policy";
@@ -471,7 +472,7 @@ async function sendViaAssistBot(
   idempotencyTimestamp: number = Date.now(),
 ): Promise<string | null> {
   assertReviewDispatchAllowed(messageType);
-  if (!IS_PRODUCTION) {
+  if (!IS_PRODUCTION || (source === "claim_invite" && process.env.NODE_ENV !== "production")) {
     console.log(`[WA_ENV_GUARD] BLOCKED send in non-production env. source=${source} phone=${phone} booking=${bookingId}`);
     throw new Error(`[ENV_GUARD] WA sending blocked in non-production environment`);
   }
@@ -503,7 +504,9 @@ async function sendViaAssistBot(
     ? `+${cleanPhone}`
     : `+7${cleanPhone}`;
 
-  const messageUniqueId = `rateus_${source}_${bookingId}_${idempotencyTimestamp}`;
+  const messageUniqueId = source === "claim_invite"
+    ? `rateus-claim-invite-${bookingId}` // Not a booking ID for delivery callbacks.
+    : `rateus_${source}_${bookingId}_${idempotencyTimestamp}`;
   const payload = {
     destination_params: [
       {
@@ -514,10 +517,10 @@ async function sendViaAssistBot(
     text: text,
     salon: "",
     type: "sms",
-    delivery_callback_url: "https://www.rateus.kz/api/webhooks/assistbot-delivery",
+    ...(source === "claim_invite" ? {} : {delivery_callback_url: "https://www.rateus.kz/api/webhooks/assistbot-delivery"}),
   };
 
-  const containsVisitConfirmationToken = source.includes("visit_confirmation");
+  const containsVisitConfirmationToken = source.includes("visit_confirmation") || source === "claim_invite";
   if (containsVisitConfirmationToken) {
     console.log(`[WA_SEND] source=${source} bookingId=${bookingId} content=[redacted]`);
   } else {
@@ -538,6 +541,7 @@ async function sendViaAssistBot(
   const respBody = await response.text();
 
   if (!response.ok) {
+    if(source === "claim_invite")throw new Error(`AssistBot HTTP ${response.status}`);
     if (containsVisitConfirmationToken) {
       console.error(`[WA_SEND] AssistBot error: bookingId=${bookingId} status=${response.status} body=[redacted]`);
       throw new Error(`AssistBot visit confirmation error ${response.status}`);
@@ -554,6 +558,7 @@ async function sendViaAssistBot(
   } catch {}
 
   // Even with HTTP 200, AssistBot may return an error envelope. Surface it.
+  if(source === "claim_invite" && (!respJson || typeof respJson!=="object" || Array.isArray(respJson) || !(assistbotMessageId || respJson.success===true || /^(ok|sent|accepted|success|queued)$/i.test(String(respJson.status)))))throw new Error("provider_response_unconfirmed");
   if(source === "verified_approval" && !respJson) throw new Error("provider_response_unconfirmed");
   const explicitError =
     respJson?.error ||
@@ -1471,6 +1476,7 @@ export async function startWaWorkerLoop(): Promise<void> {
       }
 
       const settings = await getWaSettings();
+      await recoverInterruptedInvites(pool);
       await db.execute(expiredReviewRequestsSweepSql());
       // Even a closed send window or exhausted budget must not leave timed-out links queued.
       const expiredConfirmations = await db.execute(expiredManualConfirmationSweepSql());
@@ -1528,6 +1534,7 @@ export async function startWaWorkerLoop(): Promise<void> {
         .set({ status: "queued", sendingStartedAt: null } as any)
         .where(and(
           eq(specialistReminders.status, "sending"),
+          sql`${specialistReminders.reminderType} <> 'claim_invite'`,
           sql`NULLIF(BTRIM(${specialistReminders.messageText}), '') IS NOT NULL`,
           sql`COALESCE(${specialistReminders.sendingStartedAt}, ${specialistReminders.createdAt}) < NOW() - INTERVAL '10 minutes'`,
         ))
@@ -2043,7 +2050,8 @@ async function tryDispatchSpecialistReminder(params: {
   }
 
   if (await storage.isWaOptedOut(reminder.phone)) {
-    await finishSpecialistReminder(reminder.id, "skipped", { skipReason: "opt_out" });
+    if(reminder.reminderType==="claim_invite")await finishInvite(pool,reminder.id,"skipped","Номер отказался от сообщений");
+    else await finishSpecialistReminder(reminder.id, "skipped", { skipReason: "opt_out" });
     return "none";
   }
 
@@ -2090,6 +2098,10 @@ async function tryDispatchSpecialistReminder(params: {
 
   const claimed = await claimSpecialistReminderForDispatch(reminder.id);
   if (!claimed) return "none";
+  if(claimed.reminderType==='claim_invite'){
+    const sent=await dispatchInvite(pool,claimed.id,(phone,text)=>sendViaAssistBot(phone,text,claimed.id,'specialist_reminder','claim_invite',claimed.createdAt?.getTime()));
+    return sent?'sent':'none';
+  }
 
   try {
     // Re-check after winning the queue row. This closes the ordinary race where

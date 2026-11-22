@@ -302,6 +302,7 @@ export class MasterAccess {
       result.sid!,
       result.anon!,
     );
+    await this.db.query(`UPDATE rateus_private.master_claims m SET first_login_at=now() FROM specialists s WHERE m.specialist_id=$1 AND s.id=m.specialist_id AND s.owner_user_id::text=$2 AND m.bound_user=$2 AND m.phone=$3 AND m.first_login_at IS NULL AND m.legacy`,[result.sid,result.userId,result.phone]);
     return { session };
   }
   private async hasPrior(t: PoolClient, sid: number) {

@@ -1,3 +1,4 @@
+import {recoverInterruptedInvites} from "./master-access/invites";
 import {prepareMasterAccess} from "./master-access/schema";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
@@ -1018,11 +1019,13 @@ app.use((req, res, next) => {
     const stuckReminderReset = await pool.query(
       `UPDATE specialist_reminders
        SET status = 'queued', sending_started_at = NULL
-       WHERE status = 'sending'
+       WHERE status = 'sending' AND reminder_type <> 'claim_invite'
          AND NULLIF(BTRIM(message_text), '') IS NOT NULL
          AND COALESCE(sending_started_at, created_at) < NOW() - INTERVAL '10 minutes'
        RETURNING id`
     );
+    // Never automatically replay a possibly accepted invitation after a restart.
+    await recoverInterruptedInvites(pool);
     const pendingFix = await pool.query(
       `UPDATE bookings SET status = 'scheduled' WHERE status = 'pending' RETURNING id`
     );

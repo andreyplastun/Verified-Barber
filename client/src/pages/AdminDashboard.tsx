@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import type { Specialist, User } from "@shared/schema";
 import { categoryLabels } from "@shared/schema";
+import {ClaimInvitation,type InviteState} from "@/components/admin/ClaimInvitation";
 import { RatingThemeSettings } from "@/components/admin/RatingThemeSettings";
 import { AssistBotConnection } from "@/components/admin/AssistBotConnection";
 import { normalizeClaimPhone } from "@shared/claim-phone";
@@ -460,6 +461,7 @@ export default function AdminDashboard() {
     specialistName: string;
     notificationStatus: "queued" | "sending" | "sent" | "failed" | "skipped" | null;
     access?: {legacy:boolean;verified_at:string|null;needs_review:boolean;reviewed_by:string|null;bound_user:string|null};
+    invite?: InviteState|null;
     notificationError: string | null;
   };
 
@@ -1309,6 +1311,7 @@ export default function AdminDashboard() {
                       {claim.access?.needs_review&&!claim.access.bound_user&&<p className="text-sm">{claim.access.reviewed_by?'Ручная сверка выполнена':'Требуется ручная сверка: у профиля уже есть аккаунт с доступом.'}</p>}
                       {claim.access && !claim.access.bound_user && ((claim.status==='pending'&&claim.access.verified_at)||(claim.access.legacy&&claim.access.needs_review&&!claim.access.reviewed_by)) && <Button disabled={approveClaimMutation.isPending} onClick={()=>{const manual=!!claim.access?.needs_review;if(manual&&!window.confirm('Вы проверили права заявителя? Старый аккаунт сохранит свой доступ.'))return;approveClaimMutation.mutate({id:claim.id,manualReview:manual})}}>{claim.access.needs_review?'Подтвердить ручную сверку':'Одобрить'}</Button>}
                       {claim.status==='pending'&&<Button variant="outline" onClick={()=>rejectClaimMutation.mutate(claim.id)}>Отклонить</Button>}
+                      {claim.invite && <ClaimInvitation id={claim.id} state={claim.invite} refresh={refetchClaims}/>}
                       {claim.notificationStatus&&<p className="text-xs">WhatsApp: {claim.notificationStatus}</p>}
                     </div>
                   ))}

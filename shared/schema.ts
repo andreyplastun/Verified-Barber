@@ -606,7 +606,7 @@ export const specialistReminders = pgTable("specialist_reminders", {
   // the dispatcher verify that the exact claim is still usable before sending.
   claimRequestId: integer("claim_request_id"),
   phone: text("phone").notNull(),
-  reminderType: text("reminder_type", { enum: ["claim_ownership", "claim_approved", "profile_incomplete", "no_first_visit", "uncompleted_visits", "inactive"] }).notNull(),
+  reminderType: text("reminder_type", { enum: ["claim_ownership", "claim_approved", "claim_invite", "profile_incomplete", "no_first_visit", "uncompleted_visits", "inactive"] }).notNull(),
   status: text("status", { enum: ["queued", "sending", "sent", "failed", "skipped"] }).default("queued").notNull(),
   messageText: text("message_text").notNull(),
   // Idempotency key (specialistId:type:periodBucket). Unique → guards against

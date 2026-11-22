@@ -24,7 +24,7 @@ const MAX_PROFILE_REMINDERS = 3; // profile/first-visit nudges capped at 3 total
 const MAX_CLAIM_REMINDERS = 3; // claim-ownership nudges capped at 3 total
 const MAX_UNCOMPLETED_REMINDERS = 4; // "finish your visits" nudges capped at 4 total
 
-type ReminderType = Exclude<SpecialistReminderType, "inactive" | "claim_approved">;
+type ReminderType = Exclude<SpecialistReminderType, "inactive" | "claim_approved" | "claim_invite">;
 
 interface Candidate {
   id: number;

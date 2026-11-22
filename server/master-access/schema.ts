@@ -2,7 +2,7 @@ import type { Pool } from "pg";
 import { normalizeClaimPhone } from "../../shared/claim-phone";
 // Reviewed production request/profile pairs. No phone numbers, names, or tokens in source.
 // Never select arbitrary approved requests, contact fields on profiles, or Altegio data.
-const historical = [
+export const historical = [
   [21, 51],
   [10, 73],
   [9, 72],
@@ -22,6 +22,9 @@ export async function prepareMasterAccess(db: Pool, prepareLegacy: boolean) {
  ALTER TABLE rateus_private.master_codes ADD COLUMN IF NOT EXISTS charged boolean NOT NULL DEFAULT false;
  CREATE INDEX IF NOT EXISTS master_codes_time ON rateus_private.master_codes(created_at);
  CREATE TABLE IF NOT EXISTS rateus_private.master_claims(claim_id int PRIMARY KEY REFERENCES claim_requests(id), specialist_id int NOT NULL, phone text NOT NULL, anon_id text, verified_at timestamptz, legacy boolean NOT NULL DEFAULT false, needs_review boolean NOT NULL DEFAULT false, reviewed_by text, bound_user text, notified boolean NOT NULL DEFAULT false);
+ ALTER TABLE rateus_private.master_claims ADD COLUMN IF NOT EXISTS first_login_at timestamptz;
+ CREATE TABLE IF NOT EXISTS rateus_private.claim_invites(reminder_id int PRIMARY KEY,claim_id int NOT NULL REFERENCES rateus_private.master_claims(claim_id),requested_by text NOT NULL,requested_at timestamptz NOT NULL DEFAULT now(),handoff_at timestamptz,finished_at timestamptz,response text);
+ CREATE INDEX IF NOT EXISTS claim_invites_latest ON rateus_private.claim_invites(claim_id,reminder_id DESC);
  CREATE INDEX IF NOT EXISTS master_claim_phone ON rateus_private.master_claims(phone);
  CREATE TABLE IF NOT EXISTS rateus_private.master_identity(phone text PRIMARY KEY, user_id text UNIQUE NOT NULL,specialist_id int UNIQUE NOT NULL);
  `);

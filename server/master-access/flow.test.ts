@@ -36,6 +36,7 @@ test("OTP → verified claim → approval → phone login; legacy access and con
   const db = new pg.Pool({ host: sock, user: "fixture", database: "postgres" });
   const sent = new Map<string, string>();
   let down = false;
+  let sessionUnavailable = false;
   const service = new MasterAccess(
     db,
     {
@@ -53,6 +54,7 @@ test("OTP → verified claim → approval → phone login; legacy access and con
         return { id: randomUUID(), email: randomUUID() + "@fixture.invalid" };
       },
       async session(id) {
+        if (sessionUnavailable) throw Error("fixture session refused");
         return {
           access_token: "fixture-access-" + id,
           refresh_token: "fixture-refresh",
@@ -133,11 +135,33 @@ test("OTP → verified claim → approval → phone login; legacy access and con
       (await check(v.challengeId, "login")).session.access_token,
       /^fixture-access-/,
     );
+    sessionUnavailable = true;
+    v = await ask("7070000002", "login");
+    assert.equal((await check(v.challengeId, "login")).status, 503);
+    assert.equal(
+      (
+        await q(
+          "SELECT first_login_at FROM rateus_private.master_claims WHERE claim_id=21",
+        )
+      )[0].first_login_at,
+      null,
+    );
+    sessionUnavailable = false;
+    await db.query(
+      "UPDATE rateus_private.master_codes SET created_at=now()-interval '61 seconds'",
+    );
     v = await ask("7070000002", "login");
     assert.ok((await check(v.challengeId, "login")).session);
     assert.ok(
       (await q("SELECT owner_user_id FROM specialists WHERE id=51"))[0]
         .owner_user_id,
+    );
+    assert.ok(
+      (
+        await q(
+          "SELECT first_login_at FROM rateus_private.master_claims WHERE claim_id=21",
+        )
+      )[0].first_login_at,
     );
     v = await ask("7070000003", "login");
     assert.match(

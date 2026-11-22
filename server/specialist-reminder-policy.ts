@@ -1,6 +1,7 @@
 export type SpecialistReminderType =
   | "claim_ownership"
   | "claim_approved"
+  | "claim_invite"
   | "profile_incomplete"
   | "no_first_visit"
   | "uncompleted_visits"
