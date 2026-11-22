@@ -1,3 +1,4 @@
+import {maskReviewsForViewer} from "./review-response";
 import {clientAccessRoutes} from "./master-access/client-access";
 import { enqueueInvite, inviteStates } from "./master-access/invites";
 import { MasterAccess, AccessError } from "./master-access/service";
@@ -541,25 +542,6 @@ async function checkAndAutoActivateSpecialist(specialistId: number): Promise<voi
   } catch (err) {
     console.error(`[AUTO-ACTIVATE] Error checking specialist ${specialistId}:`, err);
   }
-}
-
-// Helper to mask reviewer names based on privacy settings and viewer role
-function maskReviewsForViewer(
-  reviews: Review[],
-  viewerRole: 'admin' | 'specialist' | 'client' | null
-) {
-  return reviews.map(r => {
-    // Admin can see all names
-    if (viewerRole === 'admin') {
-      return r;
-    }
-    // For clients and specialists: hide name if showName is false
-    const isHidden = !r.showName || r.hiddenName || /@|^\+?[\d() -]{8,}$/.test(r.customerName);
-    return {
-      id:r.id,specialistId:r.specialistId,rating:r.rating,comment:r.comment,triggers:r.triggers,showName:r.showName,hiddenName:r.hiddenName,createdAt:r.createdAt,priceMismatch:r.priceMismatch,isFinalized:r.isFinalized,
-      customerName: isHidden ? "Аноним" : r.customerName
-    };
-  });
 }
 
 export async function registerRoutes(
@@ -1583,7 +1565,7 @@ export async function registerRoutes(
     
     // Private reviews ("сообщить только сервису") are visible only to admins
     const visibleReviews = viewerRole === 'admin' ? reviews : reviews.filter(r => !r.isPrivate);
-    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole);
+    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole, viewerUserId);
     
     // Use DB values directly - same as list endpoint for consistency
     res.json({ 
@@ -1846,6 +1828,7 @@ export async function registerRoutes(
 
   // Get reviews by specialistId query parameter (for specialist dashboard)
   app.get("/api/reviews", async (req, res) => {
+    res.vary("Authorization");res.set("Cache-Control","private, no-store");
     const specialistId = Number(req.query.specialistId);
     const viewerUserId = req.headers["x-user-id"] as string | undefined;
     console.log(`[DEBUG] GET /api/reviews?specialistId=${specialistId} - Requested by user: ${viewerUserId}`);
@@ -1875,12 +1858,13 @@ export async function registerRoutes(
     // Private reviews ("сообщить только сервису") are visible only to admins —
     // never in the feed, never to the specialist.
     const visibleReviews = viewerRole === 'admin' ? reviews : reviews.filter(r => !(r as any).isPrivate);
-    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole);
+    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole, viewerUserId);
     console.log(`[DEBUG] After masking, reviews with hidden names: ${maskedReviews.filter(r => r.customerName === 'Аноним').length}`);
     res.json(maskedReviews);
   });
 
   app.get(api.reviews.list.path, async (req, res) => {
+    res.vary("Authorization");res.set("Cache-Control","private, no-store");
     const id = Number(req.params.id);
     if (isNaN(id)) {
       return res.status(400).json({ message: "Invalid specialist ID" });
@@ -1905,12 +1889,13 @@ export async function registerRoutes(
     
     // Private reviews ("сообщить только сервису") are visible only to admins
     const visibleReviews = viewerRole === 'admin' ? reviews : reviews.filter(r => !r.isPrivate);
-    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole);
+    const maskedReviews = maskReviewsForViewer(visibleReviews, viewerRole, viewerUserId);
     res.json(maskedReviews);
   });
 
   // Get review by booking ID - for the author to edit their own review
   app.get("/api/reviews/by-booking/:bookingId", async (req, res) => {
+    res.vary("Authorization");res.set("Cache-Control","private, no-store");
     const bookingId = Number(req.params.bookingId);
     if (isNaN(bookingId)) {
       return res.status(400).json({ message: "Invalid booking ID" });
@@ -1946,6 +1931,7 @@ export async function registerRoutes(
 
     // For others, mask the name if hidden
     const [maskedReview] = maskReviewsForViewer([review],null);
+    if(!maskedReview)return res.status(404).json({message:"Review not found"});
     res.json(maskedReview);
   });
 

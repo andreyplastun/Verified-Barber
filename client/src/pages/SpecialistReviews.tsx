@@ -1,3 +1,4 @@
+import {isPublishedReview} from "@shared/review-visibility";
 import { useRoute, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useSpecialist } from "@/hooks/use-specialists";
@@ -32,7 +33,7 @@ export default function SpecialistReviews() {
     return <div className="min-h-screen bg-background animate-pulse" />;
   }
 
-  const publicReviews = reviews.filter(r => r.isFinalized && r.publishReview);
+  const publicReviews = reviews.filter(isPublishedReview);
   const sortedReviews = [...publicReviews].sort((a, b) => 
     new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
   );

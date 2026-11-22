@@ -1,3 +1,4 @@
+import {isPublishedReview} from "@shared/review-visibility";
 import { useState, useEffect, useRef } from "react";
 import { trackProfileView } from "@/lib/analytics";
 import { useRoute, Link } from "wouter";
@@ -348,7 +349,7 @@ export default function SpecialistProfile() {
           <div className="space-y-4">
             {(() => {
               // Only show finalized reviews where publishReview is true
-              const publicReviews = specialist.reviews?.filter(r => r.isFinalized && r.publishReview) || [];
+              const publicReviews = specialist.reviews?.filter(isPublishedReview) || [];
               
               if (publicReviews.length === 0) {
                 return (
