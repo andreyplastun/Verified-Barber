@@ -59,9 +59,9 @@ test("candidate SQL excludes only review requests before LIMIT; resume removes o
   assert.equal(isReviewRequestPaused("reminder", false), false);
   assert.equal(dialect.sqlToQuery(reviewRequestCandidateSql(sql`wm.message_type`, false)).sql, "TRUE");
 
-  const candidates = worker.slice(worker.indexOf("const candidates = await db.select({"), worker.indexOf("const msg = await findFirstEligibleCandidate"));
+  const candidates = worker.slice(worker.indexOf("const candidates = (async function*"), worker.indexOf("const msg = await findFirstEligibleCandidate"));
   assert.match(candidates, /reviewRequestCandidateSql\(waMessages\.messageType\)/);
-  assert.ok(candidates.indexOf("reviewRequestCandidateSql") < candidates.indexOf(".limit(200)"));
+  assert.ok(candidates.indexOf("reviewRequestCandidateSql") < candidates.indexOf(".limit(1)"));
   // No review backlog can consume the 200-row scan or reserve daily budget.
   assert.match(worker, /findFirstEligibleCandidate\(candidates, async \(candidate\) => \{\s*if \(isReviewRequestPaused\(candidate\.messageType\)\) return false;/);
 });
@@ -71,7 +71,7 @@ test("paused review backlog does not preempt confirmations or master reminders o
   assert.match(priorityWait, /reviewRequestCandidateSql\(waMessages\.messageType\)/);
   const clientPreemption = worker.slice(worker.indexOf("async function hasReadyClientMessage"), worker.indexOf("async function finishSpecialistReminder"));
   assert.match(clientPreemption, /reviewRequestCandidateSql\(waMessages\.messageType\)/);
-  const wakeQueries = worker.match(/SELECT MIN\(scheduled_at\)[\s\S]*?`/g);
+  const wakeQueries = worker.match(/SELECT MIN\(scheduled_at\)[\s\S]*?`/g)?.filter(q => q.includes("FROM wa_messages"));
   assert.equal(wakeQueries?.length, 2);
   for (const query of wakeQueries || []) assert.match(query, /reviewRequestCandidateSql/);
   assert.match(worker, /await sleep\(idleSleep\(\)\);\s*continue;/);
@@ -104,7 +104,7 @@ test("non-expired queued reviews are preserved and immediate send cannot bypass 
   const dispatch = worker.slice(worker.indexOf("async function doSend"), worker.indexOf("export async function sendWaMessageNow"));
   assert.ok(dispatch.indexOf("if (isReviewRequestPaused(msg.messageType)) return false") < dispatch.indexOf("acquirePhoneLock"));
   assert.match(dispatch, /err instanceof ReviewRequestsPausedError\) return false/);
-  assert.match(dispatch, /msg\.messageText,\s*msg\.bookingId,\s*msg\.messageType,/);
+  assert.match(dispatch, /(?:simplifyAnonymousReviewCopy\()?msg\.messageText\)?,\s*msg\.bookingId,\s*msg\.messageType,/);
 });
 
 test("link-open upgrades cannot extend deadlines during pause or revive an expired follow-up after resume", () => {
@@ -122,5 +122,5 @@ test("real final sender guards before credentials and at fetch; direct payment h
   const direct = worker.slice(worker.indexOf("export async function sendDirectWaMessage"), worker.indexOf("export async function testAssistBotConnection"));
   assert.match(direct, /sendViaAssistBot\(phone, text, bookingId, messageType, "direct_api"\)/);
   assert.match(routes, /sendDirectWaMessage\(customerPhone, waText, bookingId, "payment_request"\)/);
-  assert.match(worker, /claimed\.specialistId,\s*"specialist_reminder",\s*"specialist_reminder"/);
+  assert.match(worker, /claimed\.specialistId,\s*"specialist_reminder",\s*claimed.reminderType === "claim_approved" \? "verified_approval" : "specialist_reminder"/);
 });

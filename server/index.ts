@@ -7,6 +7,8 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { storage } from "./storage";
 import { pool } from "./db";
+import { withDbSource } from "./db-egress";
+import { nextAltegioSyncAt } from "./altegio-sync-schedule";
 import { startWaWorkerLoop, getWaSettings } from "./whatsapp";
 import { startSpecialistReminderLoop } from "./specialistReminders";
 import { runVisitConfirmationScan } from "./visit-confirmations";
@@ -75,6 +77,11 @@ const envKeys = Object.keys(process.env).sort();
 console.log(`[STARTUP] Total env vars: ${envKeys.length}, ALTEGIO keys: ${envKeys.filter(k => k.includes("ALTEGIO")).join(", ") || "NONE"}`);
 
 const app = express();
+app.use((req, _res, next) => {
+  // Group by route family; never use URLs containing IDs, tokens or UTM values.
+  const family = /^\/api\/(admin|specialists|specialist|analytics|reviews|altegio|master-access)(?:\/|$)/.exec(req.path)?.[1];
+  withDbSource(family ? `http_${family}` : "http_other", next);
+});
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -1051,18 +1058,20 @@ app.use((req, res, next) => {
   });
   await flagNotCompletedBookings();
   await transitionPaymentPendingToCompleted();
-  let altegioSyncCounter = 0;
-  const ALTEGIO_SYNC_EVERY_N = 3; // every 3rd cycle = every 15 min (3 * 5min)
-  setInterval(async () => {
+  let nextSyncAt = Date.now();
+  let transitionRunning = false;
+  setInterval(() => withDbSource("booking_transitions", async () => {
+    if (transitionRunning) return;
+    transitionRunning = true;
+    try {
     await transitionScheduledToReady();
     await runVisitConfirmationScan().catch(err => {
       console.error("[VISIT_CONFIRMATION_SCAN] periodic error:", err);
     });
     await flagNotCompletedBookings();
     await transitionPaymentPendingToCompleted();
-    altegioSyncCounter++;
-    if (altegioSyncCounter >= ALTEGIO_SYNC_EVERY_N) {
-      altegioSyncCounter = 0;
+    if (Date.now() >= nextSyncAt) {
+      nextSyncAt = nextAltegioSyncAt(Date.now());
       try {
         if (await isAltegioConfigured()) {
           const result = await syncUpcomingAppointments({
@@ -1076,7 +1085,8 @@ app.use((req, res, next) => {
         console.error("[PERIODIC_SYNC] Altegio sync error:", err);
       }
     }
-  }, TRANSITION_INTERVAL_MS);
+    } finally { transitionRunning = false; }
+  }).catch(err => console.error("[TRANSITIONS] cycle failed", err)), TRANSITION_INTERVAL_MS);
 
   setTimeout(() => {
     startWaWorkerLoop().catch(err => {
@@ -1085,7 +1095,7 @@ app.use((req, res, next) => {
   }, 5000);
 
   startSpecialistReminderLoop();
-  console.log(`[STARTUP] Background jobs started (transitions every ${TRANSITION_INTERVAL_MS / 60000} min, wa_worker=continuous, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, altegio_sync=every ${ALTEGIO_SYNC_EVERY_N * TRANSITION_INTERVAL_MS / 60000} min)`);
+  console.log(`[STARTUP] Background jobs started (transitions every ${TRANSITION_INTERVAL_MS / 60000} min, wa_worker=continuous, not_completed=${NOT_COMPLETED_HOURS}h, payment_timeout=${PAYMENT_PENDING_TIMEOUT_HOURS}h, altegio_sync=30min day/120min night Almaty)`);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;

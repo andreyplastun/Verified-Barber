@@ -1,3 +1,5 @@
+import { wakeQueue } from "./queue-wake";
+import { withDbSource } from "./db-egress";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import {
@@ -216,9 +218,14 @@ async function claimReminder(
       });
     }),
   };
-  return claimSpecialistReminderSlot(repository, type);
+  const result = await claimSpecialistReminderSlot(repository, type);
+  if (result.id != null) wakeQueue();
+  return result;
 }
-export async function runSpecialistReminderScan(): Promise<void> {
+export function runSpecialistReminderScan(): Promise<void> {
+  return withDbSource("specialist_reminder_scan", runSpecialistReminderScanImpl);
+}
+async function runSpecialistReminderScanImpl(): Promise<void> {
   if (!withinWindow()) return;
   if (!(await isEnabled())) return;
 

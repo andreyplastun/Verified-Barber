@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -71,6 +71,12 @@ function DailyLimitInput({ value, onCommit }: { value: number; onCommit: (v: num
 }
 
 export default function AdminDashboard() {
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState === "visible");
+  useEffect(() => {
+    const update = () => setPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -183,8 +189,10 @@ export default function AdminDashboard() {
       if (!res.ok) return { count: 0 };
       return res.json();
     },
-    enabled: !!currentUser,
-    refetchInterval: 60000,
+    enabled: !!currentUser && pageVisible,
+    staleTime: 300000,
+    refetchInterval: 300000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: antifraudFlags = [] } = useQuery<Array<{ specialistId: number; specialistName: string; invalidPhoneCount: number }>>({
@@ -197,8 +205,10 @@ export default function AdminDashboard() {
       const data = await res.json();
       return data.flags || [];
     },
-    enabled: !!currentUser,
-    refetchInterval: 60000,
+    enabled: !!currentUser && pageVisible,
+    staleTime: 300000,
+    refetchInterval: 300000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: bookingStats } = useQuery<{
@@ -217,8 +227,10 @@ export default function AdminDashboard() {
       if (!res.ok) return { total: 0, pending: 0, completed: 0, scheduled: 0, readyToComplete: 0, paymentPending: 0 };
       return res.json();
     },
-    enabled: !!currentUser,
-    refetchInterval: 60000,
+    enabled: !!currentUser && pageVisible,
+    staleTime: 300000,
+    refetchInterval: 300000,
+    refetchIntervalInBackground: false,
   });
 
   const { data: bookings = [], isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({

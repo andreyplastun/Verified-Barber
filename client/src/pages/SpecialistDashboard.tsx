@@ -48,7 +48,26 @@ export default function SpecialistDashboard() {
   const specialistId = currentUser?.specialistId;
   const access=useQuery<{allowed:boolean;reason:string;until:string|null}>({queryKey:['client-access',currentUser?.id,specialistId],enabled:!!specialistId,queryFn:async()=>{
     const res=await fetch(`/api/specialists/${specialistId}/client-access`,{cache:'no-store'});if(!res.ok)throw Error('Нет доступа');return res.json();
-  },staleTime:0,gcTime:0,refetchOnMount:'always',refetchOnWindowFocus:'always',refetchInterval:15000,retry:false});
+  },staleTime:0,gcTime:0,refetchOnMount:'always',refetchOnWindowFocus:'always',refetchInterval:false,retry:false});
+  useEffect(() => {
+    if (!specialistId || !currentUser) return;
+    // Recheck on actions, not a permanent timer. A rejected guard removes cached PII.
+    let checking = false;
+    const check = () => {
+      if (checking) return;
+      checking = true;
+      void access.refetch().then(result => {
+        if (result.isError || !result.data?.allowed)
+          queryClient.removeQueries({ queryKey: ['/api/specialists', specialistId, 'bookings', currentUser.id] });
+      }).finally(() => { checking = false; });
+    };
+    document.addEventListener('click', check);
+    document.addEventListener('submit', check);
+    return () => {
+      document.removeEventListener('click', check);
+      document.removeEventListener('submit', check);
+    };
+  }, [specialistId, currentUser?.id, access.refetch]);
   const allowed=!!access.data?.allowed && !access.isError;
   if(!specialistId||access.data?.reason==='forbidden')return <p className="p-6">Нет доступа к кабинету этого профиля.</p>;
   const note=allowed?'':access.isError?'Не удалось проверить доступ. Раздел клиентов закрыт.':access.data?.reason==='dispute'?'Раздел клиентов закрыт до решения спора администратором.':access.data?.until?`Раздел клиентов откроется ${new Date(access.data.until).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',dateStyle:'long',timeStyle:'short'})} (Алматы).`:'Проверяем доступ к разделу клиентов…';

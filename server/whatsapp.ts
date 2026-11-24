@@ -4,7 +4,10 @@ import { simplifyAnonymousReviewCopy } from "./review-message-copy";
 import { manualPresenceDispatchAllowed } from "./manual-presence-policy";
 import { markManualPresenceMessageSent } from "./manual-presence-store";
 import { db, pool } from "./db";
-import { eq, and, asc, gte, sql, getTableColumns } from "drizzle-orm";
+import { withDbSource } from "./db-egress";
+import { wakeQueue, queueGeneration, waitForQueue } from "./queue-wake";
+import { unseenWaCandidate } from "./wa-candidate-query";
+import { eq, and, asc, gte, sql } from "drizzle-orm";
 import { isValidKzPhone, normalizePhone } from "./client-identity";
 import {
   evaluateDispatchBudget,
@@ -17,6 +20,8 @@ import {
 } from "./wa-dispatch-policy";
 import {
   canDispatchSpecialistReminder,
+  SPECIALIST_REMINDER_DAILY_LIMIT,
+  CLAIM_REMINDER_DAILY_LIMIT,
   isDispatchableSpecialistReminderText,
   type SpecialistReminderType,
 } from "./specialist-reminder-policy";
@@ -323,7 +328,8 @@ export async function getWaSettings(): Promise<{
   hardDailyLimit: number;
   followupEnabled: boolean;
 }> {
-  const rows = await db.select().from(appConfig);
+  const rows = await db.select({ key: appConfig.key, value: appConfig.value }).from(appConfig)
+    .where(sql`${appConfig.key} LIKE 'WA_%'`);
   const map: Record<string, string> = {};
   for (const r of rows) map[r.key] = r.value;
   const dailyLimit = Math.max(0, parseInt(map["WA_DAILY_LIMIT"] || "20", 10) || 0);
@@ -345,6 +351,7 @@ export async function getWaSettings(): Promise<{
 export async function setWaSetting(key: string, value: string): Promise<void> {
   await db.insert(appConfig).values({ key, value })
     .onConflictDoUpdate({ target: appConfig.key, set: { value } });
+  wakeQueue();
 }
 
 async function getWaDailyUsage(): Promise<{
@@ -869,6 +876,7 @@ export async function enqueueReviewMessage(params: {
       dedupeKey,
       priority,
     } as any).onConflictDoNothing();
+    wakeQueue();
   } catch (err: any) {
     if (err.code === '23505' && err.constraint?.includes('dedupe')) {
       console.log(`[WA_QUEUE] Dedupe: ${params.messageType} for booking=${params.bookingId} already exists`);
@@ -968,6 +976,7 @@ async function createFollowup(msg: typeof waMessages.$inferSelect, opts?: { base
       dedupeKey,
       priority,
     } as any).onConflictDoNothing();
+    wakeQueue();
     console.log(`[WA_FOLLOWUP] Created followup for booking=${msg.bookingId} phone=${msg.customerPhone} scheduledAt=${scheduledAt.toISOString()} deadline=${deadlineAt.toISOString()} priority=${priority} dedupe=${dedupeKey}`);
   } catch (err: any) {
     if (err.code === '23505') {
@@ -1013,6 +1022,7 @@ export async function upgradeFollowupOnLinkOpen(bookingId: number, openedAt: Dat
       messageText,
     } as any)
     .where(eq(waMessages.id, existingFollowup.id));
+  wakeQueue();
 
   console.log(`[FOLLOWUP_UPGRADED] booking=${bookingId} msg=${existingFollowup.id} upgraded to OPENED segment, newScheduledAt=${newScheduledAt.toISOString()} deadline=${newDeadline.toISOString()} priority=10`);
 }
@@ -1250,6 +1260,7 @@ export async function sendWaMessageNow(messageId: number): Promise<{ success: bo
     return { success: false, error: `Статус "${existing.status}" — можно отправить только из очереди` };
   }
   console.log(`[WA_SEND_NOW] msg=${messageId} moved to the front of the safe dispatcher; no direct-send bypass`);
+  wakeQueue();
   return { success: true, queued: true };
 }
 
@@ -1418,34 +1429,30 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-const approvalWakeListeners = new Set<() => void>();
 export function wakeClaimApprovalDispatcher(): void {
-  for (const wake of approvalWakeListeners) wake();
+  wakeQueue();
 }
-function dispatcherSleep(ms: number): Promise<void> {
-  return new Promise(resolve => {
-    const finish = () => {
-      clearTimeout(timer);
-      approvalWakeListeners.delete(finish);
-      resolve();
-    };
-    const timer = setTimeout(finish, ms);
-    approvalWakeListeners.add(finish);
-  });
+let observedGeneration = queueGeneration();
+async function dispatcherSleep(ms: number): Promise<void> {
+  await waitForQueue(ms, observedGeneration);
+  observedGeneration = queueGeneration();
 }
 
 // Idle polling re-reads the whole ready queue on every tick. At 5-10s this was
 // thousands of queue scans per day and a likely main source of Supabase egress;
 // near-future messages are still caught by the nextReady wait below.
 function idleSleep(): number {
-  return 30000 + Math.floor(Math.random() * 30000);
+  return 600000;
 }
 
 function tickSleep(): number {
-  return 30000 + Math.floor(Math.random() * 30000);
+  return 600000;
 }
 
 export async function startWaWorkerLoop(): Promise<void> {
+  return withDbSource("whatsapp_dispatch", runWaWorkerLoop);
+}
+async function runWaWorkerLoop(): Promise<void> {
   console.log(`[WA_WORKER] Continuous loop started`);
 
   // Only one app instance may dispatch queue messages. The lock is bound to
@@ -1465,6 +1472,7 @@ export async function startWaWorkerLoop(): Promise<void> {
   }
   console.log("[WA_WORKER] Acquired global dispatcher lease");
 
+  let maintenanceAt = 0;
   while (true) {
     try {
       try {
@@ -1475,6 +1483,21 @@ export async function startWaWorkerLoop(): Promise<void> {
         return startWaWorkerLoop();
       }
 
+      // One scalar result while idle; no message bodies or candidate lists.
+      const probe = await db.execute(sql`
+        SELECT min(next_at) AS next_at FROM (
+          SELECT min(scheduled_at) AS next_at FROM wa_messages
+            WHERE status='queued' AND ${reviewRequestCandidateSql(sql`message_type`)}
+          UNION ALL SELECT min(scheduled_at) FROM specialist_reminders WHERE status='queued'
+          UNION ALL SELECT min(coalesce(sending_started_at,created_at)+interval '10 minutes')
+            FROM wa_messages WHERE status='sending'
+          UNION ALL SELECT min(coalesce(sending_started_at,created_at)+interval '10 minutes')
+            FROM specialist_reminders WHERE status='sending'
+        ) q`);
+      const next = (probe.rows[0] as any)?.next_at;
+      const dueIn = next ? new Date(next).getTime() - Date.now() : 600000;
+      if (dueIn > 0 && Date.now() < maintenanceAt) { await dispatcherSleep(Math.min(dueIn, maintenanceAt-Date.now())); continue; }
+      maintenanceAt = Date.now() + 600000;
       const settings = await getWaSettings();
       await recoverInterruptedInvites(pool);
       await db.execute(expiredReviewRequestsSweepSql());
@@ -1484,7 +1507,7 @@ export async function startWaWorkerLoop(): Promise<void> {
         console.log(`[WA_PROCESSOR] Expired ${expiredConfirmations.rows.length} manual visit confirmations`);
       }
       if (!settings.enabled) {
-        await sleep(30000);
+        await dispatcherSleep(600000);
         continue;
       }
 
@@ -1502,7 +1525,7 @@ export async function startWaWorkerLoop(): Promise<void> {
         const windowStartMs = Date.UTC(almaty.getUTCFullYear(), almaty.getUTCMonth(), almaty.getUTCDate(), WINDOW_START_HOUR - ALMATY_UTC_OFFSET, WINDOW_START_MINUTE, 0, 0);
         const waitMs = Math.max(windowStartMs - nowMs, 0);
         console.log(`[WA_WORKER] Before window start (10:00 Almaty). Sleeping ${Math.round(waitMs / 60000)}min`);
-        await sleep(waitMs + 5000);
+        await dispatcherSleep(waitMs + 5000);
         continue;
       }
 
@@ -1589,9 +1612,16 @@ export async function startWaWorkerLoop(): Promise<void> {
             : sql`FALSE`;
       // Message bodies and delivery payloads are not needed to pick a candidate;
       // the claim below re-reads the full row before sending.
-      const { messageText: _messageText, deliveryRaw: _deliveryRaw, ...candidateColumns } = getTableColumns(waMessages);
-      const candidates = await db.select({
-        ...candidateColumns,
+      let candidatesScanned = 0;
+      const candidates = (async function* () {
+        const seen: number[] = [];
+        while (true) {
+      const [candidate] = await db.select({
+        id: waMessages.id, bookingId: waMessages.bookingId,
+        messageType: waMessages.messageType, priority: waMessages.priority,
+        deadline: waMessages.deadline, scheduledAt: waMessages.scheduledAt,
+        customerPhone: waMessages.customerPhone,
+        reviewLink: waMessages.reviewLink,
         firstVisitStatus: bookings.firstVisitStatus,
         manualPresenceVersion: bookings.manualPresenceVersion,
       })
@@ -1600,6 +1630,7 @@ export async function startWaWorkerLoop(): Promise<void> {
         .where(
           and(
             eq(waMessages.status, "queued"),
+            unseenWaCandidate(seen),
             reviewRequestCandidateSql(waMessages.messageType),
             sql`${waMessages.scheduledAt} <= ${currentNow}`,
             budgetPredicate,
@@ -1613,7 +1644,13 @@ export async function startWaWorkerLoop(): Promise<void> {
           sql`COALESCE(${waMessages.deadline}, '2099-01-01'::timestamp) ASC`,
           asc(waMessages.id),
         )
-        .limit(200);
+        .limit(1);
+          if (!candidate) return;
+          seen.push(candidate.id);
+          candidatesScanned++;
+          yield candidate;
+        }
+      })();
 
       const msg = await findFirstEligibleCandidate(candidates, async (candidate) => {
         if (isReviewRequestPaused(candidate.messageType)) return false;
@@ -1812,17 +1849,21 @@ export async function startWaWorkerLoop(): Promise<void> {
               AND ${reviewRequestCandidateSql(sql`message_type`)}
           `);
           const nextAt = (nextScheduled.rows[0] as any)?.next_at;
-          console.log(`[WA_HEARTBEAT] No eligible candidates. readyScanned=${candidates.length} queued=${totalQueued} usage=${usage.ordinarySent}+${usage.prioritySent}/${effectiveLimit}+${effectivePriorityLimit} hard=${effectiveHardLimit} nextScheduledAt=${nextAt || 'none'} time=${currentNow.toISOString()}`);
+          console.log(`[WA_HEARTBEAT] No eligible candidates. readyScanned=${candidatesScanned} queued=${totalQueued} usage=${usage.ordinarySent}+${usage.prioritySent}/${effectiveLimit}+${effectivePriorityLimit} hard=${effectiveHardLimit} nextScheduledAt=${nextAt || 'none'} time=${currentNow.toISOString()}`);
         }
 
         const nextReady = await db.execute(sql`
-          SELECT MIN(scheduled_at) as next_at FROM wa_messages WHERE status = 'queued' AND scheduled_at > NOW()
-            AND ${reviewRequestCandidateSql(sql`message_type`)}
+          SELECT MIN(next_at) AS next_at FROM (
+            SELECT MIN(scheduled_at) AS next_at FROM wa_messages WHERE status = 'queued' AND scheduled_at > NOW()
+              AND ${reviewRequestCandidateSql(sql`message_type`)}
+            UNION ALL SELECT MIN(scheduled_at) FROM specialist_reminders
+              WHERE status='queued' AND scheduled_at>NOW()
+          ) q
         `);
         const nextReadyAt = (nextReady.rows[0] as any)?.next_at;
         if (nextReadyAt) {
           const waitUntil = new Date(nextReadyAt).getTime() - Date.now();
-          if (waitUntil > 0 && waitUntil < 60000) {
+          if (waitUntil > 0 && waitUntil < 600000) {
             await dispatcherSleep(waitUntil + 500);
             continue;
           }
@@ -1892,7 +1933,17 @@ export async function startWaWorkerLoop(): Promise<void> {
           break;
         }
 
-        const chunkMs = Math.min(waitTime, tickSleep());
+        // Future priority rows can become due without a new insert/wake.
+        const nextPriority = await db.execute(sql`
+          SELECT min(at) AS at FROM (
+            SELECT min(scheduled_at) AS at FROM specialist_reminders
+              WHERE status='queued' AND reminder_type='claim_approved' AND scheduled_at>now()
+            UNION ALL SELECT min(scheduled_at) FROM wa_messages
+              WHERE status='queued' AND message_type='primary'
+                AND priority>=${NEW_CLIENT_PRIORITY} AND scheduled_at>now()
+          ) q`);
+        const priorityAt = (nextPriority.rows[0] as any)?.at;
+        const chunkMs = Math.min(waitTime, tickSleep(), priorityAt ? Math.max(1,new Date(priorityAt).getTime()-Date.now()) : Infinity);
         console.log(`[WA_RATE_LIMIT] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} — sleeping ${Math.round(chunkMs / 1000)}s chunk (remaining=${Math.round(waitTime / 1000)}s, minInterval=${Math.round(minInterval / 60000)}min)`);
         await dispatcherSleep(chunkMs);
         if (!isPriorityNewClient) {
@@ -2014,11 +2065,13 @@ async function tryDispatchSpecialistReminder(params: {
   let reminderUsage = await getSpecialistReminderDailyUsage();
   // Capped reminders can sit queued for days and are rescanned on every idle
   // tick, so pick by metadata only and load the message body for the winner.
-  const { messageText: _reminderText, ...reminderColumns } = getTableColumns(specialistReminders);
-  const candidates = await db.select(reminderColumns)
+  const candidates = await db.select({ id: specialistReminders.id, reminderType: specialistReminders.reminderType })
     .from(specialistReminders)
     .where(and(
       eq(specialistReminders.status, "queued"),
+      sql`(${specialistReminders.reminderType} = 'claim_approved' OR
+        (${reminderUsage.specialistSent} < ${SPECIALIST_REMINDER_DAILY_LIMIT} AND
+          (${specialistReminders.reminderType} <> 'claim_ownership' OR ${reminderUsage.claimSent} < ${CLAIM_REMINDER_DAILY_LIMIT})))`,
       approvalsOnly
         ? eq(specialistReminders.reminderType, "claim_approved")
         : sql`${specialistReminders.reminderType} <> 'claim_approved'`,
@@ -2032,7 +2085,7 @@ async function tryDispatchSpecialistReminder(params: {
       asc(specialistReminders.scheduledAt),
       asc(specialistReminders.id),
     )
-    .limit(100);
+    .limit(1);
 
   const picked = candidates.find((candidate) =>
     canDispatchSpecialistReminder(

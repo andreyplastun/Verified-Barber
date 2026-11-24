@@ -1,6 +1,7 @@
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "@shared/schema";
+import { startDbMeter } from "./db-egress";
 
 const { Pool } = pg;
 
@@ -70,6 +71,7 @@ if (DB_HOST && DB_USER && DB_PASSWORD && DB_NAME) {
 }
 
 export const pool = new Pool(poolConfig);
+startDbMeter(pool);
 
 pool.on('error', (err) => {
   console.error('[DB] Pool error (will reconnect):', err.message);

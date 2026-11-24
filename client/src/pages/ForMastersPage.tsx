@@ -3,7 +3,7 @@ import { MastersHero, heroHref } from "@shared/masters-hero";
 import { Link, useLocation, useSearch } from "wouter";
 import { motion } from "framer-motion";
 import { Star, MessageCircle, Users, ShieldCheck, ArrowRight, CheckCircle } from "lucide-react";
-import { useSpecialists } from "@/hooks/use-specialists";
+import { useQuery } from "@tanstack/react-query";
 import { trackEvent } from "@/lib/analytics";
 import { LegalFooter } from "@/components/LegalFooter";
 import PhotoThumbnail from "@/components/PhotoThumbnail";
@@ -14,7 +14,9 @@ import { clarityEvent } from "@/lib/clarity";
 export default function ForMastersPage() {
   const [location, navigate] = useLocation();
   const searchString = useSearch();
-  const { data: specialists } = useSpecialists();
+  const { data: topSpecialists = [] } = useQuery<Array<{
+    id: number; name: string; city: string | null; trustedRating: number; reviewCount: number; imageUrl: string;
+  }>>({ queryKey: ["/api/landing/master-cards"], staleTime: 10 * 60000, refetchOnWindowFocus: false });
 
   const utm = useMemo(() => getAttribution(searchString), [searchString]);
   useLandingAnalytics(utm);
@@ -22,16 +24,6 @@ export default function ForMastersPage() {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, []);
-
-  // Keep the strongest eligible Almaty example first, then rank by reviews.
-  const topSpecialists = useMemo(() => {
-    if (!specialists) return [];
-    const ranked = [...specialists]
-      .filter((s: any) => (s.reviewCount ?? 0) > 0 && s.imageUrl && (s.trustedRating ?? 0) >= 4)
-      .sort((a: any, b: any) => (b.reviewCount ?? 0) - (a.reviewCount ?? 0));
-    const local = ranked.find(s => ["алматы", "almaty"].includes((s.city || "").trim().toLowerCase()));
-    return (local ? [local, ...ranked.filter(s => s.id !== local.id)] : ranked).slice(0, 3);
-  }, [specialists]);
 
   const handleCtaClick = (placement: string) => {
     if (placement === "catalog") clarityEvent("find_in_catalog_click");

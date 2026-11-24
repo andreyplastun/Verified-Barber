@@ -1,7 +1,11 @@
 import { storage } from "./storage";
-import { db } from "./db";
-import { appConfig, bookings, reviews } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { db, pool } from "./db";
+import { appConfig, bookings, reviews, specialists } from "@shared/schema";
+import { eq, inArray, isNotNull, and, sql } from "drizzle-orm";
+import { withDbSource } from "./db-egress";
+import { coveredAltegioChangeWindow } from "./altegio-sync-schedule";
+import { collectChangedAppointments } from "./altegio-change-pages";
+import { createHash } from "node:crypto";
 import { normalizePhone, resolveClientIdentity, handlePhoneAppearedLater } from "./client-identity";
 import { getAltegioInvalidatedBookingStatus } from "./altegio-attendance-policy";
 
@@ -1166,7 +1170,7 @@ export interface AltegioAppointmentRecord {
   seance_length?: number;
 }
 
-export async function fetchUpcomingAppointments(companyId: number, options?: { staffId?: number; startDate?: string; endDate?: string; page?: number; count?: number }): Promise<{ success: boolean; appointments?: AltegioAppointmentRecord[]; total?: number; error?: string }> {
+export async function fetchUpcomingAppointments(companyId: number, options?: { staffId?: number; startDate?: string; endDate?: string; changedAfter?: string; changedBefore?: string; includeDeleted?: boolean; page?: number; count?: number }): Promise<{ success: boolean; appointments?: AltegioAppointmentRecord[]; total?: number; error?: string }> {
   const config = getConfig();
   if (!config) return { success: false, error: "not_configured" };
 
@@ -1174,10 +1178,15 @@ export async function fetchUpcomingAppointments(companyId: number, options?: { s
   if (options?.staffId) params.set("staff_id", String(options.staffId));
   if (options?.startDate) params.set("start_date", options.startDate);
   if (options?.endDate) params.set("end_date", options.endDate);
+  if (options?.changedAfter) params.set("changed_after", options.changedAfter);
+  if (options?.changedBefore) params.set("changed_before", options.changedBefore);
+  if (options?.includeDeleted) params.set("with_deleted", "1");
   params.set("page", String(options?.page || 1));
   params.set("count", String(options?.count || 200));
 
-  const url = `${ALTEGIO_BASE_URL}/records/${companyId}?${params.toString()}`;
+  // New documented endpoint supports changed_after/before and with_deleted.
+  const endpoint = options?.changedBefore ? `locations/${companyId}/appointments` : `records/${companyId}`;
+  const url = `${ALTEGIO_BASE_URL}/${endpoint}?${params.toString()}`;
 
   try {
     console.log(`[ALTEGIO-FETCH] Fetching appointments for company ${companyId}, staff=${options?.staffId || "all"}, range=${options?.startDate}..${options?.endDate}`);
@@ -1355,15 +1364,23 @@ export async function backfillPendingAltegioHistories(maxSpecialists = 1): Promi
   return { ready, unavailable, skipped };
 }
 
-export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId: number, altegioInfo?: { staffId?: number; companyId?: number }) => Promise<any> }): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
+let syncInFlight: ReturnType<typeof syncUpcomingAppointmentsImpl> | undefined;
+export function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId: number, altegioInfo?: { staffId?: number; companyId?: number }) => Promise<any> }) {
+  return syncInFlight ??= withDbSource("altegio_sync", () => syncUpcomingAppointmentsImpl(opts))
+    .finally(() => { syncInFlight = undefined; });
+}
+
+async function syncUpcomingAppointmentsImpl(opts?: { onCompleted?: (bookingId: number, altegioInfo?: { staffId?: number; companyId?: number }) => Promise<any> }): Promise<{ imported: number; updated: number; skipped: number; errors: string[] }> {
   const config = getConfig();
   if (!config) {
     console.log("[ALTEGIO-SYNC-APPTS] Not configured, skipping");
     return { imported: 0, updated: 0, skipped: 0, errors: ["not_configured"] };
   }
 
-  const allSpecialists = await storage.getSpecialists();
-  const connectedSpecialists = allSpecialists.filter((s: any) => s.altegioStaffId && s.altegioCompanyId);
+  const connectedSpecialists = await db.select({
+    id: specialists.id, name: specialists.name, altegioStaffId: specialists.altegioStaffId,
+    altegioCompanyId: specialists.altegioCompanyId,
+  }).from(specialists).where(and(isNotNull(specialists.altegioStaffId), isNotNull(specialists.altegioCompanyId)));
 
   if (connectedSpecialists.length === 0) {
     console.log("[ALTEGIO-SYNC-APPTS] No connected specialists, skipping");
@@ -1375,39 +1392,38 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
     return { imported: 0, updated: 0, skipped: 0, errors: ["no_companies"] };
   }
 
-  const today = new Date();
-  const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-  const startDate = yesterday.toISOString().slice(0, 10);
-  const endDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
   let imported = 0;
   let updated = 0;
   let skipped = 0;
   const errors: string[] = [];
 
+  // Also include specialist IDs and cross-company aliases: a remap must import
+  // unchanged future appointments for the new owner, not just client-history rows.
+  const coverage = createHash("sha256").update(JSON.stringify({
+    mappings: connectedSpecialists.map(s => [s.id, s.altegioCompanyId, s.altegioStaffId])
+      .sort((a, b) => Number(a[0]) - Number(b[0])),
+    aliases: STAFF_ID_ALIASES,
+  })).digest("hex");
   for (const companyId of companyIds) {
+    const cycleStarted = new Date();
+    const cursorKey = `ALTEGIO_RECORDS_CURSOR_${companyId}`;
+    const coverageKey = `ALTEGIO_RECORDS_COVERAGE_${companyId}`;
+    const stateRows = await db.select({key: appConfig.key, value: appConfig.value}).from(appConfig)
+      .where(inArray(appConfig.key, [cursorKey, coverageKey]));
+    const state = new Map(stateRows.map(r => [r.key,r.value]));
+    const window = coveredAltegioChangeWindow(
+      state.get(cursorKey) ?? null, state.get(coverageKey) ?? null, coverage, cycleStarted,
+    );
+    const errorsBefore = errors.length;
     let allAppointments: AltegioAppointmentRecord[] = [];
-    let page = 1;
-    const pageSize = 200;
-
-    while (true) {
-      const result = await fetchUpcomingAppointments(companyId, { startDate, endDate, count: pageSize, page });
-      if (!result.success || !result.appointments) {
-        errors.push(`company ${companyId} page ${page}: ${result.error}`);
-        break;
-      }
-      allAppointments = allAppointments.concat(result.appointments);
-      if (result.appointments.length < pageSize) {
-        break;
-      }
-      if (result.total != null && allAppointments.length >= result.total) {
-        break;
-      }
-      page++;
-      await new Promise(r => setTimeout(r, 200));
+    try {
+      allAppointments = await collectChangedAppointments((page, count) =>
+        fetchUpcomingAppointments(companyId, { ...window, count, page }));
+    } catch (error: any) {
+      errors.push(`company ${companyId}: ${error.message}`);
+      continue;
     }
-
-    console.log(`[ALTEGIO-SYNC-APPTS] Company ${companyId}: fetched ${allAppointments.length} appointments (${page} pages)`);
+    console.log(`[ALTEGIO-SYNC-APPTS] Company ${companyId}: fetched ${allAppointments.length} changed appointments`);
 
     // Process chronologically so the first stored occurrence of a client ID is
     // also the earliest visit in this sync window.
@@ -1415,8 +1431,24 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
       new Date(a.datetime).getTime() - new Date(b.datetime).getTime()
     );
 
+    // Read only comparison fields, in bounded batches rather than one full row per visit.
+    const existingById = new Map<number, {
+      id: number; status: string; specialistId: number; altegioStaffId: number | null;
+      appointmentTime: Date | null; customerName: string; altegioClientId: number | null;
+      normalizedPhone: string | null;
+    }>();
+    for (let offset = 0; offset < allAppointments.length; offset += 200) {
+      const ids = allAppointments.slice(offset, offset + 200).map(a => a.id);
+      const rows = await db.select({
+        id: bookings.id, status: bookings.status, specialistId: bookings.specialistId,
+        altegioAppointmentId: bookings.altegioAppointmentId, altegioStaffId: bookings.altegioStaffId,
+        appointmentTime: bookings.appointmentTime, customerName: bookings.customerName,
+        altegioClientId: bookings.altegioClientId, normalizedPhone: bookings.normalizedPhone,
+      }).from(bookings).where(inArray(bookings.altegioAppointmentId, ids));
+      for (const row of rows) if (row.altegioAppointmentId != null) existingById.set(row.altegioAppointmentId, row);
+    }
     for (const appt of allAppointments) {
-      const existing = await storage.getBookingByAltegioId(appt.id);
+      const existing = existingById.get(appt.id);
       const invalidatedStatus = getAltegioInvalidatedBookingStatus(
         existing?.status || "scheduled",
         appt.attendance,
@@ -1518,7 +1550,7 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
           if (opts?.onCompleted) {
             await opts.onCompleted(existing.id, { staffId: appt.staff_id, companyId: appt.company_id });
           }
-        } else if (existing.status === "completed" && appt.attendance === 1 && opts?.onCompleted) {
+        } else if (existing.status === "completed" && appt.attendance === 1 && opts?.onCompleted && didUpdate) {
           await opts.onCompleted(existing.id, { staffId: appt.staff_id, companyId: appt.company_id });
         }
 
@@ -1593,8 +1625,31 @@ export async function syncUpcomingAppointments(opts?: { onCompleted?: (bookingId
         errors.push(`appt ${appt.id}: ${err.message}`);
       }
     }
+    if (errors.length === errorsBefore) {
+      await db.transaction(async tx => {
+      await tx.insert(appConfig).values({ key: cursorKey, value: cycleStarted.toISOString() })
+        .onConflictDoUpdate({ target: appConfig.key, set: { value: cycleStarted.toISOString() },
+          setWhere: sql`${appConfig.value} < ${cycleStarted.toISOString()}` });
+      await tx.insert(appConfig).values({key: coverageKey, value: coverage})
+        .onConflictDoUpdate({target: appConfig.key, set: {value: coverage}});
+      });
+    }
   }
 
+  // Retry interrupted completion side-effects independently of the external cursor.
+  // Narrow IDs only; never rebuild links for successfully processed historical visits.
+  if (opts?.onCompleted) {
+    const retries = await pool.query<{id:number}>(`
+      SELECT b.id FROM bookings b
+      WHERE b.altegio_appointment_id IS NOT NULL AND b.status='completed'
+        AND b.appointment_time >= now()-interval '2 days' AND NOT b.has_review
+        AND b.review_eligibility IS DISTINCT FROM false
+        AND b.invalid_phone IS DISTINCT FROM true
+        AND (b.client_id IS NOT NULL OR nullif(b.customer_phone,'') IS NOT NULL OR nullif(b.normalized_phone,'') IS NOT NULL)
+        AND NOT EXISTS (SELECT 1 FROM magic_links m WHERE m.booking_id=b.id)
+      ORDER BY b.appointment_time,b.id`);
+    for (const b of retries.rows) await opts.onCompleted(b.id);
+  }
   console.log(`[ALTEGIO-SYNC-APPTS] Complete: ${imported} imported, ${updated} updated, ${skipped} skipped, ${errors.length} errors`);
   try {
     const history = await backfillPendingAltegioHistories(1);

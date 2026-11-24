@@ -2,6 +2,7 @@ import type { Pool, PoolClient } from "pg";
 import { normalizeClaimPhone } from "../../shared/claim-phone";
 import { historical } from "./schema";
 import { AccessError } from "./service";
+import { wakeQueue } from "../queue-wake";
 
 // Only an explicit admin click creates an attempt. The reminder table's unique
 // claim_request_id belongs to approval replies; invitations have their own history.
@@ -98,7 +99,7 @@ async function transaction<T>(db: Pool, fn: (t: PoolClient) => Promise<T>) {
   }
 }
 export async function enqueueInvite(db: Pool, id: number, admin: string) {
-  return transaction(db, async (t) => {
+  const result = await transaction(db, async (t) => {
     // Acquire the lock in a separate statement so a waiting click reads a fresh snapshot.
     await t.query(
       "SELECT claim_id FROM rateus_private.master_claims WHERE claim_id=$1 FOR UPDATE",
@@ -130,6 +131,8 @@ export async function enqueueInvite(db: Pool, id: number, admin: string) {
     );
     return { status: "queued" };
   });
+  wakeQueue();
+  return result;
 }
 // Reserve a single provider handoff, rechecking after the shared dispatcher has
 // acquired channel budget. No network I/O inside the database transaction.

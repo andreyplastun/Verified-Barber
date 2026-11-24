@@ -1,4 +1,6 @@
 import {maskReviewsForViewer} from "./review-response";
+import { registerLandingCards } from "./landing-cards";
+import { wakeQueue } from "./queue-wake";
 import {clientAccessRoutes} from "./master-access/client-access";
 import { enqueueInvite, inviteStates } from "./master-access/invites";
 import { MasterAccess, AccessError } from "./master-access/service";
@@ -184,6 +186,7 @@ async function sendReviewLinkDirect(booking: any, link: string, source: string):
         .set({ scheduledAt: new Date() })
         .where(eq(waMessages.id, existing.id));
       console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} existing_msg=${existing.id} moved_to_dispatcher_front`);
+      wakeQueue();
       return true;
     }
     console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} existing_msg=${existing.id} status=${existing.status} not_duplicated`);
@@ -209,6 +212,7 @@ async function sendReviewLinkDirect(booking: any, link: string, source: string):
     dedupeKey: `specialist_direct_${booking.id}`,
   } as any).onConflictDoNothing().returning();
   console.log(`[SPECIALIST_SEND] source=${source} booking=${booking.id} queued_msg=${queued?.id || "deduped"} via=safe_dispatcher`);
+  wakeQueue();
   return true;
 }
 
@@ -1137,6 +1141,7 @@ export async function registerRoutes(
   });
 
   // Specialists with filtering and sorting
+  registerLandingCards(app);
   app.get(api.specialists.list.path, async (req, res) => {
     // Lazy finalization: finalize any expired reviews on-demand (autoscale-friendly)
     try {

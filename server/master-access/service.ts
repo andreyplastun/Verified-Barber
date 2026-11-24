@@ -1,3 +1,4 @@
+import { wakeQueue } from "../queue-wake";
 import {
   createHmac,
   randomInt,
@@ -40,6 +41,7 @@ export class MasterAccess {
       await t.query("BEGIN");
       const r = await fn(t);
       await t.query("COMMIT");
+      wakeQueue();
       return r;
     } catch (e) {
       await t.query("ROLLBACK");

@@ -117,10 +117,10 @@ export function getChannelRateLimitWaitMs(
 }
 
 export async function findFirstEligibleCandidate<T>(
-  candidates: readonly T[],
+  candidates: Iterable<T> | AsyncIterable<T>,
   check: (candidate: T) => Promise<boolean>,
 ): Promise<T | null> {
-  for (const candidate of candidates) {
+  for await (const candidate of candidates) {
     if (await check(candidate)) return candidate;
   }
   return null;

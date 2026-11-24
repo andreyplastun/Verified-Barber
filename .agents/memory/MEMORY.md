@@ -45,3 +45,4 @@
 - [Photo optimization boundaries](photo-preview-policy.md) — preserve originals and old URLs; legacy backfill requires consent; fixture savings are not measured production egress savings.
 - [Merge checker false positives](merge-marker-check.md) — decorative equals-sign comment dividers can be mistaken for unresolved conflict markers.
 - [Supabase egress sources](supabase-egress-sources.md) — free 5 GB was burned by unbounded booking dumps (50 MB public list, 2 MB dashboard on focus); bound + gate PII.
+- [Background egress budget](supabase-egress-budget.md) — confirmed ~90% Shared Pooler; target ≤100 MB/day; compare full-day billing, not JSON estimates.

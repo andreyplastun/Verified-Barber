@@ -1,3 +1,4 @@
+import { wakeQueue } from "./queue-wake";
 import { manualPresenceReviewAllowed } from "./manual-presence-policy";
 import { specialists, bookings, altegioClientHistory, reviews, users, specialistPhotos, magicLinks, analyticsEvents, claimRequests, waMessages, waOptOuts, specialistReminders, reviewGeodata, ratingTheme, type Specialist, type Booking, type Review, type User, type SpecialistPhoto, type MagicLink, type ClaimRequest, type WaMessage, type WaOptOut, type CreateBookingRequest, type CreateReviewRequest, type CreateSpecialistRequest, type RatingTheme, type InsertRatingTheme } from "@shared/schema";
 import crypto from "crypto";
@@ -1946,6 +1947,7 @@ export class DatabaseStorage implements IStorage {
       now: () => new Date(),
     });
     console.log(`[CLAIM] claim #${id} approved=${result.newlyApproved}; notification=${result.notificationStatus || "none"}`);
+    wakeQueue();
     return result;
   }
 
@@ -2000,6 +2002,7 @@ export class DatabaseStorage implements IStorage {
     scheduledAt: Date;
   }): Promise<WaMessage> {
     const [result] = await db.insert(waMessages).values(msg).returning();
+    wakeQueue();
     return result;
   }
 
