@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { wakeQueue } from "./queue-wake";
 import { issueManualPresenceReview } from "./manual-presence-review-issue";
 import { pool } from "./db";
 import { hashPhoneToLockId } from "./wa-phone-lock";
@@ -141,6 +142,7 @@ export function createManualPresenceRepository(
         },
       });
       await client.query("COMMIT");
+      wakeQueue();
       return result;
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -198,6 +200,7 @@ export async function enrollManualPresence(bookingId: number): Promise<void> {
     );
     await queuePresence(client, b, session);
     await client.query("COMMIT");
+    wakeQueue();
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;

@@ -1476,7 +1476,7 @@ async function syncUpcomingAppointmentsImpl(opts?: { onCompleted?: (bookingId: n
           console.log(`[ALTEGIO-SYNC-EXISTING] appt=${appt.id} staff_id=${appt.staff_id} company=${appt.company_id} client=${clientName} booking=${existing.id} status=${existing.status} attendance=${appt.attendance}`);
         }
 
-        if (appt.staff_id && appt.staff_id !== existing.altegioStaffId) {
+        if (appt.staff_id) {
           let effectiveStaffId = appt.staff_id;
           let effectiveCompanyId = appt.company_id;
           const alias = STAFF_ID_ALIASES[appt.staff_id];

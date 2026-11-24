@@ -1,3 +1,4 @@
+import { wakeQueue } from "./queue-wake";
 import crypto from "node:crypto";
 import { pool } from "./db";
 import {
@@ -325,6 +326,7 @@ export async function bindWhatsappEnquiryFromIncoming(
       [enquiry.id, cleanPhone, incomingMessageId, bookingId, now, dueAt],
     );
     await client.query("COMMIT");
+    wakeQueue();
     return { decision: "started", reason: "authenticated_message_bound", bookingId };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -639,6 +641,7 @@ export async function runVisitConfirmationScan(): Promise<{
     }
 
     await client.query("COMMIT");
+    if (queued) wakeQueue();
     if (queued || expiredResult.rowCount || supersededResult.rowCount) {
       console.log(
         `[VISIT_CONFIRMATION_SCAN] queued=${queued} expired=${expiredResult.rowCount || 0} superseded=${supersededResult.rowCount || 0}`,
@@ -1020,6 +1023,7 @@ export async function postponeVisitConfirmation(
       ],
     );
     await client.query("COMMIT");
+    wakeQueue();
     return { bookingId: Number(booking.id), changed: true };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);

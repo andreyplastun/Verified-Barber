@@ -7,6 +7,7 @@ import { db, pool } from "./db";
 import { withDbSource } from "./db-egress";
 import { wakeQueue, queueGeneration, waitForQueue } from "./queue-wake";
 import { unseenWaCandidate } from "./wa-candidate-query";
+import { boundedQueueSleep, queueWakeBoundarySql } from "./queue-sleep";
 import { eq, and, asc, gte, sql } from "drizzle-orm";
 import { isValidKzPhone, normalizePhone } from "./client-identity";
 import {
@@ -716,7 +717,7 @@ async function getClientStrategy(phone: string, specialistId: number, currentBoo
   return "primary_plus_followup";
 }
 
-export async function enqueueReviewMessage(params: {
+export async function prepareReviewMessage(params: {
   bookingId: number;
   specialistId: number;
   customerPhone: string;
@@ -727,7 +728,7 @@ export async function enqueueReviewMessage(params: {
   delayMs?: number;
   immediate?: boolean;
   isSpecialistAction?: boolean;
-}): Promise<void> {
+}) {
   validateReviewLink(params.reviewLink, `enqueue_${params.messageType}_booking=${params.bookingId}`);
 
   const dedupeKey = `${params.messageType}_${params.bookingId}`;
@@ -748,6 +749,7 @@ export async function enqueueReviewMessage(params: {
     ? await storage.getBooking(params.bookingId)
     : undefined;
   let priority = 0;
+  const supersedeIds: number[] = [];
 
   if (params.messageType === "primary") {
     if (!booking) {
@@ -793,9 +795,7 @@ export async function enqueueReviewMessage(params: {
         const shouldReplace = priority > existingPriority ||
           (priority === existingPriority && newApptTime >= existingApptTime);
         if (shouldReplace) {
-          await db.update(waMessages)
-            .set({ status: "skipped", skipReason: "superseded_by_newer_visit" } as any)
-            .where(eq(waMessages.id, existing.id));
+          supersedeIds.push(Number(existing.id));
           console.log(`[WA_PHONE_CENTRIC] Superseded msg=${existing.id} booking=${existing.booking_id} priority=${existingPriority} in favor of booking=${params.bookingId} priority=${priority} phone=${cleanPhone}`);
         } else {
           console.log(`[WA_PHONE_CENTRIC] Skipping enqueue for booking=${params.bookingId}: existing msg=${existing.id} booking=${existing.booking_id} has priority=${existingPriority} phone=${cleanPhone}`);
@@ -860,8 +860,7 @@ export async function enqueueReviewMessage(params: {
     console.log(`[WA_QUEUE] Followup: booking=${params.bookingId} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline.toISOString()}`);
   }
 
-  try {
-    await db.insert(waMessages).values({
+  return { supersedeIds, message: {
       bookingId: params.bookingId,
       specialistId: params.specialistId,
       customerPhone: cleanPhone,
@@ -875,7 +874,20 @@ export async function enqueueReviewMessage(params: {
       deadline,
       dedupeKey,
       priority,
-    } as any).onConflictDoNothing();
+    } };
+}
+
+export async function enqueueReviewMessage(params: Parameters<typeof prepareReviewMessage>[0]): Promise<void> {
+  const prepared = await prepareReviewMessage(params);
+  if (!prepared) return;
+  try {
+    await db.transaction(async tx => {
+      const inserted = await tx.insert(waMessages).values(prepared.message).onConflictDoNothing().returning({id:waMessages.id});
+      if (inserted.length) for (const id of prepared.supersedeIds) {
+        await tx.update(waMessages).set({status:"skipped",skipReason:"superseded_by_newer_visit"})
+          .where(and(eq(waMessages.id,id),eq(waMessages.status,"queued")));
+      }
+    });
     wakeQueue();
   } catch (err: any) {
     if (err.code === '23505' && err.constraint?.includes('dedupe')) {
@@ -885,7 +897,7 @@ export async function enqueueReviewMessage(params: {
     throw err;
   }
 
-  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId} phone=${cleanPhone} priority=${priority} scheduledAt=${scheduledAt.toISOString()} deadline=${deadline?.toISOString()} dedupe=${dedupeKey} link=${params.reviewLink}`);
+  console.log(`[WA_QUEUE] Enqueued ${params.messageType} for booking=${params.bookingId}`);
 }
 
 async function createFollowup(msg: typeof waMessages.$inferSelect, opts?: { baseDateMs?: number }): Promise<void> {
@@ -1434,7 +1446,9 @@ export function wakeClaimApprovalDispatcher(): void {
 }
 let observedGeneration = queueGeneration();
 async function dispatcherSleep(ms: number): Promise<void> {
-  await waitForQueue(ms, observedGeneration);
+  const result=await db.execute(queueWakeBoundarySql());
+  const at=(result.rows[0] as any)?.at;
+  await waitForQueue(boundedQueueSleep(ms,Date.now(),at?new Date(at).getTime():null), observedGeneration);
   observedGeneration = queueGeneration();
 }
 
@@ -1933,38 +1947,13 @@ async function runWaWorkerLoop(): Promise<void> {
           break;
         }
 
-        // Future priority rows can become due without a new insert/wake.
-        const nextPriority = await db.execute(sql`
-          SELECT min(at) AS at FROM (
-            SELECT min(scheduled_at) AS at FROM specialist_reminders
-              WHERE status='queued' AND reminder_type='claim_approved' AND scheduled_at>now()
-            UNION ALL SELECT min(scheduled_at) FROM wa_messages
-              WHERE status='queued' AND message_type='primary'
-                AND priority>=${NEW_CLIENT_PRIORITY} AND scheduled_at>now()
-          ) q`);
-        const priorityAt = (nextPriority.rows[0] as any)?.at;
-        const chunkMs = Math.min(waitTime, tickSleep(), priorityAt ? Math.max(1,new Date(priorityAt).getTime()-Date.now()) : Infinity);
+        const chunkMs = Math.min(waitTime, tickSleep());
         console.log(`[WA_RATE_LIMIT] msg=${msg.id} booking=${msg.bookingId} type=${msg.messageType} — sleeping ${Math.round(chunkMs / 1000)}s chunk (remaining=${Math.round(waitTime / 1000)}s, minInterval=${Math.round(minInterval / 60000)}min)`);
         await dispatcherSleep(chunkMs);
-        if (!isPriorityNewClient) {
-          const [higherPriority] = await db.select({ id: waMessages.id })
-            .from(waMessages)
-            .innerJoin(bookings, eq(bookings.id, waMessages.bookingId))
-            .where(and(
-              eq(waMessages.status, "queued"),
-              reviewRequestCandidateSql(waMessages.messageType),
-              sql`${waMessages.scheduledAt} <= NOW()`,
-              eq(waMessages.messageType, "primary"),
-              gte(waMessages.priority, NEW_CLIENT_PRIORITY),
-              eq(bookings.firstVisitStatus, "confirmed_new"),
-            ))
-            .limit(1);
-          if (higherPriority) {
-            preemptedByPriority = true;
-            console.log(`[WA_PREEMPT] msg=${msg.id} booking=${msg.bookingId} yielding rate-limit wait to priority msg=${higherPriority.id}`);
-            break;
-          }
-        }
+        // Reselect after a wake: newly queued manual confirmations outrank an
+        // ordinary primary, even when that primary was already waiting on spacing.
+        preemptedByPriority = true;
+        break;
       }
       if (rateLimitSkipped) continue;
       if (preemptedByPriority) continue;

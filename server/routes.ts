@@ -1,6 +1,8 @@
 import {maskReviewsForViewer} from "./review-response";
 import { registerLandingCards } from "./landing-cards";
 import { wakeQueue } from "./queue-wake";
+import { commitReviewOutbox, REVIEW_LINK_PLACEHOLDER, type ReviewDraft } from "./review-outbox";
+import { prepareReviewMessage } from "./whatsapp";
 import {clientAccessRoutes} from "./master-access/client-access";
 import { enqueueInvite, inviteStates } from "./master-access/invites";
 import { MasterAccess, AccessError } from "./master-access/service";
@@ -369,19 +371,6 @@ export async function tryCreateMagicLinkForCompletedVisit(
       } as any);
     }
 
-    const existingLink = await storage.getMagicLinkByBookingId(bookingId);
-    if (existingLink) {
-      console.log(`[MAGIC_LINK] Existing link found for booking ${bookingId} (source=${source})`);
-      if (specAction) {
-        const specEx = await storage.getSpecialist(booking.specialistId);
-        const fullLink = (specEx?.slug && existingLink.shortCode)
-          ? buildShortReviewLink(specEx.slug, existingLink.shortCode)
-          : buildReviewLink(existingLink.token);
-        await sendReviewLinkDirect(booking, fullLink, source);
-      }
-      return false;
-    }
-
     let customerPhone = booking.normalizedPhone || booking.customerPhone || null;
     if (!customerPhone && hasClientId) {
       const clientUser = await storage.getUser(booking.clientId!);
@@ -390,50 +379,38 @@ export async function tryCreateMagicLinkForCompletedVisit(
         console.log(`[MAGIC_LINK] booking=${bookingId}: phone from user profile: ${customerPhone}`);
       }
     }
-    const linkResult = await getOrCreatePrimaryMagicLinkSerialized({
+    const specForLink = await storage.getSpecialist(booking.specialistId);
+    let draft: ReviewDraft | null = null;
+    if (customerPhone && !opts?.suppressWhatsApp) {
+      if (specAction) {
+        const phone=normalizePhone(customerPhone);
+        if (isValidKzPhone(phone) && !await storage.isWaOptedOut(phone!.replace(/\D/g,""))) {
+          draft={supersedeIds:[],message:{
+            bookingId,specialistId:booking.specialistId,customerPhone:phone!.replace(/\D/g,""),
+            customerName:booking.customerName||"",specialistName:specForLink?.name||"",
+            reviewLink:REVIEW_LINK_PLACEHOLDER,messageType:"primary",templateIndex:0,
+            messageText:`Спасибо за визит к ${toDativeCase(specForLink?.name||"специалисту")}!\n\nОставьте отзыв по ссылке:\n${REVIEW_LINK_PLACEHOLDER}`,
+            scheduledAt:new Date(),priority:0,dedupeKey:`specialist_direct_${bookingId}`,
+          }};
+        }
+      } else {
+        draft=await prepareReviewMessage({
+          bookingId,specialistId:booking.specialistId,customerPhone,customerName:booking.customerName,
+          specialistName:specForLink?.name||"специалисту",reviewLink:REVIEW_LINK_PLACEHOLDER,
+          messageType:"primary",immediate:false,
+        }) ?? null;
+      }
+    }
+    const result = await commitReviewOutbox(pool, {
       userId: booking.clientId || null,
       bookingId,
       specialistId: booking.specialistId,
       customerPhone: hasClientId ? null : customerPhone,
+      draft,allowLinkOnly:!!opts?.suppressWhatsApp,
+      buildUrl:(token,shortCode)=>specForLink?.slug&&shortCode
+        ? buildShortReviewLink(specForLink.slug,shortCode) : buildReviewLink(token),
     });
-    if (!linkResult.created) {
-      console.log(`[MAGIC_LINK] Concurrent creator already made link for booking ${bookingId} (source=${source})`);
-      return false;
-    }
-    const magicLink = linkResult.link;
-    const specForLink = await storage.getSpecialist(booking.specialistId);
-    const fullLink = (specForLink?.slug && magicLink.shortCode)
-      ? buildShortReviewLink(specForLink.slug, magicLink.shortCode)
-      : buildReviewLink(magicLink.token);
-    console.log(`[MAGIC_LINK_CREATED] visit_id=${bookingId} ${hasClientId ? `client_id=${booking.clientId}` : `phone=${customerPhone}`} link=${fullLink} source=${source}`);
-
-    if (customerPhone && !opts?.suppressWhatsApp) {
-      if (specAction) {
-        await sendReviewLinkDirect(booking, fullLink, source);
-      } else {
-        const specialist = await storage.getSpecialist(booking.specialistId);
-        try {
-          await enqueueReviewMessage({
-            bookingId,
-            specialistId: booking.specialistId,
-            customerPhone,
-            customerName: booking.customerName,
-            specialistName: specialist?.name || "специалисту",
-            reviewLink: fullLink,
-            messageType: "primary",
-            immediate: false,
-          });
-        } catch (waErr: any) {
-          console.error(`[WA_QUEUE_ERROR] booking=${bookingId} error=${waErr.message}`);
-        }
-      }
-    } else if (!customerPhone) {
-      console.log(`[WA_SKIP] booking=${bookingId}: no phone number available for WhatsApp (clientId=${booking.clientId}, normalizedPhone=${booking.normalizedPhone}, customerPhone=${booking.customerPhone}) source=${source}`);
-    } else {
-      console.log(`[WA_SKIP] booking=${bookingId}: WhatsApp suppressed because the client is already on the confirmation page (source=${source})`);
-    }
-
-    return true;
+    return result.created || result.queued;
   } catch (err: any) {
     console.error(`[MAGIC_LINK_ERROR] booking=${bookingId} source=${source} error=${err.message}`);
     return false;
